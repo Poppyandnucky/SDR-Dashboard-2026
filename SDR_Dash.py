@@ -1,0 +1,3219 @@
+import streamlit as st
+import numpy as np
+import pandas as pd
+import altair as alt
+import math
+import scipy.stats as stats
+import time
+import matplotlib.pyplot as plt
+import seaborn as sns
+from parameters import get_parameters, get_slider_params, calculate_derived_parameters
+from model_run import run_model_dash
+from global_func import reset_flags, reset_E, reset_HSS, reset_S, get_P_l45
+st.set_page_config(layout="wide")
+selected_plot = None
+
+MODEL = {
+    "imple_time": 3,
+    "main_time": 0,
+    "int_period": 0,
+    "n_months": 36,
+    "multiple_run": False,
+    "n_runs": 1,
+}
+
+#initalize intervention parameters
+#b_param = get_parameters(seed = 1)
+slider_params = get_slider_params()
+i_flags, i_E, i_HSS, i_S = reset_flags(), reset_E(), reset_HSS(slider_params), reset_S(slider_params)
+
+def go_back_to_main():
+    st.session_state.intervention_selection = None
+    st.session_state.hss_mode = None
+    st.session_state.scenario_selected = None
+    st.session_state.model_finished = False
+
+def go_back_to_hss():
+    st.session_state.hss_mode = None
+    st.session_state.scenario_selected = None
+    st.session_state.model_finished = False
+
+# Function to render HSS interventions
+def render_hss(preset_demand_scenario, preset_supply_scenario):
+    # Scenario default values
+    Demand_scenarios = {
+        "Conservative": {"P_ANC": 70, "P_L45": 53},
+        "Moderate": {"P_ANC": 80, "P_L45": 68},
+        "Aggressive": {"P_ANC": 90, "P_L45": 90}
+    }
+
+    Capacity_match = {
+        "Conservative": 25.0,
+        "Moderate": 50.0,
+        "Aggressive": 85.0
+    }
+
+    Capacity_dismatch = {
+        "Conservative": 12.5,
+        "Moderate": 25.0,
+        "Aggressive": 42.5
+    }
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader(":chart_with_upwards_trend: HSS interventions (Demand)",
+                     help = "Goal: Increase pregnant mothers' demand for \n\n Antenatal Care (ANC) and deliveries at L4/5 facilties")
+
+        if preset_demand_scenario is not None:
+            Employ_CHV = 1
+            Increase_ANC = 1
+            Increase_LB45 = 1
+            P_ANC_preset_value = Demand_scenarios[preset_demand_scenario]["P_ANC"]
+            P_L45_preset_value = Demand_scenarios[preset_demand_scenario]["P_L45"]
+        else:
+            Employ_CHV = 0
+            Increase_ANC = 0
+            Increase_LB45 = 0
+            P_ANC_preset_value = None
+            P_L45_preset_value = None
+
+        col1_1, col1_2 = st.columns(2)
+        with col1_1:
+            st.text('Apply interventions')
+            CHVint = st.toggle('Employ CHVs', value = Employ_CHV,
+                               help = "CHVs refer to Community Healthcare Workers")
+
+            if CHVint:
+                i_flags['flag_SDR'] = 1
+
+        with col1_2:
+            st.text('Adjust parameters')
+            if CHVint:
+                i_flags['flag_CHV'] = 1
+            else:
+                i_flags['flag_CHV'] = 0
+        col1_3, col1_4 = st.columns(2)
+
+        with col1_3:
+            ANC_int = st.checkbox('Increasing 4+ANC visits', value = Increase_ANC,
+                                  help = "Increase the percentage of pregnant women have 4+ANCs",) if CHVint else 0
+
+        with col1_4:
+            if ANC_int:
+                i_flags['flag_ANC'] = 1
+                if P_ANC_preset_value is None:
+                    P_ANC_value = round(st.session_state.get('P_ANC', 0.9) * 100)
+                else:
+                    P_ANC_value = P_ANC_preset_value
+
+                i_HSS["P_ANC"] = st.slider('Expected **4+ANC rate**', min_value=round(slider_params['p_ANC_base_slider'] * 100), max_value=100, step=2, value=P_ANC_value, format="%d%%",
+                                     help = "Value = 90% means 90% of pregnant mothers will attend 4+ANCs (WHO target)")
+                i_HSS["P_ANC"] /= 100
+                st.session_state['P_ANC'] = i_HSS["P_ANC"]
+
+                P_l45_exp = get_P_l45(i_HSS["P_ANC"], slider_params)
+                P_L45_slider = round(P_l45_exp * 100) if P_l45_exp is not None else 0
+            else:
+                P_L45_slider = round(slider_params['base_p_45_slider'] * 100)
+
+        col1_5, col1_6 = st.columns(2)
+        with col1_5:
+            LB_int = st.checkbox('Increasing live births in L4/5 facilities', value = Increase_LB45,
+                                 ) if CHVint else 0
+
+        with col1_6:
+            if LB_int:
+                i_flags['flag_LB'] = 1
+                min_value_L45 = P_L45_slider
+                # Ensure the stored value is within the new range
+                if P_L45_preset_value is None:
+                    P_L45_value = max(min_value_L45, round(st.session_state.get('P_L45', 0.9) * 100))
+                else:
+                    P_L45_value = max(min_value_L45, P_L45_preset_value)
+
+                i_HSS["P_L45"] = st.slider("Expected **% live births at L4/5** before transfer", min_value=min_value_L45, max_value=100, step=1, value=P_L45_value, format="%d%%",
+                                        help = "Value = 90% means 90% of deliveries will happen at L4/5 facilities before emergency transfer")
+
+                i_HSS["P_L45"] /= 100
+
+                i_HSS['tau_decay'] = st.slider(
+                    "**Memory decay** period (months)",
+                    min_value=1,
+                    max_value=36,
+                    value=6,
+                    step=1,
+                    help="Defines how long past capacity constraints affect intention to deliver at L4/5 (in months)."
+                )
+
+                # Update session state
+                st.session_state['P_L45'] = i_HSS["P_L45"]
+
+        # # =========================
+        # # PROMPTS (Demand-side)
+        # # =========================
+        # st.markdown("---")
+        # st.text("PROMPTS (Engagement program)")
+
+        colP1, colP2 = st.columns(2)
+        with colP1:
+            prompts_int = st.checkbox(
+                "Enable PROMPTS",
+                value=bool(st.session_state.get("flag_PROMPTS", 0)),
+                help="Enable PROMPTS engagement program (affects engagement-related mechanisms in LB_effect)."
+            )
+
+        with colP2:
+            i_flags["flag_PROMPTS"] = 1 if prompts_int else 0
+            st.session_state["flag_PROMPTS"] = int(prompts_int)
+
+        if prompts_int:
+            colP3, colP4 = st.columns(2)
+
+            with colP3:
+                adoption_default = int(st.session_state.get("adoption_prompts", 100))
+                adoption_val = st.slider(
+                    "PROMPTS adoption",
+                    min_value=0, max_value=100, step=5,
+                    value=adoption_default,
+                    format="%d%%",
+                    help="Program adoption level."
+                )
+                i_HSS["adoption_prompts"] = adoption_val / 100.0
+                st.session_state["adoption_prompts"] = adoption_val
+
+            with colP4:
+                engage_default = int(st.session_state.get("chv_engagement", 100))
+                engage_val = st.slider(
+                    "CHV engagement (PROMPTS)",
+                    min_value=0, max_value=100, step=5,
+                    value=engage_default,
+                    format="%d%%",
+                    help="CHV engagement level used ONLY inside PROMPTS."
+                )
+                i_HSS["chv_engagement"] = engage_val / 100.0
+                st.session_state["chv_engagement"] = engage_val
+        else:
+            i_HSS["adoption_prompts"] = 0.0
+            i_HSS["chv_engagement"] = 0.0
+                
+        col1_7, col1_8 = st.columns(2)
+        with col1_7:
+            if CHVint:
+                i_HSS['CHV_memory'] = st.selectbox("**CHV memory decay model**",
+                                            options=["Logistic Decay", "Always Forget", "Always Remember"],
+                                            index=0,
+                                            help="Defines how long CHVs remember past negative quality of care expressed by mothers \n\n"
+                                                    "Logistic Decay: CHVs gradually forget past negative quality of care \n\n"
+                                                    "Always Forget: CHVs always forget past negative quality of care \n\n"
+                                                    "Always Remember: CHVs always remember past negative quality of care")
+
+
+    with col2:
+        st.subheader(":hospital: HSS interventions (Supply)",
+                     help="Goal: Increase supply of L4/5 facilities and rescue network \n\n for supporting the increased demand"
+                     )
+        if preset_supply_scenario == "Match Demand":
+            upgrade_L45_facilities = 1
+            upgrade_performance = 1
+            upgrade_capacity = 1
+            upgrade_labor = 1
+            upgrade_equipment = 1
+            update_transport = 1
+            update_refer = 1
+            update_transfer = 1
+            performance_value = 100
+            capacity_added_value = Capacity_match[preset_demand_scenario]
+            labor_value = 100
+            equipment_value = 100
+            refer_value = 100
+            transfer_value = 100
+        elif preset_supply_scenario == "Cannot Meet Demand":
+            upgrade_L45_facilities = 1
+            upgrade_performance = 1
+            upgrade_capacity = 1
+            upgrade_labor = 1
+            upgrade_equipment = 1
+            update_transport = 1
+            update_refer = 1
+            update_transfer = 1
+            performance_value = 75
+            capacity_added_value = Capacity_dismatch[preset_demand_scenario]
+            labor_value = 50
+            equipment_value = 50
+            refer_value = 50
+            transfer_value = 80
+        elif preset_supply_scenario is None:
+            upgrade_L45_facilities = 0
+            upgrade_performance = 0
+            upgrade_capacity = 0
+            upgrade_labor = 0
+            upgrade_equipment = 0
+            update_transport = 0
+            update_refer = 0
+            update_transfer = 0
+            performance_value = round(slider_params['base_knowledge_L45_slider'] * 100)
+            capacity_added_value = 0.0
+            labor_value = 0
+            equipment_value = 0
+            refer_value = 0
+            transfer_value = slider_params['t_l23_l45_notsevere_slider']
+
+        col2_1, col2_2 = st.columns(2)
+        with col2_1:
+            st.text('Apply interventions')
+            facint = st.toggle('Upgrade L4/5 facilities', value = upgrade_L45_facilities,
+                                 help = "To ensure high standards of obstetric and newborn care services")
+            if facint:
+                i_flags['flag_SDR'] = 1
+
+        with col2_2:
+            st.text('Adjust parameters')
+
+        col2_3, col2_4 = st.columns(2)
+        with col2_3:
+            if facint:
+                performanceint = st.checkbox('Improve performance of healthcare workers', value = upgrade_performance,
+                                            help = "To ensure healthcare workers follow protocols of single interventions")
+            else:
+                performanceint = 0
+
+        with col2_4:
+            if performanceint:
+                i_flags['flag_performance'] = 1
+                i_HSS["knowledge"] = st.slider("The **performance** level of healthcare workers",
+                                               min_value=round(slider_params['base_knowledge_L45_slider'] * 100), max_value=100, step=5,
+                                               value=performance_value, format="%d%%",
+                                               help="Performance reflects the likelihood of following protocols of single interventions \n\n"
+                                                    "Value = 80% means the performance level of healthcare workers is 80 out of 100")
+                i_HSS["knowledge"] /= 100
+            else:
+                i_flags['flag_performance'] = 0
+                i_HSS["knowledge"] = slider_params['base_knowledge_L45_slider']
+
+        col2_5, col2_6 = st.columns(2)
+        with col2_5:
+            if facint:
+                capacityint = st.checkbox('Increase facility capacity', value = upgrade_capacity,
+                                        help = "Improving infrastructure to ensure the facility can handle the increased demand")
+            else:
+                capacityint = 0
+        with col2_6:
+            if capacityint:
+                i_flags['flag_capacity'] = 1
+                i_HSS["capacity_added"] = st.slider("The **facility capacity** increases by", min_value=0.0, max_value=100.0, step=5.0, value=capacity_added_value, format="%d%%",
+                                       help = "Value = 100% means the capacity of L4/5 facilities will be increased by 100% (2 times)")
+
+                i_HSS["capacity_added"] /= 100
+            else:
+                i_flags['flag_capacity'] = 0
+                i_HSS["capacity_added"] = 0
+
+        col2_7, col2_8 = st.columns(2)
+        with col2_7:
+            if facint:
+                laborint = st.checkbox('Increase number of skilled labor force', value = upgrade_labor,
+                                        help = "To ensure the facility has enough skilled labor force to handle the increased demand")
+            else:
+                laborint = 0
+        with col2_8:
+            if laborint:
+                i_flags['flag_labor'] = 1
+                i_HSS["labor_ratio"] = st.slider("The **ideal number of skilled labor force** in L4/5", min_value=0,
+                                                 max_value=100, step=5, value=labor_value,
+                                                 format="%d%%", help="Value = 50% means 50% of the ideal number of skilled labor force in L4/5 facilities")
+
+                i_HSS["labor_ratio"] /= 100
+            else:
+                i_flags['flag_labor'] = 0
+                i_HSS["labor_ratio"] = 0
+
+        col2_9, col2_10 = st.columns(2)
+        with col2_9:
+            if facint:
+                equipment_int = st.checkbox('Increasing equipment in L4/5 facilities', value = upgrade_equipment,
+                                        help = "To ensure the facility has enough equipment to handle the increased demand")
+            else:
+                equipment_int = 0
+        with col2_10:
+            if equipment_int:
+                i_flags['flag_equipment'] = 1
+                i_HSS["sensor_ratio"] = st.slider("The **ideal number of intrapartum sensors** in L4/5", min_value=0,
+                                                    max_value=100, step=5, value=equipment_value,
+                                                    format="%d%%", help="Value = 50% means 50% of the ideal number of intrapartum sensors in L4/5 facilities")
+
+                i_HSS["sensor_ratio"] /= 100
+            else:
+                i_flags['flag_equipment'] = 0
+                i_HSS["sensor_ratio"] = 0
+
+        st.markdown("---")
+        col2_11, col2_12 = st.columns(2)
+        with col2_11:
+            refint = st.toggle('Upgrade Rescue network', value = update_transport,
+                                 help="To support the increased referrals/transfers \n\n from home or L2/3 facilities to L4/5 facilities")
+
+        with col2_12:
+            if refint:
+                i_flags['flag_SDR'] = 1
+
+        col2_13, col2_14 = st.columns(2)
+        with col2_13:
+            if refint:
+                referint = st.checkbox('Improve referral capacity', value = update_refer,
+                                        help="Increasing taxies/bodas for referring mothers to L4/5 facilities")
+            else:
+                referint = 0
+        with col2_14:
+            if referint:
+                i_flags['flag_refer'] = 1
+                i_HSS["P_refer"] = st.slider("% referral with free taxies/bodas", min_value=0, max_value=100, step=1, value=refer_value,
+                                      format="%d%%", help="Value = 100 means 100% of referral can use free taxies/bodas")
+                i_HSS["P_refer"] /= 100
+            else:
+                i_flags['flag_refer'] = 0
+                i_HSS["P_refer"] = 0
+
+        col2_15, col2_16 = st.columns(2)
+        with col2_15:
+            if refint:
+                transferint = st.checkbox('Improve emergency transfer', value = update_transfer,
+                                        help="Increasing ambulances for transferring severe complications to L4/5 facilities")
+            else:
+                transferint = 0
+
+        with col2_16:
+            if transferint:
+                i_flags['flag_transfer'] = 1
+                i_HSS["P_transfer"] = st.slider('% emergency transfer', min_value=slider_params['t_l23_l45_notsevere_slider'], max_value=100, step=10,
+                                                 value=transfer_value,
+                                                 format="%d%%", help="% complications can be transferred\n\n"
+                                                      "Value = 50 means 50% of complications can be transferred from L2/3 to L4/5 facilities")
+                i_HSS["P_transfer"] /= 100
+            else:
+                i_flags['flag_transfer'] = 0
+                i_HSS["P_transfer"] = 0
+
+# Function to render Single Interventions
+def render_single():
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader(":pill: Treatment interventions (Drugs and Supplies)",
+                     help = "Goal: Address leading biomedical causes of maternal and neonatal death")
+        col1_1, col1_2 = st.columns(2)
+
+        with col1_1:
+            mat_interventions = {
+                "PPH bundle": "Identify and reduce postpartum hemorrhage (PPH), including obsteric drape for identifying PPH, and treatments to stop bleeding (uterine massage, oxytocic drugs, tranexamic acid, IV fluids, and genital-tract examination)",
+                "IV iron infusion": "Reduce the probability of anemia, which increases risk of maternal complications.",
+                "Magnesium sulfate (MgSO4)": "Reduce maternal deaths due to eclampsia.",
+                "Antibiotics for maternal sepsis": "Reduce maternal deaths due to maternal sepsis.",
+                "Oxytocin for prolonged labor": "Reduce prolonged labor."
+            }
+
+            selected_mat_interventions = st.multiselect("Select **maternal interventions** to apply:", options=list(mat_interventions.keys()),
+                                                    help="You can select multiple interventions.")
+
+            if selected_mat_interventions:
+                for intervention in selected_mat_interventions:
+                    st.markdown(f"<h3 style='font-size:20px;'>{intervention}</h3>", unsafe_allow_html=True)
+
+                    if intervention == "PPH bundle":
+                        i_flags['flag_pph_bundle'] = 1
+                        i_S["pph_bundle"] = st.slider("% mothers with PPH in L4/5 supplied",
+                                                     min_value=round(slider_params['S_pph_bundle_slider'][3] * 100), max_value=100,
+                                                     step=1, value=100, format="%d%%",
+                                                     help=mat_interventions[intervention])
+                        i_S["pph_bundle"] /= 100
+
+                    elif intervention == "IV iron infusion":
+                        i_flags['flag_iv_iron'] = 1
+                        i_S["iv_iron"] = st.slider("% mothers with severe anemia supplied",
+                                                   min_value=round(slider_params['S_iv_iron_slider'] * 100), max_value=100, step=1,
+                                                   value=100, format="%d%%",
+                                                   help=mat_interventions[intervention])
+                        i_S["iv_iron"] /= 100
+
+                    elif intervention == "Magnesium sulfate (MgSO4)":
+                        i_flags['flag_MgSO4'] = 1
+                        i_S["MgSO4"] = st.slider("% mothers with eclampsia in L4/5 supplied",
+                                                 min_value=round(slider_params['S_MgSO4_slider'][3] * 100), max_value=100, step=1,
+                                                 value=100, format="%d%%",
+                                                 help=mat_interventions[intervention])
+                        i_S["MgSO4"] /= 100
+
+                    elif intervention == "Antibiotics for maternal sepsis":
+                        i_flags['flag_antibiotics'] = 1
+                        i_S["antibiotics"] = st.slider("% mothers with sepsis in L4/5 supplied",
+                                                       min_value=round(slider_params['S_antibiotics_slider'][3] * 100), max_value=100,
+                                                       step=1, value=100, format="%d%%",
+                                                       help=mat_interventions[intervention])
+                        i_S["antibiotics"] /= 100
+
+                    elif intervention == "Oxytocin for prolonged labor":
+                        i_flags['flag_oxytocin'] = 1
+                        i_S["oxytocin"] = st.slider("% prolonged labor in L4/5 supplied",
+                                                    min_value=round(slider_params['S_oxytocin_slider'][3] * 100), max_value=100, step=1,
+                                                    value=100, format="%d%%",
+                                                    help=mat_interventions[intervention])
+                        i_S["oxytocin"] /= 100
+
+
+                    st.markdown("---")  # Separator for each intervention
+
+        with col1_2:
+             neo_interventions = {
+                 "Preterm complication treatments": "Include maternal corticosteroids for reducing RDS and IVH; antibiotics for reducing neonatal sepsis and NEC.",
+             }
+
+    with col2:
+        st.subheader(":stethoscope: Diagnosis interventions (Sensors and Monitoring)",
+                     help = "Goal: Increase diagnosis of high-risk pregnancies and complications")
+        col2_1, col2_2 = st.columns(2)
+        with col2_1:
+            st.text('Apply interventions')
+            intus = st.toggle('AI portable ultrasound (AI-US)',
+                               help = "It helps improve accuracy of gestational age estimation and risk stratification")
+
+        with col2_2:
+            st.text('Adjust parameters')
+            if intus:
+                i_flags['flag_us'] = 1
+                i_E["sens_us"] = st.slider('Sensitivity of AI-US', min_value=0.00, max_value=1.00, step=0.05, value=0.95,
+                                   help = "Value = 0.95 means AI-US can detect 95% of high-risk pregnancies")
+                i_E["spec_us"] = st.slider('Specificity of AI-US', min_value=0.00, max_value=1.00, step=0.05, value=0.95,
+                                     help = "Value = 0.95 means AI-US can detect 95% of low-risk pregnancies")
+                i_S["US"] = 1
+            else:
+                i_flags['flag_us'] = 0
+                i_S["US"] = 0
+
+        st.markdown("---")
+        intintrasensors = st.toggle('Intrapartum sensors',
+                                    help="It helps predict pre-labor complications during delivery \n\n"
+                                         "Sum of traditional monitoring and AI sensor coverage should be not larger than 100%")
+
+        if intintrasensors:
+            i_flags['flag_intrasensor'] = 1
+            AI_sensor = st.checkbox('Apply AI algorithms')
+            i_flags['flag_sensor_ai'] = 1 if AI_sensor else 0
+        else:
+            i_flags['flag_intrasensor'] = 0
+            AI_sensor = 0
+            i_flags['flag_sensor_ai'] = 0
+
+        if AI_sensor:
+            col2_3, col2_4 = st.columns(2)
+            with col2_3:
+                pass
+            with col2_4:
+                i_E["sens_sensor"] = st.slider('Sensitivity of AI-Sensor', min_value=0.00, max_value=1.00, step=0.05, value=0.95,
+                                           help="Value = 0.95 means AI-sensor can detect 95% of pre-labor complications")
+                i_E["spec_sensor"] = st.slider('Specificity of AI-Sensor', min_value=0.00, max_value=1.00, step=0.05, value=0.95,
+                                           help="Value = 0.95 means AI-US can detect 95% of pre-labor complications")
+
+
+# Display selected intervention type
+# Initialize session state to manage navigation
+if 'intervention_selection' not in st.session_state:
+    st.session_state.intervention_selection = None
+if 'hss_mode' not in st.session_state:
+    st.session_state.hss_mode = None
+if 'scenario_selected' not in st.session_state:
+    st.session_state.scenario_selected = None
+if 'model_finished' not in st.session_state:
+    st.session_state.model_finished = False
+if 'selected_outcomes' not in st.session_state:
+    st.session_state.selected_outcomes = []
+if 'b_df_multiple' not in st.session_state:
+    st.session_state.b_df_multiple = None
+
+
+with st.expander("⚙️ **Scenario Settings** (Click to expand/collapse)", expanded=True):
+    # Leading Question
+    if st.session_state.intervention_selection is None:
+        st.title("Intervention Selection")
+        st.subheader("1. Which types of interventions would you like to explore?")
+
+        if st.button(":one: Health Systems Strengthening Interventions (Demand and Supply)"):
+            st.session_state.intervention_selection = "HSS"
+        if st.button(":two: Single Interventions (Treatment and Diagnosis)"):
+            st.session_state.intervention_selection = "Single"
+        if st.button(":three: Both"):
+            st.session_state.intervention_selection = "Both"
+
+    if st.session_state.intervention_selection == "HSS":
+        st.button("🔙 Back to Intervention Options", on_click=go_back_to_main)
+
+        # Choose between scenarios or manual customization
+        # if st.session_state.hss_mode is None:
+        st.subheader("2. Choose how you want to explore HSS interventions:")
+
+        if st.button("📊 Select Pre-set Scenarios"):
+            st.session_state.hss_mode = "Scenarios"
+
+        if st.button("🎛️ Customize Manually"):
+            st.session_state.hss_mode = "Manual"
+
+        # Scenario Selection Mode
+        if st.session_state.hss_mode == "Scenarios":
+            st.button("🔙 Back to HSS Options", on_click=go_back_to_hss)
+            st.subheader("3. Select a scenario:")
+            col1, col2 = st.columns(2)
+            with col1:
+                demand_scenario = st.selectbox("**3.1 Choose a pre-set demand scenario**", ["Conservative", "Moderate", "Aggressive"])
+                supply_scenario = st.selectbox("**3.2 Choose a pre-set supply scenario**", ["Match Demand", "Cannot Meet Demand"])
+            with col2:
+                pass
+            render_hss(preset_demand_scenario=demand_scenario, preset_supply_scenario= supply_scenario)
+            st.session_state.scenario_selected = True
+
+        # --- Manual Customization Mode ---
+        if st.session_state.hss_mode == "Manual":
+            st.button("🔙 Back to HSS Options", on_click=go_back_to_hss)
+            render_hss(preset_demand_scenario=None, preset_supply_scenario=None)
+            st.session_state.scenario_selected = True
+
+    elif st.session_state.intervention_selection == "Single":
+        st.button("🔙 Back to Intervention Options", on_click=go_back_to_main)
+        render_single()
+        st.session_state.scenario_selected = True
+
+    elif st.session_state.intervention_selection == "Both":
+        st.button("🔙 Back to Intervention Options", on_click=go_back_to_main)
+        render_hss(preset_demand_scenario=None, preset_supply_scenario=None)
+        st.markdown("---")
+        render_single()
+        st.session_state.scenario_selected = True
+
+with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expanded=True)):
+    if st.session_state.scenario_selected == True:
+        ##leading question on length of implementation phase, maintantance phase, multiple scenarios?
+        st.subheader("How would you like to run the model?")
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            MODEL["imple_time"] = st.slider("The length of implementation phase (years)?",
+                                            min_value=3, max_value=6, step=1, value=3,
+                                            help='Implementation phase will stop at the years you choose \n\n and continue the maintainance phase')
+
+            MODEL["int_period"] = MODEL["imple_time"] * 12
+
+        with col2:
+            MODEL["main_time"] = st.slider("The length of maintenance phase (years)?",
+                                           min_value=0, max_value=3, step=1, value=0,
+                                           help='The model will simulate until maintenance phase finish')
+
+            MODEL["n_months"] = MODEL["main_time"] * 12 + MODEL["int_period"]
+
+        with col3:
+            MODEL["multiple_run"] = st.checkbox("Run multiple scenarios?",
+                                                help="If checked, the model will run multiple scenarios with different random seeds")
+
+        with col4:
+            if MODEL["multiple_run"]:
+                MODEL["n_runs"] = st.number_input("Number of runs", min_value=1, max_value=300, step=1, value=1, placeholder="Type a number")
+
+                # st.slider("Number of runs", min_value=1, max_value=300, step=1, value=10,
+                #                             help="Number of simulation runs to average over")
+
+
+
+    if "b_df" not in st.session_state or "i_df" not in st.session_state or "n_months" not in st.session_state or "i_param" not in st.session_state or "n_runs" not in st.session_state or "int_period" not in st.session_state:
+        st.session_state.b_df = None
+        st.session_state.i_df = None
+        st.session_state.n_months = None
+        st.session_state.int_period = None
+        st.session_state.i_param = None
+        st.session_state.n_runs = None
+        st.session_state.model_finished = False
+
+    with st.form('Test'):
+        col1, col2 = st.columns(2)
+
+        with col1:
+            submitted = st.form_submit_button("🚀 Run Model",
+                                              help="Click this button to run the model with the selected settings")
+
+        with col2:
+            clear = st.form_submit_button("🧹 Clear All Settings",
+                                          help="Click this button and rerun the model to show the baseline scenario")
+
+        if clear:
+            i_flags, i_HSS, i_S, i_E = reset_flags(), reset_HSS(slider_params), reset_S(slider_params), reset_E()
+            st.session_state.model_finished = False
+            st.session_state.b_df = None
+            st.session_state.b_df_multiple = None
+            st.session_state.selected_outcomes = []
+            st.success("All settings have been reset! Please rerun the model with the new settings.")
+
+        if submitted:
+            st.session_state.model_finished = False
+            st.session_state.selected_outcomes = []
+
+            # Display progress status
+            status = st.empty()  # Placeholder for dynamic status messages
+            progress_bar = st.progress(0)  # Initialize progress bar
+
+            status.text("⏳ Running Model...")
+
+            # Time tracking variables
+            start_time = time.time()  # Record start time
+            avg_time_per_run = None  # Will store estimated time per run
+
+            ### MODEL PARAMETERS ###
+            n_months = MODEL["n_months"]
+            int_period = MODEL["int_period"]
+
+            if not MODEL["multiple_run"]:  # SINGLE RUN MODE
+                base_seed = np.random.default_rng().integers(low=0, high=1e6, size=1)[0]
+                rng_param = np.random.default_rng(base_seed)
+
+                b_param = get_parameters(rng = rng_param)
+                b_param = calculate_derived_parameters(b_param)
+                b_flags = reset_flags()
+                b_HSS = reset_HSS(slider_params)
+                b_S = reset_S(slider_params)
+                b_E = reset_E()
+                b_param.update({"E": b_E, "S": b_S, "HSS": b_HSS
+                })
+
+                rng_clone = np.random.default_rng(base_seed)
+                i_param = get_parameters(rng = rng_clone)
+                i_param = calculate_derived_parameters(i_param)
+                i_param.update({"E": i_E, "S": i_S, "HSS": i_HSS})
+
+                # Run baseline model only if not already stored
+                if st.session_state.b_df is None:
+                    status.text("⏳ Running Baseline Model...")
+                    rng_model = np.random.default_rng(base_seed)
+                    b_df, b_ind_outcomes, _ = run_model_dash(b_param, b_flags, n_months, int_period, base_seed = base_seed)
+                    #b_df, b_ind_outcomes, _ = run_model_dash(b_param, b_flags, n_months, int_period, rng = rng_model)
+                    b_ind_outcomes["Run"] = 1
+                    b_ind_outcomes["Scenario"] = "Baseline"
+                    st.session_state.b_df = b_df
+                    st.session_state.b_ind_outcomes = b_ind_outcomes
+                    status.text("✅ Baseline Model Completed!")
+
+                # Run intervention model
+                status.text("⏳ Running Intervention Model...")
+                rng_model = np.random.default_rng(base_seed)
+                i_df, i_ind_outcomes, _ = run_model_dash(i_param, i_flags, n_months, int_period, base_seed = base_seed)
+                #i_df, i_ind_outcomes, _ = run_model_dash(i_param, i_flags, n_months, int_period, rng = rng_model)
+                i_ind_outcomes["Run"] = 1
+                i_ind_outcomes["Scenario"] = "Intervention"
+
+                # Retrieve cached baseline results
+                b_df = st.session_state.b_df
+                b_ind_outcomes = st.session_state.b_ind_outcomes
+                st.session_state.b_param = b_param
+                st.session_state.i_param = i_param
+
+                # Update progress bar to 100%
+                progress_bar.progress(100)
+
+            else:  # MULTIPLE RUNS MODE
+                i_df, b_df, i_ind_outcomes, b_ind_outcomes = pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+                total_runs = MODEL["n_runs"]
+
+                seeds = np.random.default_rng(2025).integers(low=0, high=1e6, size=total_runs)
+
+                # Initialize Baseline Model Once if not stored
+                if st.session_state.b_df_multiple is None:
+                    status.text("⏳ Running Baseline Model for Multiple Runs...")
+
+                    temp_b_df = []  # Store results in list before concatenating (better performance)
+                    temp_b_ind_outcomes = []
+
+                    #for i in range(total_runs):
+                    for i, base_seed in enumerate(seeds):
+                        iter_start_time = time.time()
+
+                        # Reset flags and initialize parameters for each run
+                        rng_param = np.random.default_rng(base_seed)
+                        b_param = get_parameters(rng = rng_param)
+                        b_param = calculate_derived_parameters(b_param)
+                        #st.text(b_param)
+                        b_flags, b_HSS, b_S, b_E = reset_flags(), reset_HSS(slider_params), reset_S(slider_params), reset_E()
+                        b_param.update({"E": b_E, "S": b_S, "HSS": b_HSS})
+
+                        # Run baseline model only once per iteration
+                        rng_model = np.random.default_rng(base_seed)
+                        b_df_i, b_ind_outcomes_i, _ = run_model_dash(b_param, b_flags, n_months, int_period, base_seed = base_seed)
+                        #b_df_i, b_ind_outcomes_i, _ = run_model_dash(b_param, b_flags, n_months, int_period,
+                        #                                          rng=None)
+                        b_df_i["Run"] = i + 1
+                        b_ind_outcomes_i["Run"] = i + 1
+                        b_ind_outcomes_i["Scenario"] = "Baseline"
+                        temp_b_df.append(b_df_i)
+                        temp_b_ind_outcomes.append(b_ind_outcomes_i)
+
+                        # Time tracking & progress update
+                        iter_time_taken = time.time() - iter_start_time
+                        avg_time_per_run = iter_time_taken if avg_time_per_run is None else (
+                                                                                                        avg_time_per_run * i + iter_time_taken) / (
+                                                                                                        i + 1)
+                        remaining_time = avg_time_per_run * (total_runs - (i + 1))
+                        progress_bar.progress((i + 1) / total_runs)
+                        status.text(f"⏳ Running Baseline Model... {i + 1}/{total_runs} runs completed. "
+                                    f"Estimated time left: {remaining_time / 60:.1f} min.")
+                        # st.text(f"CPU usage: {psutil.cpu_percent()}%")
+                        # usage_per_core = psutil.cpu_percent(percpu=True)
+                        # for i, usage in enumerate(usage_per_core):
+                        #     st.text(f"Core {i}: {usage}%")
+                        #
+                        # def print_resource_usage(interval=1, repeat=10):
+                        #     process = psutil.Process(os.getpid())
+                        #
+                        #     for i in range(repeat):
+                        #         cpu = psutil.cpu_percent(interval=interval)
+                        #         mem_info = process.memory_info()
+                        #         mem_mb = mem_info.rss / (1024 ** 2)  # Convert bytes to MB
+                        #
+                        #         st.text(f"[{i + 1}] CPU Usage: {cpu:.1f}% | Memory Usage: {mem_mb:.2f} MB")
+                        #
+                        # print_resource_usage()
+
+                    # Store final baseline results in session state
+                    st.session_state.b_df_multiple = pd.concat(temp_b_df, ignore_index=True)
+                    st.session_state.b_ind_outcomes = pd.concat(temp_b_ind_outcomes, ignore_index=True)
+
+                    status.text("✅ Baseline Model Completed!")
+
+                # Retrieve cached baseline results
+                b_df = st.session_state.b_df_multiple
+                b_ind_outcomes = st.session_state.b_ind_outcomes
+
+                # Run Intervention Model for Each Run
+                temp_i_df = []
+                temp_i_ind_outcomes = []
+
+                #for i in range(total_runs):
+                for i, base_seed in enumerate(seeds):
+                    iter_start_time = time.time()
+
+                    # Reset flags and initialize parameters for each run
+                    rng_param = np.random.default_rng(base_seed)
+                    i_param = get_parameters(rng = rng_param)
+                    i_param = calculate_derived_parameters(i_param)
+                    #st.text(i_param)
+                    i_param.update({"E": i_E, "S": i_S, "HSS": i_HSS})
+
+                    # Run intervention model
+                    rng_model = np.random.default_rng(base_seed)
+                    i_df_i, i_ind_outcomes_i, _ = run_model_dash(i_param, i_flags, n_months, int_period, base_seed = base_seed)
+                    i_df_i["Run"] = i + 1
+                    i_ind_outcomes_i["Run"] = i + 1
+                    i_ind_outcomes_i["Scenario"] = "Intervention"
+                    temp_i_df.append(i_df_i)
+                    temp_i_ind_outcomes.append(i_ind_outcomes_i)
+
+                    # Time tracking & progress update
+                    iter_time_taken = time.time() - iter_start_time
+                    avg_time_per_run = iter_time_taken if avg_time_per_run is None else (
+                                                                                                    avg_time_per_run * i + iter_time_taken) / (
+                                                                                                    i + 1)
+                    remaining_time = avg_time_per_run * (total_runs - (i + 1))
+                    progress_bar.progress((i + 1) / total_runs)
+                    status.text(f"⏳ Running Intervention Model... {i + 1}/{total_runs} runs completed. "
+                                f"Estimated time left: {remaining_time / 60:.1f} min.")
+                    # st.text(f"CPU usage: {psutil.cpu_percent()}%")
+                    # usage_per_core = psutil.cpu_percent(percpu=True)
+                    # for i, usage in enumerate(usage_per_core):
+                    #     st.text(f"Core {i}: {usage}%")
+
+                # Store intervention results
+                i_df = pd.concat(temp_i_df, ignore_index=True)
+                i_ind_outcomes = pd.concat(temp_i_ind_outcomes, ignore_index=True)
+                status.text("✅ Model Run Completed!")
+
+            # Total execution time
+            total_time = time.time() - start_time
+            total_minutes = total_time / 60
+
+            # Store results in session state
+            st.session_state.b_df = b_df
+            st.session_state.i_df = i_df
+            st.session_state.b_ind_outcomes = b_ind_outcomes
+            st.session_state.i_ind_outcomes = i_ind_outcomes
+            st.session_state.n_months = n_months
+            st.session_state.int_period = int_period
+            st.session_state.b_param = b_param
+            st.session_state.i_param = i_param
+            st.session_state.n_runs = MODEL["n_runs"]
+            st.session_state.model_finished = True
+
+            # Success message with total runtime
+            st.success(f"🎉 Model execution completed! Total runtime: {total_minutes:.1f} minutes.")
+    if  st.session_state.model_finished == True:
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            download_option = st.checkbox("Download the individual outcomes")
+            if download_option:
+                if "b_ind_outcomes" in st.session_state and not st.session_state.b_ind_outcomes.empty:
+                    csv_baseline = st.session_state.b_ind_outcomes.to_csv(index=False)
+                    st.download_button(label="📥 Download Baseline.csv", data=csv_baseline, file_name="baseline.csv",
+                                       mime="text/csv")
+                else:
+                    st.warning("⚠️ Baseline data is not available. Please run the model first.")
+
+                scenario_name = st.text_input("**Enter Intervention Scenario Name:**", placeholder="e.g., Scenario_1")
+                st.session_state.scenario_name = scenario_name
+                # Ensure a scenario name is entered
+                if scenario_name:
+                    if "i_ind_outcomes" in st.session_state and not st.session_state.i_ind_outcomes.empty:
+                        file_name = f"{scenario_name}.csv"
+                        st.session_state.i_ind_outcomes["Scenario"] = scenario_name
+                        csv_intervention = st.session_state.i_ind_outcomes.to_csv(index=False)
+                        st.download_button(label=f"📥 Download {file_name}", data=csv_intervention, file_name=file_name,
+                                           mime="text/csv")
+                    else:
+                        st.warning("⚠️ Intervention data is not available. Please run the model first.")
+                else:
+                    st.warning("⚠️ Please enter a scenario name before downloading the intervention data.")
+
+
+if "b_df" in st.session_state and "i_df" in st.session_state and st.session_state.model_finished:
+    st.subheader("Select outcomes for visualization")
+
+    # Initialize session state for storing selected outcomes
+    if "selected_outcomes" not in st.session_state:
+        st.session_state.selected_outcomes = []
+
+    col1, col2 = st.columns([2, 1])
+
+    with col1:
+        col1_1, col1_2 = st.columns(2)
+
+        with col1_1:
+            category_options = ('System Features',
+                                'Process Indicators',
+                                'Implementation Outcomes',
+                                'Maternal Outcomes',
+                                'Neonatal Outcomes')
+
+            plot_category = st.selectbox(
+                label="(1) Select category of outcomes:",
+                options=category_options,
+                key="plot_category"
+            )
+
+        with col1_2:
+            # Define outcome options for each category
+            outcomes_dict = {
+                'System Features': (
+                    "Facility capacity ratio",
+                    "Labor force ratio",
+                    "Equipment inventory ratio",
+                ),
+                'Process Indicators': (
+                    "Distribution of live births",
+                    "High-risk pregnancies",
+                    "ANC rate",
+                    "C-section rate",
+                    "Normal referral",
+                    "Emergency transfer"
+                ),
+                'Implementation Outcomes': (
+                    "Cost Effectiveness",
+                    "DALYs",
+                    "DALYs averted"
+                ),
+                'Maternal Outcomes': (
+                    "Maternal complication rate",
+                    "Severe maternal outcomes",
+                    "Maternal mortality rate"
+                ),
+                'Neonatal Outcomes': (
+                    "Preterm rate",
+                    "Neonatal complication rate",
+                    "Neonatal mortality rate",
+                    "Stillbirth rate"
+                )
+            }
+
+            plot_options = outcomes_dict.get(plot_category, [])
+
+            selected_plot = st.selectbox(
+                label="(2) Select outcome of interest:",
+                options=plot_options,
+                key="selected_plot"
+            )
+
+    with col2:
+        st.markdown("### Actions")
+        # Button to add the selected outcome to visualization list
+        if st.button("➕ Add Outcome"):
+            if selected_plot and (selected_plot not in st.session_state.selected_outcomes):
+                st.session_state.selected_outcomes.append((plot_category, selected_plot))
+                st.rerun()  # Force UI to refresh to reflect added outcomes
+
+    st.markdown("---")
+
+    # Show selected outcomes
+    if st.session_state.selected_outcomes:
+        st.subheader("📌 Selected Outcomes")
+
+        for i, (category, outcome) in enumerate(st.session_state.selected_outcomes):
+            col1, col2 = st.columns([4, 1])
+            with col1:
+                st.markdown(f"**{category} → {outcome}**")
+            with col2:
+                if st.button(f"❌ Remove {i + 1}", key=f"remove_{i}"):
+                    st.session_state.selected_outcomes.pop(i)
+                    st.rerun()  # Refresh UI after removal
+
+        st.markdown("---")
+
+    else:
+        st.info("No outcomes selected yet. Please add at least one outcome.")
+
+if st.session_state.b_df is not None and st.session_state.i_df is not None:
+    # Use the stored dataframes instead of recalculating
+    b_df = st.session_state.b_df
+    i_df = st.session_state.i_df
+    n_months = st.session_state.n_months
+    int_period = st.session_state.int_period
+    i_param = st.session_state.i_param
+    n_runs = st.session_state.n_runs
+
+    if st.session_state.selected_outcomes:
+        for _, selected_plot in st.session_state.selected_outcomes:
+
+            ##Functions##
+            def prepare_indicator_df(df, indicator, n_months, n_runs, scenario):
+                indicator = np.concatenate(df[indicator].values).reshape(-1, 4)
+                df_indicator = pd.DataFrame(indicator, columns=['Home', 'L2/3', 'L4', 'L5'])
+                df_indicator['All'] = np.sum(df_indicator, axis=1)
+                df_indicator['Facilities'] = df_indicator['L2/3'] + df_indicator['L4'] + df_indicator['L5']
+                df_indicator['L4/5'] = df_indicator['L4'] + df_indicator['L5']
+                df_indicator = df_indicator.drop(columns=['L4', 'L5'])
+
+                df_indicator['Month'] = np.tile(np.arange(1, n_months+1), n_runs)
+                df_indicator['Run'] = np.repeat(np.arange(n_runs), n_months)
+                df_indicator['Scenario'] = scenario
+                #df_indicator = df_indicator.groupby(['Month', 'Scenario'], as_index=False).sum()
+                df_indicator = df_indicator.melt(id_vars=['Month', 'Run', 'Scenario'], var_name='Level', value_name='Counts')
+                return df_indicator
+
+            def prepare_chart_data(b_df, i_df, numerator, dominator, n_months, n_runs, multiplier):
+                b_df_ind = prepare_indicator_df(b_df, numerator, n_months, n_runs, 'Baseline')
+                i_df_ind = prepare_indicator_df(i_df, numerator, n_months, n_runs, 'Intervention')
+                df_ind = pd.concat([b_df_ind, i_df_ind], ignore_index=True)
+
+                b_df_lb = prepare_indicator_df(b_df, dominator, n_months, n_runs, 'Baseline')
+                i_df_lb = prepare_indicator_df(i_df, dominator, n_months, n_runs, 'Intervention')
+                df_lb = pd.concat([b_df_lb, i_df_lb], ignore_index=True)
+
+                df = df_ind.merge(df_lb, on=['Month', 'Run', 'Scenario', 'Level'], suffixes=('_ind', '_lb'))
+                df.columns = ['Month', 'Run', 'Scenario', 'Level', 'Counts', 'Denominator']
+                df['Rate'] = df['Counts'] / df['Denominator'] * multiplier
+                return df
+
+            def add_poisson_ci(df, multiplier, confidence=0.95):
+                alpha = 1 - confidence
+
+                # lower = 0 if df['Counts'] == 0 else stats.chi2.ppf(alpha / 2, 2 * df['Counts']) / 2
+                # upper = stats.chi2.ppf(1 - alpha / 2, 2 * (df['Counts'] + 1)) / 2
+                # Vectorized Poisson CI calculation
+                lower_bound = np.where(
+                    df['Counts'] == 0,
+                    0,
+                    stats.chi2.ppf(alpha / 2, 2 * df['Counts']) / 2
+                )
+                upper_bound = stats.chi2.ppf(1 - alpha / 2, 2 * (df['Counts'] + 1)) / 2
+
+                # Apply rates per 1,000 or 100,000 births
+                # df['Lower_rate'] = lower / df['Denominator'] * multiplier if df['Denominator'] > 0 else 0
+                # df['Upper_rate'] = upper / df['Denominator'] * multiplier if df['Denominator'] > 0 else 0
+                df['Lower_rate'] = np.where(df['Denominator'] > 0, lower_bound / df['Denominator'] * multiplier, 0)
+                df['Upper_rate'] = np.where(df['Denominator'] > 0, upper_bound / df['Denominator'] * multiplier, 0)
+                return df
+
+            def create_line_data(data, multiplier):
+                line_data = data[data['Scenario'] == 'Intervention'].copy()
+                # line_data = line_data.apply(add_poisson_ci, axis=1, multiplier=multiplier)
+                # line_data = line_data.apply(lambda x: round(x, 2) if x.name in ['Rate', 'Lower_rate', 'Upper_rate'] else x)
+
+                # Step 1: Add Poisson CI per run × month × level
+                line_data = add_poisson_ci(line_data, multiplier=multiplier)
+
+                # Step 2: Mean rate and mean bounds across runs
+                line_data = line_data.groupby(['Month', 'Level'], as_index=False).agg({
+                    'Rate': 'mean',
+                    'Lower_rate': 'mean',
+                    'Upper_rate': 'mean'
+                })
+
+                # Step 3: Add back Scenario label and round
+                line_data['Scenario'] = 'Intervention'
+                line_data[['Rate', 'Lower_rate', 'Upper_rate']] = line_data[['Rate', 'Lower_rate', 'Upper_rate']].round(
+                    2)
+                return line_data
+
+            def create_bar_data(data, multiplier):
+                # bar_data = data[data['Month'] > n_months - 12]
+                # bar_data = bar_data.groupby(['Scenario', 'Level'], as_index=False).sum()
+                # bar_data['Rate'] = bar_data['Counts'] / bar_data['Denominator'] * multiplier
+                # bar_data = bar_data.apply(add_poisson_ci, axis=1, multiplier=multiplier)
+                # bar_data = bar_data.apply(lambda x: round(x, 2) if x.name in ['Rate', 'Lower_rate', 'Upper_rate'] else x)
+
+                # Keep only the last year of simulation
+                #bar_data = data[data['Month'] > n_months - 12].copy()
+                bar_data = data.copy()
+                bar_data = bar_data.groupby(['Scenario', 'Run', 'Level'], as_index=False).agg({
+                    'Counts': 'sum',
+                    'Denominator': 'sum',
+                })
+                bar_data['Rate'] = bar_data['Counts'] / bar_data['Denominator'] * multiplier
+
+                # Step 1: Add Poisson CI per run × month × level
+                bar_data = add_poisson_ci(bar_data, multiplier=multiplier)
+
+                # Step 2: Taking average across runs and scenarios
+                bar_data = bar_data.groupby(['Scenario', 'Level'], as_index=False).agg({
+                    'Rate': 'mean',
+                    'Lower_rate': 'mean',
+                    'Upper_rate': 'mean'
+                })
+
+                # Step 3: Round for display
+                bar_data[['Rate', 'Lower_rate', 'Upper_rate']] = bar_data[['Rate', 'Lower_rate', 'Upper_rate']].round(2)
+                return bar_data
+
+            def line_chart_ci(line_data, title, ytitle, ydomain):
+                chart = (
+                        alt.Chart(line_data, title=title)
+                        .mark_line()
+                        .encode(
+                            x=alt.X("Month:Q", axis=alt.Axis(
+                                    title="Time since the start of intervention implementation (Months)",
+                                    titleFontSize=16, labelFontSize=14,)
+                                    ),
+                            y=alt.Y("Rate:Q", axis=alt.Axis(
+                                title=ytitle,
+                                titleFontSize=16, labelFontSize=14),
+                                    scale=alt.Scale(domain=ydomain)
+                                    ),
+                            color=alt.Color("Level", legend=alt.Legend(title="Level", titleFontSize=16, labelFontSize=14)),
+                            tooltip=["Month:N", "Level:N", "Rate:Q", "Lower_rate:Q", "Upper_rate:Q"]
+                        )
+                        + alt.Chart(line_data)
+                        .mark_area(opacity=0.2)
+                        .encode(
+                    x="Month:Q",
+                    y=alt.Y("Lower_rate:Q", axis=alt.Axis(title=ytitle, titleFontSize=16, labelFontSize=14)),
+                    y2="Upper_rate:Q",
+                    color=alt.Color("Level", legend=None),  # Match color to Scenario
+                    )
+                )
+
+                chart = chart.properties(width=700, height=400).interactive()
+                chart = chart.configure_title(
+                    anchor='middle', fontSize=18
+                )
+                return chart
+
+            def bar_chart_ci(bar_data, title, ytitle, ydomain):
+                num_facets = len(bar_data["Level"].unique())
+                layered_chart = (
+                        alt.Chart(bar_data)
+                        .mark_bar()
+                        .encode(
+                            x=alt.X("Scenario:N", axis=None),  # X-axis for Scenario
+                            y=alt.Y("Rate:Q", axis=alt.Axis(title=ytitle, titleFontSize=16, labelFontSize=14), scale=alt.Scale(domain=ydomain)),
+                            color=alt.Color("Scenario:N", legend=alt.Legend(title="Scenario", titleFontSize=16, labelFontSize=14)),  # Color by Scenario
+                            tooltip=["Scenario:N", "Level:N", "Rate:Q", "Lower_rate:Q", "Upper_rate:Q"]
+                        )
+                        + alt.Chart(bar_data)
+                        .mark_errorbar(color="black", ticks=True)  # Black color for error bars
+                        .encode(
+                    x=alt.X("Scenario:N"),  # Match bar chart X-axis
+                    y=alt.Y("Lower_rate:Q", axis=alt.Axis(title=ytitle, titleFontSize=16, labelFontSize=14)),  # Lower bound of the CI
+                    y2="Upper_rate:Q",  # Upper bound of the CI
+                    )
+                ).properties(width=int(600 / num_facets), height=300)  # Set width and height for each column
+
+                chart = layered_chart.facet(
+                    column=alt.Column(
+                        "Level:N",
+                        header=alt.Header(labelOrient="bottom", labelFontSize=14,
+                                          title="Delivery Location", titleOrient="bottom", titleFontSize=16)
+                    )
+                ).configure_facet(
+                        spacing=10  # Adjust spacing between columns to avoid crowding
+                ).interactive().properties(
+                    title=alt.TitleParams(text=title, anchor="middle", fontSize=18)
+                )
+
+                return chart
+
+            def line_chart_ci_matplotlib(line_data, title, ytitle, ydomain):
+                """
+                Create a line plot with confidence intervals using Matplotlib.
+                """
+                fig, ax = plt.subplots(figsize=(8, 5))  # Define figure size
+
+                # Define unique levels (categories)
+                levels = line_data["Level"].unique()
+                colors = sns.color_palette("tab10", len(levels))  # Use seaborn color palette
+
+                for i, level in enumerate(levels):
+                    subset = line_data[line_data["Level"] == level]
+                    ax.plot(subset["Month"], subset["Rate"], label=level, color=colors[i], linewidth=2)
+                    ax.fill_between(subset["Month"], subset["Lower_rate"], subset["Upper_rate"],
+                                    color=colors[i], alpha=0.2)  # Confidence interval shading
+
+                # Formatting
+                ax.set_xlabel("Time since the start of intervention implementation (Months)", fontsize=14)
+                ax.set_ylabel(ytitle, fontsize=14)
+                ax.set_ylim(ydomain)  # Set y-axis domain
+                ax.set_title(title, fontsize=16)
+                ax.legend(title="Level", fontsize=12)
+
+                plt.grid(True, linestyle="--", alpha=0.5)
+                plt.tight_layout()
+
+                return fig  # Return figure for saving
+
+            def bar_chart_ci_matplotlib(bar_data, title, ytitle, ydomain):
+                """
+                Create a bar chart with error bars using Matplotlib.
+                """
+                fig, ax = plt.subplots(figsize=(8, 5))  # Define figure size
+
+                # Define unique scenarios
+                scenarios = bar_data["Scenario"].unique()
+                levels = bar_data["Level"].unique()
+                colors = sns.color_palette("tab10", len(scenarios))
+
+                bar_width = 0.35  # Adjust bar width
+
+                # Create bars for each scenario
+                for i, scenario in enumerate(scenarios):
+                    subset = bar_data[bar_data["Scenario"] == scenario]
+                    x_positions = np.arange(len(subset))
+                    ax.bar(x_positions + i * bar_width, subset["Rate"], yerr=[subset["Rate"] - subset["Lower_rate"],
+                                                                              subset["Upper_rate"] - subset["Rate"]],
+                           capsize=5, label=scenario, color=colors[i], width=bar_width, alpha=0.8)
+
+                # Formatting
+                ax.set_xticks(np.arange(len(levels)) + bar_width / 2)
+                ax.set_xticklabels(levels, fontsize=12)
+                ax.set_xlabel("Delivery Location", fontsize=14)
+                ax.set_ylabel(ytitle, fontsize=14)
+                ax.set_ylim(ydomain)
+                ax.set_title(title, fontsize=16)
+                ax.legend(title="Scenario", fontsize=12)
+
+                plt.grid(True, linestyle="--", alpha=0.5)
+                plt.tight_layout()
+
+                return fig  # Return figure for saving
+
+            def Acum_DALY_df(indicator, dominator, multiplier):
+                # Prepare chart data
+                df_DALY = prepare_chart_data(b_df, i_df, indicator, dominator, n_months, n_runs, multiplier)
+
+                #filter out level = "All"
+                df_DALY = df_DALY[df_DALY['Level'] == 'All']
+
+                # Aggregate for Baseline and Intervention scenarios
+                df_DALY_base = df_DALY[df_DALY['Scenario'] == 'Baseline'].groupby(['Month'], as_index=False).sum()
+                df_DALY_int = df_DALY[df_DALY['Scenario'] == 'Intervention'].groupby(['Month'], as_index=False).sum()
+
+                # Calculate cumulative sums for Counts and LiveBirths
+                df_DALY_base['Cumulative_Counts'] = df_DALY_base['Counts'].cumsum()
+                df_DALY_base['Cumulative_Denominator'] = df_DALY_base['Denominator'].cumsum()
+                df_DALY_int['Cumulative_Counts'] = df_DALY_int['Counts'].cumsum()
+                df_DALY_int['Cumulative_Denominator'] = df_DALY_int['Denominator'].cumsum()
+
+                # Calculate cumulative rates for Baseline and Intervention
+                df_DALY_base['Rate'] = df_DALY_base['Cumulative_Counts'] / df_DALY_base['Cumulative_Denominator']
+                df_DALY_int['Rate'] = df_DALY_int['Cumulative_Counts'] / df_DALY_int['Cumulative_Denominator']
+
+                # Calculate cumulative DALYs averted
+                df_DALY_avt = df_DALY_base[['Month']].copy()
+                df_DALY_avt['Rate'] = (df_DALY_base['Rate'] - df_DALY_int['Rate']) * multiplier
+
+                return df_DALY_avt
+
+            def prepare_referral_df(df, indicator, n_months, n_runs, scenario):
+                indicator = np.concatenate(df[indicator].values).reshape(-1, 2)
+                df_indicator = pd.DataFrame(indicator, columns=['Low SES', 'High SES'])
+                df_indicator['All'] = np.sum(df_indicator, axis=1)
+
+                df_indicator['Month'] = np.tile(np.arange(1, n_months+1), n_runs)
+                df_indicator['Run'] = np.repeat(np.arange(n_runs), n_months)
+                df_indicator['Scenario'] = scenario
+                #df_indicator = df_indicator.groupby(['Month', 'Scenario'], as_index=False).sum()
+                df_indicator = df_indicator.melt(id_vars=['Month', 'Run', 'Scenario'], var_name='Level', value_name='Counts')
+                return df_indicator
+
+            def prepare_lb_df(df, indicator, n_months, n_runs, scenario):
+                indicator = np.concatenate(df[indicator].values).reshape(-1, 4).sum(axis=1)
+                df_indicator = pd.DataFrame(indicator, columns=['Denominator'])
+                df_indicator['Month'] = np.tile(np.arange(1, n_months+1), n_runs)
+                df_indicator['Run'] = np.repeat(np.arange(n_runs), n_months)
+                df_indicator['Scenario'] = scenario
+                #df_indicator = df_indicator.groupby(['Month', 'Scenario'], as_index=False).sum()
+                return df_indicator
+
+            def prepare_referral_data(b_df, i_df, indicator, n_months, n_runs, multiplier):
+                b_df_ind = prepare_referral_df(b_df, indicator, n_months, n_runs, 'Baseline')
+                i_df_ind = prepare_referral_df(i_df, indicator, n_months, n_runs, 'Intervention')
+                df_ind = pd.concat([b_df_ind, i_df_ind], ignore_index=True)
+
+                b_df_lb = prepare_lb_df(b_df, 'Live Births Final', n_months, n_runs, 'Baseline')
+                i_df_lb = prepare_lb_df(i_df, 'Live Births Final', n_months, n_runs, 'Intervention')
+                df_lb = pd.concat([b_df_lb, i_df_lb], ignore_index=True)
+
+                df_ind = df_ind.merge(df_lb, on=['Month', 'Run', 'Scenario'], suffixes=('_ind', '_lb'))
+                df_ind.columns = ['Month', 'Run', 'Scenario', 'Level', 'Counts', 'Denominator']
+                df_ind['Rate'] = df_ind['Counts'] / df_ind['Denominator'] * multiplier
+                return df_ind
+
+            if selected_plot == "Cost Effectiveness":
+                st.markdown("<h3 style='text-align: left;'>Cost per DALY averted</h3>",
+                            unsafe_allow_html=True)
+                tab1, tab2, tab3, tab4 = st.tabs(["Single Interventions (Drugs and Supplies)", "POCUS", "Intrapartum Sensors", "HSS Interventions"])
+
+                cost_dic = i_param['cost_dict']
+
+                cost_dic = {key: value / i_param['USD_to_Ksh'] for key, value in cost_dic.items()}  #convert Ksh to USD
+
+                def prepare_df_ce(df, indicator, n_months, n_runs, scenario, n_cols):
+                    indicator = np.concatenate(df[indicator].values).reshape(-1, n_cols)
+                    column_names = [f'Col{i + 1}' for i in range(n_cols)]
+                    df_indicator = pd.DataFrame(indicator, columns=column_names)
+                    df_indicator['All'] = np.sum(df_indicator, axis=1)
+                    df_indicator = df_indicator.drop(columns=column_names)
+                    df_indicator = df_indicator.rename(columns={'All': 'Counts'})
+                    df_indicator['Month'] = np.tile(np.arange(1, n_months+1), n_runs)
+                    df_indicator['Scenario'] = scenario
+                    df_indicator = df_indicator.groupby(['Month', 'Scenario'], as_index=False).mean()
+                    return df_indicator
+
+                def acum_ind_df(indicator, ncols, order):
+                    df_ind_base = prepare_df_ce(b_df, indicator, n_months, n_runs, 'Baseline', ncols)
+                    df_ind_int = prepare_df_ce(i_df, indicator, n_months, n_runs, 'Intervention', ncols)
+                    df_ind_base['Cumulative_Counts'] = df_ind_base['Counts'].cumsum()
+                    df_ind_int['Cumulative_Counts'] = df_ind_int['Counts'].cumsum()
+                    df_ind_diff = df_ind_base[['Month']].copy()
+                    df_ind_diff['Cum_Count_Diff'] = df_ind_base['Cumulative_Counts'] - df_ind_int['Cumulative_Counts'] if order == 'baseline first' else df_ind_int['Cumulative_Counts'] - df_ind_base['Cumulative_Counts']
+                    df_ind_diff['Count_Diff'] = df_ind_base['Counts'] - df_ind_int['Counts'] if order == 'baseline first' else df_ind_int['Counts'] - df_ind_base['Counts']
+                    df_ind_diff['Count_Int'] = df_ind_int['Counts']
+                    df_ind_diff['Cum_Count_Int'] = df_ind_int['Cumulative_Counts']
+                    return df_ind_diff
+
+                df_daly_avt = acum_ind_df('DALYs', 4,'baseline first')
+                df_daly_avt = df_daly_avt.rename(columns={'Cum_Count_Diff': 'DALY averted'})
+
+                months = list(range(1, n_months + 1))
+                # FIXED COST
+                def fixed_cost_by_month(cost_type):
+                    cost = np.array([(cost_type / int_period) * month \
+                                         if month <= int_period else cost_type for month in months
+                                     ])
+                    return cost
+
+                #COST FOR SINGLE INTERVENTIONS
+                df_pph_bundle = acum_ind_df('Mothers with pph_bundle', 4,'intervention first')
+                df_pph_bundle['Cost'] = df_pph_bundle['Cum_Count_Diff'] * cost_dic['pph_bundle']
+                df_pph_bundle['Cost'] = df_pph_bundle['Cost'].clip(lower=0) if i_flags["flag_pph_bundle"] == 1 else 0
+                df_pph_bundle['Type'] = "PPH bundle"
+
+                df_iv_iron = acum_ind_df('Mothers with iv_iron', 4,'intervention first')
+                df_iv_iron['Cost'] = df_iv_iron['Cum_Count_Diff'] * cost_dic['iv_iron'] if i_flags["flag_iv_iron"] == 1 else 0
+                df_iv_iron['Cost'] = df_iv_iron['Cost'].clip(lower=0)
+                df_iv_iron['Type'] = "IV iron"
+
+                df_MgSO4 = acum_ind_df('Mothers with MgSO4', 4,'intervention first')
+                df_MgSO4['Cost'] = df_MgSO4['Cum_Count_Diff'] * cost_dic['MgSO4'] if i_flags["flag_MgSO4"] == 1 else 0
+                df_MgSO4['Cost'] = df_MgSO4['Cost'].clip(lower=0)
+                df_MgSO4['Type'] = "MgSO4"
+
+                df_antibiotics = acum_ind_df('Mothers with antibiotics', 4,'intervention first')
+                df_antibiotics['Cost'] = df_antibiotics['Cum_Count_Diff'] * cost_dic['antibiotics']
+                df_antibiotics['Cost'] = df_antibiotics['Cost'].clip(lower=0) if i_flags["flag_antibiotics"] == 1 else 0
+                df_antibiotics['Type'] = "Antibiotics"
+
+                df_single_cost = pd.concat([df_pph_bundle, df_iv_iron, df_MgSO4, df_antibiotics], ignore_index=True)
+                df_single_cost_all = df_single_cost.groupby('Month', as_index=False)['Cost'].sum()
+
+                ##COST FOR POCUS
+                if i_flags['flag_us'] == 1:
+                    num_pocus = i_param['num_L4'] + i_param['num_L5'] + i_param['num_L2/3']  #each facility has one POCUS machine
+                    pocus_cost = cost_dic['POCUS'] * num_pocus
+                    cum_pocus_cost = np.array([pocus_cost for month in months])
+                else:
+                    num_pocus = 0
+                    cum_pocus_cost = np.zeros(n_months - 1)
+
+
+                # COST FOR 4+ANC VISITS
+                df_anc = acum_ind_df('ANC', 4, 'intervention first')
+                df_anc['Cost'] = df_anc['Cum_Count_Diff'] * cost_dic['SDR ANC']
+                df_anc['Cost'] = df_anc['Cost'].clip(lower=0)
+                df_anc['Type'] = "4+ANCs"
+
+                # COST FOR NORMAL DELIVERY
+                df_fac_delivery = acum_ind_df('Fac non-CS', 4,'intervention first')
+                df_fac_delivery['Cost'] = df_fac_delivery['Cum_Count_Diff'] * cost_dic['SDR Fac Delivery']
+                df_fac_delivery['Cost'] = df_fac_delivery['Cost'].clip(lower=0)
+                df_fac_delivery['Type'] = "Normal deliveries"
+
+                # COST FOR C-SECTION DELIVERY
+                df_cs_delivery = acum_ind_df('CS', 4,'intervention first')
+                df_cs_delivery['Cost'] = df_cs_delivery['Cum_Count_Diff'] * cost_dic['SDR CS Delivery']
+                df_cs_delivery['Cost'] = df_cs_delivery['Cost'].clip(lower=0)
+                df_cs_delivery['Type'] = "C-sections"
+
+                # COST FOR NORMAL REFERRALS
+                df_refer = acum_ind_df('Free_referrals', 2,'intervention first')
+                max_monthly_refers = max(df_refer['Count_Int'].max(), 0)
+                num_taxes_needed = math.ceil(max_monthly_refers / i_param['dispatches_per_vehicle'])
+                setup_cost = num_taxes_needed * cost_dic['SDR Taxi Setup']
+
+                cum_setup_cost = fixed_cost_by_month(setup_cost)
+                cum_monthly_cost = np.array([cost_dic['SDR Taxi Monthly'] * month for month in months]) * num_taxes_needed
+                cum_dispatch_cost = np.array([cost_dic['SDR Taxi Dispatch'] * df_refer['Cum_Count_Int'].loc[month - 1] for month in months])
+                cum_refer_cost = cum_setup_cost + cum_monthly_cost + cum_dispatch_cost
+                df_refer['Cost'] = cum_refer_cost
+                df_refer['Type'] = "Normal referrals"
+
+                # COST FOR EMERGENCY TRANSFERS - assuming all of them supported by facility-own ambulances
+                df_transfer = acum_ind_df("Emergency transfers", 4,'intervention first')
+                #max_monthly_transfers = max(df_transfer['Count_Int'].max(), 0)
+                max_monthly_transfers = max(df_transfer['Count_Diff'].max(), 0)
+                num_ambulances_needed = math.ceil(max_monthly_transfers / i_param['dispatches_per_vehicle'])
+                setup_cost = num_ambulances_needed * cost_dic['SDR Ambulance Setup']
+
+                cum_setup_cost = fixed_cost_by_month(setup_cost)
+                cum_monthly_cost = np.array([cost_dic['SDR Ambulance Monthly'] * month for month in months]) * num_ambulances_needed
+                cum_dispatch_cost = np.array([cost_dic['SDR Ambulance Dispatch'] * df_transfer['Cum_Count_Diff'].loc[month - 1] for month in months])
+                cum_dispatch_cost = np.maximum(cum_dispatch_cost, 0)
+                cum_transfer_cost = cum_setup_cost + cum_monthly_cost + cum_dispatch_cost
+                df_transfer['Cost'] = cum_transfer_cost
+                df_transfer['Type'] = "Emergency transfers"
+
+                # COST FOR WORKFORCE
+                df_surgical_labor = acum_ind_df('Surgical_actual', 2,'intervention first')
+                num_surgical_needed = max(df_surgical_labor['Count_Diff'].max(), 0)
+                monthly_surgical_salary = num_surgical_needed * cost_dic['SDR surgical staff']
+                cum_surgical_salary = np.array([monthly_surgical_salary * month for month in months])
+
+                df_nurse_labor = acum_ind_df('Nurse_actual', 2,'intervention first')
+                num_nurse_needed = max(df_nurse_labor['Count_Diff'].max(), 0)
+                monthly_nurse_salary = num_nurse_needed * cost_dic['SDR nurse staff']
+                cum_nurse_salary = np.array([monthly_nurse_salary * month for month in months])
+
+                df_anesthetist_labor = acum_ind_df('Anesthetist_actual', 2,'intervention first')
+                num_anesthetist_needed = max(df_anesthetist_labor['Count_Diff'].max(), 0)
+                monthly_anesthetist_salary = num_anesthetist_needed * cost_dic['SDR anesthetist']
+                cum_anesthetist_salary = np.array([monthly_anesthetist_salary * month for month in months])
+
+                cum_labor_cost = cum_surgical_salary + cum_nurse_salary + cum_anesthetist_salary
+                df_labor = pd.DataFrame({'Month': months,
+                                        'Cost': cum_labor_cost,
+                                        'Type': 'Direct Labor'
+                                        }
+                                    )
+
+                # COST FOR SENSORS
+                df_doppler = acum_ind_df('Doppler_Actual', 3,'intervention first')
+                num_doppler_needed = max(df_doppler['Count_Diff'].max(), 0)
+                doppler_cost = num_doppler_needed * cost_dic['Doppler']
+                cum_doppler_cost = np.array([doppler_cost for month in months])
+
+                df_ctg = acum_ind_df('CTG_Actual', 3,'intervention first')
+                num_ctg_needed = max(df_ctg['Count_Diff'].max(), 0)
+                ctg_cost = num_ctg_needed * cost_dic['CTG']
+                cum_ctg_cost = np.array([ctg_cost for month in months])
+                cum_sensor_cost = cum_doppler_cost + cum_ctg_cost
+                df_sensor = pd.DataFrame({'Month': months,
+                                        'Cost': cum_sensor_cost,
+                                        'Type': 'Intrapartum Sensors'
+                                        }
+                                    )
+
+                flag_single = 1 if (
+                            i_flags['flag_pph_bundle'] or i_flags['flag_iv_iron'] or i_flags['flag_MgSO4'] or i_flags[
+                        'flag_antibiotics']) else 0
+                flag_HSS = 1 if i_flags['flag_SDR'] else 0
+                flag_pocus = 1 if i_flags['flag_us'] else 0
+                flag_sensor = 1 if i_flags['flag_intrasensor'] else 0
+
+                with tab1:
+                    if flag_single and not flag_HSS and not flag_pocus and not flag_sensor:
+                        df_cost = pd.concat([df_pph_bundle, df_iv_iron, df_MgSO4, df_antibiotics], ignore_index=True)
+                        df_cost_all = df_cost.groupby('Month', as_index=False)['Cost'].sum()
+                        df_ce = df_daly_avt.copy()
+                        df_ce['Cost per DALY averted'] = df_cost_all['Cost'] / df_daly_avt['DALY averted']
+
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            #plot cost effectiveness over month
+                            chart = (
+                                alt.Chart(df_ce)
+                                .mark_line()
+                                .encode(
+                                    x=alt.X("Month:Q", title="Time since the start of intervention implementation (Months)"),
+                                    y=alt.Y("Cost per DALY averted:Q", axis=alt.Axis(title="USD")),
+                                    tooltip=["Month:N", "Cost per DALY averted:Q"]
+                                )
+                                .properties(width=700, height=400)
+                                .interactive()
+                            )
+
+                            chart = chart.properties(
+                                title=alt.TitleParams(text="Accumulated Cost per DALY averted", anchor="middle")
+                            )
+
+                            st.altair_chart(chart)
+
+                            num = df_ce['Cost per DALY averted'].iloc[-1]
+                            st.markdown(
+                                f"<p style='font-size:30px;'>Cost per DALY averted by the end: USD {num:.0f}</p>",
+                                unsafe_allow_html=True
+                            )
+
+                        with col2:
+                            #plot cost by type over month
+                            chart = (
+                                alt.Chart(df_cost)
+                                .mark_line()
+                                .encode(
+                                    x=alt.X("Month:Q", title="Time since the start of intervention implementation (Months)"),
+                                    y=alt.Y("Cost:Q", axis=alt.Axis(title="USD")),
+                                    color=alt.Color("Type:N", legend=alt.Legend(title="Intervention")),
+                                    tooltip=["Month:N", "Type:N", "Cost:Q"]
+                                )
+                                .properties(width=700, height=400)
+                                .interactive()
+                            )
+
+                            chart = chart.properties(
+                                title=alt.TitleParams(text="Accumulated Cost by Single Interventions", anchor="middle")
+                            )
+
+                            st.altair_chart(chart)
+
+                            num_mothers = np.sum(np.array([23729, 18196, 20709, 5127])) / 12 * n_months
+
+                            cost_pph_bundle = df_cost[df_cost['Type'] == 'PPH bundle']['Cost'].iloc[-1] / num_mothers
+                            cost_iv_iron = df_cost[df_cost['Type'] == 'IV iron']['Cost'].iloc[-1] / num_mothers
+                            cost_MgSO4 = df_cost[df_cost['Type'] == 'MgSO4']['Cost'].iloc[-1] / num_mothers
+                            cost_antibiotics = df_cost[df_cost['Type'] == 'Antibiotics']['Cost'].iloc[-1] / num_mothers
+
+                            st.markdown(
+                                f"<p style='font-size:30px;'>Accumulated Cost for {num_mothers:.0f} dyads over {n_months} months</p>"
+                                f"<p style='font-size:24px;'>PPH bundle: USD {cost_pph_bundle:.2f} per dyad</p>"
+                                f"<p style='font-size:24px;'>IV iron infusion: USD {cost_iv_iron:.2f} per dyad</p>"
+                                f"<p style='font-size:24px;'>MgSO4: USD {cost_MgSO4:.2f} per dyad</p>"
+                                f"<p style='font-size:24px;'>Antibiotics: USD {cost_antibiotics:.2f} per dyad</p>"
+                                ,
+                                unsafe_allow_html=True
+                            )
+                    else:
+                        st.markdown("<p style='font-size:24px;'>Please only adjust sliders under Treatment interventions (Drugs and Supplies) to view cost effectiveness</p>",
+                                    unsafe_allow_html=True)
+
+                with tab2:
+                    if flag_pocus and not flag_HSS and not flag_single and not flag_sensor:
+                        df_pocus_ce = pd.DataFrame({'Month': months,
+                                                    'Cost': cum_pocus_cost,
+                                                    'DALY averted': df_daly_avt['DALY averted']
+                                                    })
+
+                        df_pocus_ce['Cost per DALY averted'] = df_pocus_ce['Cost'] / df_pocus_ce['DALY averted']
+
+                        chart = (alt.Chart(
+                            df_pocus_ce
+                        ).mark_line().encode(
+                            x=alt.X('Month:Q', title='Month'),
+                            y=alt.Y('Cost per DALY averted:Q', axis=alt.Axis(title='USD')),
+                            tooltip=['Month:N', 'Cost per DALY averted:Q']
+                        ).properties(width=700, height=400).interactive())
+
+                        chart = chart.properties(
+                            title=alt.TitleParams(text='Accumulated Cost per DALY averted', anchor='middle')
+                        )
+
+                        st.altair_chart(chart)
+
+                        num = df_pocus_ce['Cost per DALY averted'].iloc[-1]
+                        st.markdown(
+                            f"<p style='font-size:30px;'>Cost per DALY averted by the end: USD {num:.0f} with {num_pocus} POCUS machines</p>",
+                            unsafe_allow_html=True
+                        )
+                    else:
+                        st.markdown("<p style='font-size:24px;'>Please only adjust sliders under AI portable ultrasound to view cost effectiveness</p>",
+                                    unsafe_allow_html=True)
+
+                with tab3:
+                    if flag_sensor and not flag_HSS and not flag_single and not flag_pocus:
+                        df_sensor_ce = pd.DataFrame({'Month': months,
+                                                    'Cost': cum_sensor_cost,
+                                                    'DALY averted': df_daly_avt['DALY averted']
+                                                    })
+
+                        df_sensor_ce['Cost per DALY averted'] = df_sensor_ce['Cost'] / df_sensor_ce['DALY averted']
+
+                        chart = (alt.Chart(
+                            df_sensor_ce
+                        ).mark_line().encode(
+                            x=alt.X('Month:Q', title='Month'),
+                            y=alt.Y('Cost per DALY averted:Q', axis=alt.Axis(title='USD')),
+                            tooltip=['Month:N', 'Cost per DALY averted:Q']
+                        ).properties(width=700, height=400).interactive())
+
+                        chart = chart.properties(
+                            title=alt.TitleParams(text='Accumulated Cost per DALY averted', anchor='middle')
+                        )
+
+                        st.altair_chart(chart)
+
+                        num = df_sensor_ce['Cost per DALY averted'].iloc[-1]
+                        st.markdown(
+                            f"<p style='font-size:30px;'>Cost per DALY averted by the end: USD {num:.0f} with {num_doppler_needed:.0f} Doppler machines and {num_ctg_needed:.0f} CTG machines</p>",
+                            unsafe_allow_html=True
+                        )
+                    else:
+                        st.markdown("<p style='font-size:24px;'>Please only adjust sliders under Intrapartum sensors to view cost effectiveness</p>",
+                                    unsafe_allow_html=True)
+
+                with tab4:
+                    if flag_HSS:
+                        added_capacity = i_param["Capacity"] * i_param["HSS"]["capacity_added"]
+                        beds_needed = math.ceil (added_capacity / (83 / 12))
+
+                        fixed_cost_total = cost_dic['SDR PM'] + cost_dic['SDR Infra'] * beds_needed + cost_dic['SDR Equip']
+
+                        # CONTINOUS COST
+                        def maintain_cost_PM(cost_type):
+                            cost = np.array([(cost_type / 12) * month \
+                                        if month > int_period else 0 for month in months
+                                    ])
+                            return cost
+
+                        maintain_cost_PM = maintain_cost_PM(cost_dic['SDR PM2'])
+
+                        df_sdr_cost = pd.DataFrame({'Month': months,
+                                                    'Program Management': fixed_cost_by_month(cost_dic['SDR PM']) + maintain_cost_PM,
+                                                    'Infrastructure': fixed_cost_by_month(cost_dic['SDR Infra'] * beds_needed),
+                                                    'Equipment': fixed_cost_by_month(cost_dic['SDR Equip']) * i_flags['flag_equipment'] + df_sensor['Cost'],
+                                                    'Direct Labor': df_labor['Cost'],
+                                                    'Normal Referrals': df_refer['Cost'],
+                                                    'Emergency Transfers': df_transfer['Cost'],
+                                                    'ANCs': df_anc['Cost'],
+                                                    'Single Interventions': df_single_cost_all['Cost'],
+                                                    'Normal Deliveries': df_fac_delivery['Cost'],
+                                                    'C-sections': df_cs_delivery['Cost']
+                                                    }
+                                                   )
+
+                        SDR_cost_total = df_sdr_cost['Program Management'] + df_sdr_cost['Infrastructure'] \
+                                         + df_sdr_cost['Equipment'] + df_sdr_cost['Direct Labor'] \
+                                         + df_sdr_cost['Normal Referrals'] + df_sdr_cost['Emergency Transfers'] \
+                                         + df_sdr_cost['ANCs'] + df_sdr_cost['Single Interventions'] \
+                                         + df_sdr_cost['Normal Deliveries'] + df_sdr_cost['C-sections']
+
+                        df_sdr_cost = df_sdr_cost.melt(id_vars=['Month'], var_name='Type', value_name='Cost')
+
+                        df_sdr_ce = pd.DataFrame({'Month': months,
+                                                    'Cost': SDR_cost_total,
+                                                    'DALY averted': df_daly_avt['DALY averted']
+                                                    })
+
+                        df_sdr_ce['Cost per DALY averted'] = df_sdr_ce['Cost'] / df_sdr_ce['DALY averted']
+
+                        # Replace negative values with None (to exclude them from the plot)
+                        df_sdr_ce.loc[df_sdr_ce['Cost per DALY averted'] < 0, 'Cost per DALY averted'] = None
+
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            # plot cost effectiveness over month
+                            chart = (
+                                alt.Chart(df_sdr_ce)
+                                .mark_line()
+                                .encode(
+                                    x=alt.X("Month:Q", title="Time since the start of intervention implementation (Months)"),
+                                    y=alt.Y("Cost per DALY averted:Q", axis=alt.Axis(title="Cost per DALY averted in USD")),
+                                    tooltip=["Month:N", "Cost per DALY averted:Q"]
+                                )
+                                .properties(width=700, height=400)
+                                .interactive()
+                            )
+
+                            chart = chart.properties(
+                                title=alt.TitleParams(text="Accumulated Cost per DALY averted", anchor="middle")
+                            )
+
+                            st.altair_chart(chart)
+
+                            num = df_sdr_ce['Cost per DALY averted'].iloc[-1]
+                            st.markdown(
+                                f"<p style='font-size:30px;'>Cost per DALY averted by the end: USD {num:.0f}</p>",
+                                unsafe_allow_html=True
+                            )
+
+
+                            def cost_per_daly_matplotlib(df_sdr_ce):
+                                fig, ax = plt.subplots(figsize=(8, 5))  # Define figure size
+
+                                # Plot the cost per DALY averted
+                                ax.plot(df_sdr_ce["Month"], df_sdr_ce["Cost per DALY averted"], linewidth=2,
+                                        color="tab:blue")
+
+                                # Labels and Title
+                                ax.set_xlabel("Time since the start of intervention implementation (Months)",
+                                              fontsize=14)
+                                ax.set_ylabel("Cost per DALY averted in USD", fontsize=14)
+                                ax.set_title("Accumulated Cost per DALY Averted", fontsize=16)
+
+                                # Grid, Formatting, and Layout
+                                ax.grid(True, linestyle="--", alpha=0.5)
+                                plt.xticks(fontsize=12)
+                                plt.yticks(fontsize=12)
+                                plt.tight_layout()
+
+                                return fig
+
+
+                            # fig = cost_per_daly_matplotlib(df_sdr_ce)
+                            # st.pyplot(fig)  # Show plot in Streamlit
+                            #
+                            # # Enable Download of the Chart
+                            # img_buffer = io.BytesIO()
+                            # fig.savefig(img_buffer, format="png", dpi=300)
+                            # st.download_button(label="Download Cost per DALY Averted Plot", data=img_buffer.getvalue(),
+                            #                    file_name="cost_per_daly.png", mime="image/png",
+                            #                    key="download_cost_daly")
+
+                        with col2:
+                            # plot cost by type over month
+                            chart = (
+                                alt.Chart(df_sdr_cost)
+                                .mark_line()
+                                .encode(
+                                    x=alt.X("Month:Q", title="Time since the start of intervention implementation (Months)"),
+                                    y=alt.Y("Cost:Q", axis=alt.Axis(title="USD")),
+                                    color=alt.Color("Type:N", legend=alt.Legend(title="Intervention")),
+                                    tooltip=["Month:N", "Type:N", "Cost:Q"]
+                                )
+                                .properties(width=700, height=400)
+                                .interactive()
+                            )
+
+                            chart = chart.properties(
+                                title=alt.TitleParams(text="Accumulated Cost by SDR Interventions", anchor="middle")
+                            )
+
+                            st.altair_chart(chart)
+
+                            cost_pm = df_sdr_cost[df_sdr_cost['Type'] == 'Program Management']['Cost'].iloc[-1]
+                            cost_infra = df_sdr_cost[df_sdr_cost['Type'] == 'Infrastructure']['Cost'].iloc[-1]
+                            cost_equip = df_sdr_cost[df_sdr_cost['Type'] == 'Equipment']['Cost'].iloc[-1]
+                            cost_labor = df_sdr_cost[df_sdr_cost['Type'] == 'Direct Labor']['Cost'].iloc[-1]
+                            cost_refer = df_sdr_cost[df_sdr_cost['Type'] == 'Normal Referrals']['Cost'].iloc[-1]
+                            cost_transfer = df_sdr_cost[df_sdr_cost['Type'] == 'Emergency Transfers']['Cost'].iloc[-1]
+                            cost_single = df_sdr_cost[df_sdr_cost['Type'] == 'Single Interventions']['Cost'].iloc[-1]
+                            cost_anc = df_sdr_cost[df_sdr_cost['Type'] == 'ANCs']['Cost'].iloc[-1]
+                            cost_normal = df_sdr_cost[df_sdr_cost['Type'] == 'Normal Deliveries']['Cost'].iloc[-1]
+                            cost_cs = df_sdr_cost[df_sdr_cost['Type'] == 'C-sections']['Cost'].iloc[-1]
+
+                            st.markdown(
+                                f"<p style='font-size:30px;'>Accumulated Cost by SDR Interventions</p>"
+                                f"<p style='font-size:24px;'>Program Management: USD {cost_pm:.0f}</p>"
+                                f"<p style='font-size:24px;'>Infrastructure: USD {cost_infra:.0f} for expanding {beds_needed} beds</p>"
+                                f"<p style='font-size:24px;'>Equipment: USD {cost_equip:.0f}, including {num_doppler_needed:.0f} Doppler machines and {num_ctg_needed:.0f} CTG machines</p>"
+                                f"<p style='font-size:24px;'>Direct Labor: USD {cost_labor:.0f} with additional {num_surgical_needed:.0f} surgical staff, {num_nurse_needed:.0f} nurses/midwifes, and {num_anesthetist_needed:.0f} anesthetists</p>"
+                                f"<p style='font-size:24px;'>Normal Referrals: USD {cost_refer:.0f} with {num_taxes_needed:.0f} taxis</p>"
+                                f"<p style='font-size:24px;'>Emergency Transfers: USD {cost_transfer:.0f} with {num_ambulances_needed:.0f} ambulances</p>"
+                                f"<p style='font-size:24px;'>Single Interventions: USD {cost_single:.0f}</p>"
+                                f'<p style="font-size:24px;">ANCs: USD {cost_anc:.0f}</p>'
+                                f'<p style="font-size:24px;">Normal Deliveries: USD {cost_normal:.0f}</p>'
+                                f'<p style="font-size:24px;">C-sections: USD {cost_cs:.0f}</p>'
+                                ,
+                                unsafe_allow_html=True
+                            )
+
+                        col3, col4, col5, col6 = st.columns(4)
+                        with col3:
+                            scenario_name = st.text_input("**Enter Intervention Scenario Name:**", placeholder="e.g., Scenario_1")
+
+                            # Ensure a scenario name is entered
+                            if scenario_name:
+                                file_name1 = f"{scenario_name}ICER.csv"
+                                csv_sdr_ce = df_sdr_ce.to_csv(index=False)
+                                st.download_button(label=f"📥 Download {file_name1}", data=csv_sdr_ce,
+                                                   file_name=file_name1,
+                                                   mime="text/csv")
+                                file_name2 = f"{scenario_name}COST.csv"
+                                csv_sdr_cost = df_sdr_cost.to_csv(index=False)
+                                st.download_button(label=f"📥 Download {file_name2}", data=csv_sdr_cost,
+                                                   file_name=file_name2,
+                                                   mime="text/csv")
+
+                    else:
+                        st.markdown("<p style='font-size:24px;'>Please adjust sliders under Health System Strengthening (HSS) Interventions to view cost effectiveness</p>",
+                                    unsafe_allow_html=True)
+                        st.markdown("<p style='font-size:18px;'>---Sliders under single interventions can also be adjusted together to see combined cost effectiveness</p>",
+                                    unsafe_allow_html=True)
+
+            if selected_plot == "Labor force ratio":
+                st.markdown("<h3 style='text-align: left;'>Labor force ratio</h3>",
+                            unsafe_allow_html=True)
+
+                def prepare_indicator_df(df, indicator, level, n_months, n_runs, scenario):
+                    df_indicator = np.concatenate(df[indicator].values).reshape(-1, 2)
+                    df_indicator = pd.DataFrame(df_indicator, columns=['L4', 'L5'])
+                    if level == 0:
+                        df_indicator = df_indicator[['L4']]
+                    else:
+                        df_indicator = df_indicator[['L5']]
+                    df_indicator['Month'] = np.tile(np.arange(1, n_months+1), n_runs)
+                    df_indicator['Scenario'] = scenario
+                    df_indicator = df_indicator.groupby(['Month', 'Scenario'], as_index=False).mean()
+                    return df_indicator
+
+                def prepare_chart_data(b_df, i_df, indicator, level, n_months, n_runs):
+                    b_df_ind = prepare_indicator_df(b_df, indicator, level, n_months, n_runs, 'Baseline')
+                    i_df_ind = prepare_indicator_df(i_df, indicator, level, n_months, n_runs, 'Intervention')
+                    df_ind = pd.concat([b_df_ind, i_df_ind], ignore_index=True)
+                    return df_ind
+
+                def plot_labor(df, title, yvariable, ytitle, ymax):
+                    chart = (
+                        alt.Chart(df)
+                        .mark_line()
+                        .encode(
+                            x=alt.X("Month:Q", title="Time since the start of intervention implementation (Months)"),
+                            y=alt.Y(yvariable, axis=alt.Axis(title=ytitle), scale=alt.Scale(domain=[0, ymax])),
+                            color=alt.Color("Scenario:N", legend=alt.Legend(title="Scenario")),
+                            tooltip=["Month:N", "Scenario:N", yvariable]
+                        )
+                        .properties(width=600, height=400)
+                        .interactive()
+                    )
+                    chart = chart.properties(
+                        title=alt.TitleParams(text=title, anchor="middle")
+                    )
+                    return chart
+
+
+                tab1, tab2, tab3 = st.tabs(["Surgical staff", "Nurse staff", "Anesthetist staff"])
+
+                with tab1:
+                    df_surgical_ratio_l4 = prepare_chart_data(b_df, i_df, 'Surgical_ratio', 0, n_months, n_runs)
+                    df_surgical_ratio_l5 = prepare_chart_data(b_df, i_df, 'Surgical_ratio', 1, n_months, n_runs)
+                    df_surgical_actual_l4 = prepare_chart_data(b_df, i_df, 'Surgical_actual', 0, n_months, n_runs)
+                    df_surgical_actual_l5 = prepare_chart_data(b_df, i_df, 'Surgical_actual', 1, n_months, n_runs)
+                    df_surgical_needed_l4 = prepare_chart_data(b_df, i_df, 'Surgical_needed', 0, n_months, n_runs)
+                    df_surgical_needed_l5 = prepare_chart_data(b_df, i_df, 'Surgical_needed', 1, n_months, n_runs)
+
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        ymax = max(df_surgical_ratio_l4['L4'].max(), df_surgical_ratio_l5['L5'].max())
+                        chart1 = plot_labor(df_surgical_ratio_l4, "Ratio of surgical staff (actual versus needed) at L4", "L4", "Ratio", ymax)
+                        st.altair_chart(chart1)
+                        st.markdown("~~~")
+                        chart2 = plot_labor(df_surgical_ratio_l5, "Ratio of surgical staff (actual versus needed) at L5", "L5", "Ratio", ymax)
+                        st.altair_chart(chart2)
+                    with col2:
+                        ymax = df_surgical_needed_l4['L4'].max()
+                        chart1 = plot_labor(df_surgical_actual_l4, "Actual surgical staff at L4", "L4", "# Surgical staff", ymax)
+                        st.altair_chart(chart1)
+                        st.markdown("~~~")
+                        ymax = df_surgical_needed_l5['L5'].max()
+                        chart2 = plot_labor(df_surgical_actual_l5, "Actual surgical staff at L5", "L5", "# Surgical staff", ymax)
+                        st.altair_chart(chart2)
+                    with col3:
+                        ymax = df_surgical_needed_l4['L4'].max()
+                        chart1 = plot_labor(df_surgical_needed_l4, "Needed surgical staff at L4", "L4", "# Surgical staff", ymax)
+                        st.altair_chart(chart1)
+                        st.markdown("~~~")
+                        ymax = df_surgical_needed_l5['L5'].max()
+                        chart2 = plot_labor(df_surgical_needed_l5, "Needed surgical staff at L5", "L5", "# Surgical staff", ymax)
+                        st.altair_chart(chart2)
+
+                with tab2:
+                    df_nurse_ratio_l4 = prepare_chart_data(b_df, i_df, 'Nurse_ratio', 0, n_months, n_runs)
+                    df_nurse_ratio_l5 = prepare_chart_data(b_df, i_df, 'Nurse_ratio', 1, n_months, n_runs)
+                    df_nurse_actual_l4 = prepare_chart_data(b_df, i_df, 'Nurse_actual', 0, n_months, n_runs)
+                    df_nurse_actual_l5 = prepare_chart_data(b_df, i_df, 'Nurse_actual', 1, n_months, n_runs)
+                    df_nurse_needed_l4 = prepare_chart_data(b_df, i_df, 'Nurse_needed', 0, n_months, n_runs)
+                    df_nurse_needed_l5 = prepare_chart_data(b_df, i_df, 'Nurse_needed', 1, n_months, n_runs)
+
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        ymax = max(df_nurse_ratio_l4['L4'].max(), df_nurse_ratio_l5['L5'].max())
+                        chart1 = plot_labor(df_nurse_ratio_l4, "Ratio of nurse staff (actual versus needed) at L4", "L4", "Ratio", ymax)
+                        st.altair_chart(chart1)
+                        st.markdown("~~~")
+                        chart2 = plot_labor(df_nurse_ratio_l5, "Ratio of nurse staff (actual versus needed) at L5", "L5", "Ratio", ymax)
+                        st.altair_chart(chart2)
+                    with col2:
+                        ymax = df_nurse_needed_l4['L4'].max()
+                        chart1 = plot_labor(df_nurse_actual_l4, "Actual nurse staff at L4", "L4", "# Nurse staff", ymax)
+                        st.altair_chart(chart1)
+                        st.markdown("~~~")
+                        ymax = df_nurse_needed_l5['L5'].max()
+                        chart2 = plot_labor(df_nurse_actual_l5, "Actual nurse staff at L5", "L5", "# Nurse staff", ymax)
+                        st.altair_chart(chart2)
+                    with col3:
+                        ymax = df_nurse_needed_l4['L4'].max()
+                        chart1 = plot_labor(df_nurse_needed_l4, "Needed nurse staff at L4", "L4", "# Nurse staff", ymax)
+                        st.altair_chart(chart1)
+                        st.markdown("~~~")
+                        ymax = df_nurse_needed_l5['L5'].max()
+                        chart2 = plot_labor(df_nurse_needed_l5, "Needed nurse staff at L5", "L5", "# Nurse staff", ymax)
+                        st.altair_chart(chart2)
+
+                with tab3:
+                    df_anesthetist_ratio_l4 = prepare_chart_data(b_df, i_df, 'Anesthetist_ratio', 0, n_months, n_runs)
+                    df_anesthetist_ratio_l5 = prepare_chart_data(b_df, i_df, 'Anesthetist_ratio', 1, n_months, n_runs)
+                    df_anesthetist_actual_l4 = prepare_chart_data(b_df, i_df, 'Anesthetist_actual', 0, n_months, n_runs)
+                    df_anesthetist_actual_l5 = prepare_chart_data(b_df, i_df, 'Anesthetist_actual', 1, n_months, n_runs)
+                    df_anesthetist_needed_l4 = prepare_chart_data(b_df, i_df, 'Anesthetist_needed', 0, n_months, n_runs)
+                    df_anesthetist_needed_l5 = prepare_chart_data(b_df, i_df, 'Anesthetist_needed', 1, n_months, n_runs)
+
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        ymax = max(df_anesthetist_ratio_l4['L4'].max(), df_anesthetist_ratio_l5['L5'].max())
+                        chart1 = plot_labor(df_anesthetist_ratio_l4, "Ratio of anesthetist staff (actual versus needed) at L4", "L4", "Ratio", ymax)
+                        st.altair_chart(chart1)
+                        st.markdown("~~~")
+                        chart2 = plot_labor(df_anesthetist_ratio_l5, "Ratio of anesthetist staff (actual versus needed) at L5", "L5", "Ratio", ymax)
+                        st.altair_chart(chart2)
+                    with col2:
+                        ymax = df_anesthetist_needed_l4['L4'].max()
+                        chart1 = plot_labor(df_anesthetist_actual_l4, "Actual anesthetist staff at L4", "L4", "# Anesthetist staff", ymax)
+                        st.altair_chart(chart1)
+                        st.markdown("~~~")
+                        ymax = df_anesthetist_needed_l4['L4'].max()
+                        chart2 = plot_labor(df_anesthetist_actual_l5, "Actual anesthetist staff at L5", "L5", "# Anesthetist staff", ymax)
+                        st.altair_chart(chart2)
+                    with col3:
+                        ymax = df_anesthetist_needed_l4['L4'].max()
+                        chart1 = plot_labor(df_anesthetist_needed_l4, "Needed anesthetist staff at L4", "L4", "# Anesthetist staff", ymax)
+                        st.altair_chart(chart1)
+                        st.markdown("~~~")
+                        ymax = df_anesthetist_needed_l4['L4'].max()
+                        chart2 = plot_labor(df_anesthetist_needed_l5, "Needed anesthetist staff at L5", "L5", "# Anesthetist staff", ymax)
+                        st.altair_chart(chart2)
+
+            if selected_plot == "Equipment inventory ratio":
+                st.markdown("<h3 style='text-align: left;'>Equipment inventory ratio</h3>",
+                              unsafe_allow_html=True)
+
+                def prepare_indicator_df(df, indicator, level, n_months, n_runs, scenario):
+                    df_indicator = np.concatenate(df[indicator].values).reshape(-1, 3)
+                    df_indicator = pd.DataFrame(df_indicator, columns=['L2/3', 'L4', 'L5'])
+                    if level == 0:
+                        df_indicator = df_indicator[['L2/3']]
+                    elif level == 1:
+                        df_indicator = df_indicator[['L4']]
+                    else:
+                        df_indicator = df_indicator[['L5']]
+                    df_indicator['Month'] = np.tile(np.arange(1, n_months+1), n_runs)
+                    df_indicator['Scenario'] = scenario
+                    df_indicator = df_indicator.groupby(['Month', 'Scenario'], as_index=False).mean()
+                    return df_indicator
+
+                def prepare_chart_data(b_df, i_df, indicator, level, n_months, n_runs):
+                    b_df_ind = prepare_indicator_df(b_df, indicator, level, n_months, n_runs, 'Baseline')
+                    i_df_ind = prepare_indicator_df(i_df, indicator, level, n_months, n_runs, 'Intervention')
+                    df_ind = pd.concat([b_df_ind, i_df_ind], ignore_index=True)
+                    return df_ind
+
+                def plot_equipment(df, title, yvariable, ytitle, ymax):
+                    chart = (
+                        alt.Chart(df)
+                        .mark_line()
+                        .encode(
+                            x=alt.X("Month:Q", title="Time since the start of intervention implementation (Months)"),
+                            y=alt.Y(yvariable, axis=alt.Axis(title=ytitle), scale=alt.Scale(domain=[0, ymax])),
+                            color=alt.Color("Scenario:N", legend=alt.Legend(title="Scenario")),
+                            tooltip=["Month:N", "Scenario:N", yvariable]
+                        )
+                        .properties(width=600, height=400)
+                        .interactive()
+                    )
+                    chart = chart.properties(
+                        title=alt.TitleParams(text=title, anchor="middle")
+                    )
+                    return chart
+
+                tab1, tab2 = st.tabs(["Hand-held dopplers", "CTGs"])
+                with tab1:
+                    df_doppler_ratio_l23 = prepare_chart_data(b_df, i_df, 'Doppler_Ratio', 0, n_months, n_runs)
+                    df_doppler_ratio_l4 = prepare_chart_data(b_df, i_df, 'Doppler_Ratio', 1, n_months, n_runs)
+                    df_doppler_ratio_l5 = prepare_chart_data(b_df, i_df, 'Doppler_Ratio', 2, n_months, n_runs)
+                    df_doppler_actual_l23 = prepare_chart_data(b_df, i_df, 'Doppler_Actual', 0, n_months, n_runs)
+                    df_doppler_actual_l4 = prepare_chart_data(b_df, i_df, 'Doppler_Actual', 1, n_months, n_runs)
+                    df_doppler_actual_l5 = prepare_chart_data(b_df, i_df, 'Doppler_Actual', 2, n_months, n_runs)
+                    df_doppler_needed_l23 = prepare_chart_data(b_df, i_df, 'Doppler_Needed', 0, n_months, n_runs)
+                    df_doppler_needed_l4 = prepare_chart_data(b_df, i_df, 'Doppler_Needed', 1, n_months, n_runs)
+                    df_doppler_needed_l5 = prepare_chart_data(b_df, i_df, 'Doppler_Needed', 2, n_months, n_runs)
+
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        ymax = max(df_doppler_ratio_l23['L2/3'].max(), df_doppler_ratio_l4['L4'].max(), df_doppler_ratio_l5['L5'].max())
+                        chart1 = plot_equipment(df_doppler_ratio_l23, "Ratio of hand-held dopplers (actual versus needed) at L2/3", "L2/3", "Ratio", ymax)
+                        st.altair_chart(chart1)
+                        st.markdown("~~~")
+                        chart2 = plot_equipment(df_doppler_ratio_l4, "Ratio of hand-held dopplers (actual versus needed) at L4", "L4", "Ratio", ymax)
+                        st.altair_chart(chart2)
+                        st.markdown("~~~")
+                        chart3 = plot_equipment(df_doppler_ratio_l5, "Ratio of hand-held dopplers (actual versus needed) at L5", "L5", "Ratio", ymax)
+                        st.altair_chart(chart3)
+                    with col2:
+                        ymax = max(df_doppler_needed_l23['L2/3'].max(), df_doppler_actual_l23['L2/3'].max())
+                        chart1 = plot_equipment(df_doppler_actual_l23, "Actual hand-held dopplers at L2/3", "L2/3", "# Hand-held dopplers", ymax)
+                        st.altair_chart(chart1)
+                        st.markdown("~~~")
+                        ymax = max(df_doppler_needed_l4['L4'].max(), df_doppler_actual_l4['L4'].max())
+                        chart2 = plot_equipment(df_doppler_actual_l4, "Actual hand-held dopplers at L4", "L4", "# Hand-held dopplers", ymax)
+                        st.altair_chart(chart2)
+                        st.markdown("~~~")
+                        ymax = max(df_doppler_needed_l5['L5'].max(), df_doppler_actual_l5['L5'].max())
+                        chart3 = plot_equipment(df_doppler_actual_l5, "Actual hand-held dopplers at L5", "L5", "# Hand-held dopplers", ymax)
+                        st.altair_chart(chart3)
+                    with col3:
+                        ymax = max(df_doppler_needed_l23['L2/3'].max(), df_doppler_actual_l23['L2/3'].max())
+                        chart1 = plot_equipment(df_doppler_needed_l23, "Needed hand-held dopplers at L2/3", "L2/3", "# Hand-held dopplers", ymax)
+                        st.altair_chart(chart1)
+                        st.markdown("~~~")
+                        ymax = max(df_doppler_needed_l4['L4'].max(), df_doppler_actual_l4['L4'].max())
+                        chart2 = plot_equipment(df_doppler_needed_l4, "Needed hand-held dopplers at L4", "L4", "# Hand-held dopplers", ymax)
+                        st.altair_chart(chart2)
+                        st.markdown("~~~")
+                        ymax = max(df_doppler_needed_l5['L5'].max(), df_doppler_actual_l5['L5'].max())
+                        chart3 = plot_equipment(df_doppler_needed_l5, "Needed hand-held dopplers at L5", "L5", "# Hand-held dopplers", ymax)
+                        st.altair_chart(chart3)
+
+                with tab2:
+                    df_ctg_ratio_l23 = prepare_chart_data(b_df, i_df, 'CTG_Ratio', 0, n_months, n_runs)
+                    df_ctg_ratio_l4 = prepare_chart_data(b_df, i_df, 'CTG_Ratio', 1, n_months, n_runs)
+                    df_ctg_ratio_l5 = prepare_chart_data(b_df, i_df, 'CTG_Ratio', 2, n_months, n_runs)
+                    df_ctg_actual_l23 = prepare_chart_data(b_df, i_df, 'CTG_Actual', 0, n_months, n_runs)
+                    df_ctg_actual_l4 = prepare_chart_data(b_df, i_df, 'CTG_Actual', 1, n_months, n_runs)
+                    df_ctg_actual_l5 = prepare_chart_data(b_df, i_df, 'CTG_Actual', 2, n_months, n_runs)
+                    df_ctg_needed_l23 = prepare_chart_data(b_df, i_df, 'CTG_Needed', 0, n_months, n_runs)
+                    df_ctg_needed_l4 = prepare_chart_data(b_df, i_df, 'CTG_Needed', 1, n_months, n_runs)
+                    df_ctg_needed_l5 = prepare_chart_data(b_df, i_df, 'CTG_Needed', 2, n_months, n_runs)
+
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        ymax = max(df_ctg_ratio_l23['L2/3'].max(), df_ctg_ratio_l4['L4'].max(), df_ctg_ratio_l5['L5'].max())
+                        chart1 = plot_equipment(df_ctg_ratio_l23, "Ratio of CTGs (actual versus needed) at L2/3", "L2/3", "Ratio", ymax)
+                        st.altair_chart(chart1)
+                        st.markdown("~~~")
+                        chart2 = plot_equipment(df_ctg_ratio_l4, "Ratio of CTGs (actual versus needed) at L4", "L4", "Ratio", ymax)
+                        st.altair_chart(chart2)
+                        st.markdown("~~~")
+                        chart3 = plot_equipment(df_ctg_ratio_l5, "Ratio of CTGs (actual versus needed) at L5", "L5", "Ratio", ymax)
+                        st.altair_chart(chart3)
+                    with col2:
+                        ymax = max(df_ctg_needed_l23['L2/3'].max(), df_ctg_actual_l23['L2/3'].max())
+                        chart1 = plot_equipment(df_ctg_actual_l23, "Actual CTGs at L2/3", "L2/3", "# CTGs", ymax)
+                        st.altair_chart(chart1)
+                        st.markdown("~~~")
+                        ymax = max(df_ctg_needed_l4['L4'].max(), df_ctg_actual_l4['L4'].max())
+                        chart2 = plot_equipment(df_ctg_actual_l4, "Actual CTGs at L4", "L4", "# CTGs", ymax)
+                        st.altair_chart(chart2)
+                        st.markdown("~~~")
+                        ymax = max(df_ctg_needed_l5['L5'].max(), df_ctg_actual_l5['L5'].max())
+                        chart3 = plot_equipment(df_ctg_actual_l5, "Actual CTGs at L5", "L5", "# CTGs", ymax)
+                        st.altair_chart(chart3)
+                    with col3:
+                        ymax = max(df_ctg_needed_l23['L2/3'].max(), df_ctg_actual_l23['L2/3'].max())
+                        chart1 = plot_equipment(df_ctg_needed_l23, "Needed CTGs at L2/3", "L2/3", "# CTGs", ymax)
+                        st.altair_chart(chart1)
+                        st.markdown("~~~")
+                        ymax = max(df_ctg_needed_l4['L4'].max(), df_ctg_actual_l4['L4'].max())
+                        chart2 = plot_equipment(df_ctg_needed_l4, "Needed CTGs at L4", "L4", "# CTGs", ymax)
+                        st.altair_chart(chart2)
+                        ymax = max(df_ctg_needed_l5['L5'].max(), df_ctg_actual_l5['L5'].max())
+                        st.markdown("~~~")
+                        chart3 = plot_equipment(df_ctg_needed_l5, "Needed CTGs at L5", "L5", "# CTGs", ymax)
+                        st.altair_chart(chart3)
+
+            if selected_plot == "Facility capacity ratio":
+                st.markdown("<h3 style='text-align: left;'>Facility capacity ratio</h3>",
+                            unsafe_allow_html=True)
+
+                def prepare_indicator_df(df, indicator, n_months, n_runs, scenario):
+                    df_indicator = pd.DataFrame(df[indicator])
+                    df_indicator['Month'] = np.tile(np.arange(1, n_months+1), n_runs)
+                    df_indicator['Run'] = np.repeat(np.arange(n_runs), n_months)
+                    df_indicator['Scenario'] = scenario
+                    #df_indicator = df_indicator.groupby(['Month', 'Scenario'], as_index=False).mean()
+                    return df_indicator
+
+                def prepare_chart_data(b_df, i_df, indicator, n_months, n_runs):
+                    b_df_ind = prepare_indicator_df(b_df, indicator, n_months, n_runs, 'Baseline')
+                    i_df_ind = prepare_indicator_df(i_df, indicator, n_months, n_runs, 'Intervention')
+                    df_ind = pd.concat([b_df_ind, i_df_ind], ignore_index=True)
+                    df_ind = df_ind.groupby(['Month', 'Scenario'], as_index=False)[indicator].mean()
+                    #df_ind.columns = ['Month', 'Scenario', indicator]
+                    return df_ind
+
+                def prepare_ratio_data(b_df, i_df, numerator, dominator, n_months, n_runs):
+                    b_df_num = prepare_indicator_df(b_df, numerator, n_months, n_runs, 'Baseline')
+                    i_df_num = prepare_indicator_df(i_df, numerator, n_months, n_runs, 'Intervention')
+                    df_num = pd.concat([b_df_num, i_df_num], ignore_index=True)
+
+                    b_df_dom = prepare_indicator_df(b_df, dominator, n_months, n_runs, 'Baseline')
+                    i_df_dom = prepare_indicator_df(i_df, dominator, n_months, n_runs, 'Intervention')
+                    df_dom = pd.concat([b_df_dom, i_df_dom], ignore_index=True)
+
+                    df = df_num.merge(df_dom, on=['Month', 'Run', 'Scenario'], suffixes=('_num', '_dom'))
+                    df.columns = ['Counts', 'Month', 'Run', 'Scenario', 'Denominator']
+                    df['Rate'] = df['Counts'] / df['Denominator']
+                    df['Counts'] = df['Counts'].astype(float)
+                    df['Denominator'] = df['Denominator'].astype(float)
+                    return df
+
+                def create_ratio_line_data(data):
+                    line_data = data.copy()
+                    line_data = add_poisson_ci(line_data, multiplier=1)
+
+                    line_data = line_data.groupby(['Month', 'Scenario'], as_index=False).agg({
+                        'Rate': 'mean',
+                        'Lower_rate': 'mean',
+                        'Upper_rate': 'mean'
+                    })
+
+                    line_data[['Rate', 'Lower_rate', 'Upper_rate']] = line_data[
+                        ['Rate', 'Lower_rate', 'Upper_rate']].round(
+                        2)
+
+                    return line_data
+
+                #df_cap_ratio = prepare_chart_data(b_df, i_df, 'Capacity Ratio', n_months, n_runs)
+                df_cap_ratio = prepare_ratio_data(b_df, i_df, 'Facility_capacity_ideal', 'Facility_capacity_actual', n_months, n_runs)
+                line_data = create_ratio_line_data(df_cap_ratio)
+
+                df_fac_cap_actual = prepare_chart_data(b_df, i_df, 'Facility_capacity_actual', n_months, n_runs)
+                df_fac_cap_ideal = prepare_chart_data(b_df, i_df, 'Facility_capacity_ideal', n_months, n_runs)
+
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    def line_chart_ci(line_data, title, ytitle, ydomain):
+                        chart = (
+                                alt.Chart(line_data, title=title)
+                                .mark_line()
+                                .encode(
+                                    x=alt.X("Month:Q", axis=alt.Axis(
+                                        title="Time since the start of intervention implementation (Months)",
+                                        titleFontSize=16, labelFontSize=14, )
+                                            ),
+                                    y=alt.Y("Rate:Q", axis=alt.Axis(
+                                        title=ytitle,
+                                        titleFontSize=16, labelFontSize=14),
+                                            scale=alt.Scale(domain=ydomain)
+                                            ),
+                                    color=alt.Color("Scenario", legend=alt.Legend(title="Scenario", titleFontSize=16,
+                                                                               labelFontSize=14)),
+                                    tooltip=["Month:N", "Scenario:N", "Rate:Q", "Lower_rate:Q", "Upper_rate:Q"]
+                                )
+                                + alt.Chart(line_data)
+                                .mark_area(opacity=0.2)
+                                .encode(
+                            x="Month:Q",
+                            y=alt.Y("Lower_rate:Q", axis=alt.Axis(title=ytitle, titleFontSize=16, labelFontSize=14)),
+                            y2="Upper_rate:Q",
+                            color=alt.Color("Scenario", legend=None),  # Match color to Scenario
+                        )
+                        )
+
+                        chart = chart.properties(width=700, height=400).interactive()
+                        chart = chart.configure_title(
+                            anchor='middle', fontSize=18
+                        )
+                        return chart
+                    chart = line_chart_ci(line_data, "Facility Capacity Ratio", "Capacity ratio in L4/5 facilities", [0,1])
+                    st.altair_chart(chart)
+                    # chart = (
+                    #     alt.Chart(df_cap_ratio)
+                    #     .mark_line()
+                    #     .encode(
+                    #         x=alt.X("Month:Q", title="Time since the start of intervention implementation (Months)"),
+                    #         y=alt.Y("Capacity Ratio:Q", axis=alt.Axis(title="Capacity ratio in L4/5 facilities")),
+                    #         color=alt.Color("Scenario:N", legend=alt.Legend(title="Scenario")),
+                    #         tooltip=["Month:N", "Scenario:N", "Capacity Ratio:Q"]
+                    #     )
+                    #     .properties(width=600, height=400)
+                    #     .interactive()
+                    # )
+                    # chart = chart.properties(
+                    #     title=alt.TitleParams(text="Facility Capacity Ratio", anchor="middle")
+                    # )
+                    # st.altair_chart(chart)
+                    #
+                    #
+                    # def facility_capacity_ratio_matplotlib(df_cap_ratio):
+                    #     fig, ax = plt.subplots(figsize=(8, 5))  # Define figure size
+                    #
+                    #     # Get unique scenarios and assign colors
+                    #     scenarios = df_cap_ratio["Scenario"].unique()
+                    #     colors = sns.color_palette("tab10", len(scenarios))
+                    #
+                    #     # Plot each scenario without markers
+                    #     for i, scenario in enumerate(scenarios):
+                    #         subset = df_cap_ratio[df_cap_ratio["Scenario"] == scenario]
+                    #         ax.plot(subset["Month"], subset["Capacity Ratio"], label=scenario, color=colors[i],
+                    #                 linewidth=2)
+                    #
+                    #     # Labels and Title
+                    #     ax.set_xlabel("Time since the start of intervention implementation (Months)", fontsize=14)
+                    #     ax.set_ylabel("Capacity Ratio in L4/5 Facilities", fontsize=14)
+                    #     ax.set_title("Facility Capacity Ratio", fontsize=16)
+                    #
+                    #     # Move legend to upper right
+                    #     ax.legend(title="Scenario", fontsize=12, loc="upper right", bbox_to_anchor=(1, 0.95))
+                    #
+                    #     # Grid, Formatting, and Layout
+                    #     ax.grid(True, linestyle="--", alpha=0.5)
+                    #     plt.xticks(fontsize=12)
+                    #     plt.yticks(fontsize=12)
+                    #     plt.tight_layout()
+                    #
+                    #     return fig
+
+                    # fig = facility_capacity_ratio_matplotlib(df_cap_ratio)
+                    # st.pyplot(fig)  # Show plot in Streamlit
+                    #
+                    # # Enable Download of the Chart
+                    # img_buffer = io.BytesIO()
+                    # fig.savefig(img_buffer, format="png", dpi=300)
+                    # st.download_button(label="Download Facility Capacity Ratio Plot", data=img_buffer.getvalue(),
+                    #                    file_name="facility_capacity_ratio.png", mime="image/png",
+                    #                    key="download_facility_capacity")
+
+                ymax = max(df_fac_cap_actual['Facility_capacity_actual'].max(), df_fac_cap_ideal['Facility_capacity_ideal'].max())
+                with col2:
+                    chart = (
+                        alt.Chart(df_fac_cap_actual)
+                        .mark_line()
+                        .encode(
+                            x=alt.X("Month:Q", title="Time since the start of intervention implementation (Months)"),
+                            y=alt.Y("Facility_capacity_actual:Q", axis=alt.Axis(title="Live births"), scale=alt.Scale(domain=[0, ymax])),
+                            color=alt.Color("Scenario:N", legend=alt.Legend(title="Scenario")),
+                            tooltip=["Month:N", "Scenario:N", "Facility_capacity_actual:Q"]
+                        )
+                        .properties(width=600, height=400)
+                        .interactive()
+                    )
+                    chart = chart.properties(
+                        title=alt.TitleParams(text="Actual Facility Capacity", anchor="middle")
+                    )
+                    st.altair_chart(chart)
+
+                with col3:
+                    chart = (
+                        alt.Chart(df_fac_cap_ideal)
+                        .mark_line()
+                        .encode(
+                            x=alt.X("Month:Q", title="Time since the start of intervention implementation (Months)"),
+                            y=alt.Y("Facility_capacity_ideal:Q", axis=alt.Axis(title="Live births"), scale=alt.Scale(domain=[0, ymax])),
+                            color=alt.Color("Scenario:N", legend=alt.Legend(title="Scenario")),
+                            tooltip=["Month:N", "Scenario:N", "Facility_capacity_ideal:Q"]
+                        )
+                        .properties(width=600, height=400)
+                        .interactive()
+                    )
+                    chart = chart.properties(
+                        title=alt.TitleParams(text="Ideal Facility Capacity", anchor="middle")
+                    )
+                    st.altair_chart(chart)
+
+            if selected_plot == "C-section rate":
+                st.markdown("<h3 style='text-align: left;'>C-sections among 100 live births</h3>",
+                            unsafe_allow_html=True)
+
+                tab1, tab2, tab3 = st.tabs(["Emergency C-sections", "Elective C-sections", "All C-sections"])
+
+                def prepare_indicator_df(df, indicator, n_months, n_runs, scenario):
+                    indicator = np.concatenate(df[indicator].values).reshape(-1, 4)
+                    df_indicator = pd.DataFrame(indicator, columns=['Home', 'L2/3', 'L4', 'L5'])
+                    df_indicator['L4/5'] = df_indicator['L4'] + df_indicator['L5']
+                    df_indicator = df_indicator.drop(columns=['Home', 'L4', 'L5'])
+                    df_indicator['All'] = np.sum(df_indicator, axis=1)
+
+                    df_indicator['Month'] = np.tile(np.arange(1, n_months+1), n_runs)
+                    df_indicator['Run'] = np.repeat(np.arange(n_runs), n_months)
+                    df_indicator['Scenario'] = scenario
+                    #df_indicator = df_indicator.groupby(['Month', 'Scenario'], as_index=False).sum()
+                    df_indicator = df_indicator.melt(id_vars=['Month', 'Run', 'Scenario'], var_name='Level',
+                                                     value_name='Counts')
+                    return df_indicator
+
+                def prepare_elecCS_df(df, indicator, n_months, n_runs, scenario):
+                    indicator = np.concatenate(df[indicator].values).reshape(-1, 2)
+                    df_indicator = pd.DataFrame(indicator, columns=['Lowrisk', 'Highrisk'])
+                    df_indicator['All'] = np.sum(df_indicator, axis=1)
+                    df_indicator['Month'] = np.tile(np.arange(1, n_months+1), n_runs)
+                    df_indicator['Run'] = np.repeat(np.arange(n_runs), n_months)
+                    df_indicator['Scenario'] = scenario
+                    #df_indicator = df_indicator.groupby(['Month', 'Scenario'], as_index=False).sum()
+                    df_indicator = df_indicator.melt(id_vars=['Month', 'Run', 'Scenario'], var_name='Level',
+                                                     value_name='Counts')
+                    return df_indicator
+
+                def prepare_elecCS_data(b_df, i_df, indicator, n_months, n_runs, multiplier):
+                    b_df_ind = prepare_elecCS_df(b_df, indicator, n_months, n_runs, 'Baseline')
+                    i_df_ind = prepare_elecCS_df(i_df, indicator, n_months, n_runs, 'Intervention')
+                    df_ind = pd.concat([b_df_ind, i_df_ind], ignore_index=True)
+
+                    b_df_lb = prepare_elecCS_df(b_df, 'Risk status', n_months, n_runs, 'Baseline')
+                    i_df_lb = prepare_elecCS_df(i_df, 'Risk status', n_months, n_runs, 'Intervention')
+                    df_lb = pd.concat([b_df_lb, i_df_lb], ignore_index=True)
+
+                    df_ind = df_ind.merge(df_lb, on=['Month', 'Run', 'Scenario', 'Level'], suffixes=('_ind', '_lb'))
+                    df_ind.columns = ['Month', 'Run', 'Scenario', 'Level', 'Counts', 'Denominator']
+                    df_ind['Rate'] = df_ind['Counts'] / df_ind['Denominator'] * multiplier
+                    return df_ind
+
+                def create_bar_data_type(data, multiplier):
+                    bar_data = data[data['Month'] > n_months - 12].copy()
+
+                    # bar_data = bar_data.groupby(['Scenario', 'Level', 'Type'], as_index=False).sum()
+                    # bar_data['Rate'] = bar_data['Counts'] / bar_data['Denominator'] * multiplier
+                    # bar_data = bar_data.apply(add_poisson_ci, axis=1, multiplier=multiplier)
+                    # bar_data = bar_data.apply(
+                    #     lambda x: round(x, 2) if x.name in ['Rate', 'Lower_rate', 'Upper_rate'] else x)
+
+                    # Step 1: Add Poisson CI per run × month × level
+                    bar_data = add_poisson_ci(bar_data, multiplier=multiplier)
+
+                    # Step 2: Taking average across runs and scenarios
+                    bar_data = bar_data.groupby(['Scenario', 'Level', 'Type'], as_index=False).agg({
+                        'Rate': 'mean',
+                        'Lower_rate': 'mean',
+                        'Upper_rate': 'mean'
+                    })
+
+                    # Step 3: Round for display
+                    bar_data[['Rate', 'Lower_rate', 'Upper_rate']] = bar_data[
+                        ['Rate', 'Lower_rate', 'Upper_rate']].round(2)
+                    return bar_data
+
+                def bar_chart_type(data, title, ymax):
+                    chart = (
+                        alt.Chart(data)
+                        .mark_bar()
+                        .encode(
+                            x=alt.X("Scenario:N", axis=alt.Axis(title=None)),  # X-axis for Scenario
+                            y=alt.Y("Rate:Q", axis=alt.Axis(title="Rate"), scale=alt.Scale(domain=[0, ymax])),
+                            color=alt.Color("Type:N", legend=alt.Legend(title="Type")),  # Color by Scenario
+                            tooltip=["Scenario:N", "Level:N", "Type:N", "Rate:Q", "Lower_rate:Q", "Upper_rate:Q"]
+                        )
+                    ).properties(width=150, height=300)  # Set width and height for each column
+
+                    chart = chart.facet(
+                        column=alt.Column(
+                            "Level:N",  # Facet by Level
+                            title=None,  # Remove column title
+                            header=alt.Header(labelOrient="top", labelFontSize=12)  # Customize header
+                        )
+                    ).configure_title(anchor="middle")  # Center-align the title
+
+                    chart = chart.properties(
+                        title=alt.TitleParams(text=title, anchor="middle")
+                    ).interactive()
+                    return chart
+
+                def create_pie_chart(data, scenario, title, color, width=300, height=500):
+                    # Filter data for the given scenario
+                    filtered_data = data[data['Scenario'] == scenario]
+
+                    # Calculate the proportion for each type
+                    total_rate = filtered_data['Rate'].sum()
+                    filtered_data['Proportion'] = round(filtered_data['Rate'] / total_rate * 100)
+
+                    # Create the pie chart
+                    chart = (
+                        alt.Chart(filtered_data)
+                        .mark_arc()
+                        .encode(
+                            theta='Rate:Q',
+                            color=color,
+                            tooltip=[color, "Rate:Q", "Proportion:Q"]
+                        )
+                    )
+
+                    # Combine the chart and text labels
+                    chart = chart.properties(
+                        width=width,
+                        height=height,
+                        title=alt.TitleParams(text=title, anchor="middle")
+                    ).interactive()
+
+                    # Display the chart in Streamlit
+                    st.altair_chart(chart)
+
+                with tab2:
+                    df_elec_CS = prepare_elecCS_data(b_df, i_df, 'Elective CS risk status', n_months, n_runs, 100)
+
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        line_data = create_line_data(df_elec_CS, 100)
+                        ymax = line_data['Upper_rate'].max()
+                        chart = line_chart_ci(line_data, "Elective CS rate among all live births by month", "Rate", [0, ymax])
+                        st.altair_chart(chart)
+                    with col2:
+                        bar_data = create_bar_data(df_elec_CS, 100)
+                        chart = bar_chart_ci(bar_data, "Elective CS rate among all live births annually", "Rate", [0, ymax])
+                        st.altair_chart(chart)
+
+                    st.markdown("~~~")
+                    col3, col4 = st.columns(2)
+                    pie_data = bar_data[bar_data['Level'] != 'All']
+                    with col3:
+                        create_pie_chart(pie_data, 'Baseline', "Baseline", 'Level:N')
+                    with col4:
+                        create_pie_chart(pie_data, 'Intervention', "Intervention", 'Level:N')
+
+
+                with tab1:
+                    df_CS_all = prepare_chart_data(b_df, i_df, 'Emergency CS', 'Live Births Final', n_months, n_runs, 100)
+                    df_CS_all['Type'] = "All"
+                    df_CS_unnecessary = prepare_chart_data(b_df, i_df, 'CS_unnessary', 'Live Births Final', n_months, n_runs, 100)
+                    df_CS_unnecessary['Type'] = "Unnecessary"
+                    df_CS_necessary = df_CS_all.copy()
+                    df_CS_necessary['Counts'] = df_CS_all['Counts'] - df_CS_unnecessary['Counts']
+                    df_CS_necessary['Rate'] = df_CS_necessary['Counts'] / df_CS_necessary['Denominator'] * 100
+                    df_CS_necessary['Type'] = "Necessary"
+                    df_CS_type = pd.concat([df_CS_unnecessary, df_CS_necessary], ignore_index=True)
+
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        line_data = create_line_data(df_CS_all, 100)
+                        ymax = line_data['Rate'].max()
+                        chart = line_chart_ci(line_data, "Emergency CS rate by month", "Rate", [0, ymax])
+                        st.altair_chart(chart)
+
+                    with col2:
+                        bar_data_type = create_bar_data_type(df_CS_type, 100)
+                        chart = bar_chart_type(bar_data_type, "Emergency CS rate by type", ymax)
+                        st.altair_chart(chart)
+
+                    st.markdown("~~~")
+                    col3, col4 = st.columns(2)
+                    pie_data_type = bar_data_type[bar_data_type['Level'] == 'All']
+
+                    # Assuming col3 and col4 are defined and pie_data_type is already defined
+                    with col3:
+                        create_pie_chart(pie_data_type, 'Baseline', "Baseline", 'Type:N')
+                    with col4:
+                        create_pie_chart(pie_data_type, 'Intervention', "Intervention", 'Type:N')
+
+                with tab3:
+                    df_CS_all = prepare_chart_data(b_df, i_df, 'CS', 'Live Births Final', n_months, n_runs, 100)
+                    df_CS_elective = prepare_chart_data(b_df, i_df, 'Elective CS', 'Live Births Final', n_months, n_runs, 100)
+                    df_CS_elective['Type'] = "Elective"
+                    df_CS_emergency = prepare_chart_data(b_df, i_df, 'Emergency CS', 'Live Births Final', n_months, n_runs, 100)
+                    df_CS_emergency['Type'] = "Emergency"
+
+                    df_CS_type = pd.concat([df_CS_elective, df_CS_emergency], ignore_index=True)
+
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        line_data = create_line_data(df_CS_all, 100)
+                        ymax = line_data['Rate'].max()
+                        chart = line_chart_ci(line_data, "CS rate among facility live births by month", "Rate", [0, ymax])
+                        st.altair_chart(chart)
+                    with col2:
+                        bar_data_type = create_bar_data_type(df_CS_type, 100)
+                        chart = bar_chart_type(bar_data_type, "CS rate among facility live births by type", ymax)
+                        st.altair_chart(chart)
+
+                    st.markdown("~~~")
+                    col3, col4 = st.columns(2)
+                    pie_data_type = bar_data_type[bar_data_type['Level'] == 'All']
+
+                    # Assuming col3 and col4 are defined and pie_data_type is already defined
+                    with col3:
+                        create_pie_chart(pie_data_type, 'Baseline', "Baseline", 'Type:N')
+                    with col4:
+                        create_pie_chart(pie_data_type, 'Intervention', "Intervention", 'Type:N')
+
+            if selected_plot == "Distribution of live births":
+                st.markdown("<h3 style='text-align: left;'>% Live Births Delivered at Location</h3>",
+                            unsafe_allow_html=True)
+
+                def prepare_plot_data(b_df, i_df, n_months, n_runs):
+                    bLB = np.concatenate(b_df['Live Births Final'].values).reshape(-1, 4)
+                    iLB = np.concatenate(i_df['Live Births Final'].values).reshape(-1, 4)
+
+                    b_df = pd.DataFrame(bLB, columns=['Home', 'L2/3', 'L4', 'L5'])
+                    i_df = pd.DataFrame(iLB, columns=['Home', 'L2/3', 'L4', 'L5'])
+
+                    for df in [b_df, i_df]:
+                        df_all = np.sum(df, axis=1)
+                        df['All'] = df_all
+                        df['L4/5'] = df['L4'] + df['L5']
+                        df['Month'] = np.tile(np.arange(1, n_months+1), n_runs)
+                        df['Run'] = np.repeat(np.arange(n_runs), n_months)
+
+                    b_df['Scenario'] = 'Baseline'
+                    i_df['Scenario'] = 'Intervention'
+                    b_df = b_df.drop(columns=['L4', 'L5'])
+                    i_df = i_df.drop(columns=['L4', 'L5'])
+
+                    combined_df = pd.concat([b_df, i_df], ignore_index=True)
+                    combined_df = combined_df.melt(id_vars=['Month', 'Run', 'Scenario'], var_name='Level', value_name='Counts')
+                    #combined_df = combined_df.groupby(['Month', 'Scenario', 'Level'], as_index=False).sum()
+                    return combined_df
+
+                df_LB = prepare_plot_data(b_df, i_df, n_months, n_runs)
+                df_LB_level = df_LB[df_LB['Level'] != 'All']
+                df_LB_all = df_LB[df_LB['Level'] == 'All']
+
+                data = pd.merge(df_LB_level, df_LB_all, on=['Month', 'Run', 'Scenario'], how='left')
+                data['Rate'] = data['Counts_x'] / data['Counts_y'] * 100
+                data = data.drop(columns = ['Level_y'])
+                data.columns = ['Month', 'Run', 'Scenario', 'Level', 'Counts', 'Denominator', 'Rate']
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    line_data = create_line_data(data, 100)
+                    chart = line_chart_ci(line_data,"% Live births delivered at location by month", "Percentage", [0, 100])
+                    st.altair_chart(chart)
+
+                    # fig1 = line_chart_ci_matplotlib(line_data, "% Live Births Delivered at Location by Month", "Percentage",
+                    #                                 [0, 100])
+                    # st.pyplot(fig1)  # Display plot in Streamlit
+                    #
+                    # # Enable download of the line chart
+                    # img_buffer1 = io.BytesIO()
+                    # fig1.savefig(img_buffer1, format="png", dpi=300)
+                    # st.download_button(label="Download Line Chart", data=img_buffer1.getvalue(),
+                    #                    file_name="line_chart.png", mime="image/png", key="download_line_lbs")
+
+                with col2:
+                    bar_data = create_bar_data(data, 100)
+                    chart = bar_chart_ci(bar_data, "% Live births delivered at location annually", "Percentage", [0, 100])
+                    st.altair_chart(chart)
+
+            if selected_plot == "ANC rate":
+                st.markdown("<h3 style='text-align: left;'>4+ANC visits per 100 live births</h3>",
+                            unsafe_allow_html=True)
+                df_ANC = prepare_chart_data(b_df, i_df, 'ANC', 'Live Births Final', n_months, n_runs, 100)
+                col1, col2 = st.columns(2)
+                with col1:
+                    line_data = create_line_data(df_ANC, 100)
+                    chart = line_chart_ci(line_data, "4+ANC rate by month", "Rate", [0, 100])
+                    st.altair_chart(chart)
+                with col2:
+                    bar_data = create_bar_data(df_ANC, 100)
+                    chart = bar_chart_ci(bar_data, "4+ANC rate annually", "Rate", [0, 100])
+                    st.altair_chart(chart)
+
+            if selected_plot == "Maternal mortality rate":
+                st.markdown("<h3 style='text-align: left;'>Maternal deaths per 100,000 live births (MMR)</h3>",
+                           unsafe_allow_html=True)
+                tab1, tab2, tab3 = st.tabs(["MMR by location", "Distribution of Causes", "MMR by causes"])
+
+                with tab1:
+
+                    df_MMR = prepare_chart_data(b_df, i_df, 'Deaths', 'Live Births Final', n_months, n_runs, 100000)
+
+                    # Get unique levels and create a multiselect box
+                    all_levels = df_MMR['Level'].unique().tolist()
+                    selected_levels = st.multiselect("Select Delivery Location Level(s) to Show", options=all_levels,
+                                                     default=all_levels)
+
+                    # Filter the data based on selected levels
+                    df_MMR = df_MMR[df_MMR["Level"].isin(selected_levels)]
+
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        line_data = create_line_data(df_MMR, 100000)
+                        ymax = line_data['Upper_rate'].max()
+                        chart = line_chart_ci(line_data, "MMR by month", "MMR (deaths per 100,000 live births)", [0, ymax])
+
+                        st.altair_chart(chart)
+
+                    with col2:
+                        bar_data = create_bar_data(df_MMR, 100000)
+                        ymax = bar_data['Upper_rate'].max()
+                        chart = bar_chart_ci(bar_data, "MMR annually", "MMR (deaths per 100,000 live births)", [0, ymax])
+
+                        st.altair_chart(chart)
+
+                        # fig2 = bar_chart_ci_matplotlib(bar_data, "MMR by Delivery Location",
+                        #                               "MMR (deaths per 100,000 live births)", [0, 1000])
+                        # st.pyplot(fig2)
+                        # # Enable download of the bar chart
+                        # img_buffer2 = io.BytesIO()
+                        # fig2.savefig(img_buffer2, format="png", dpi=300)
+                        # st.download_button(label="Download Bar Chart", data=img_buffer2.getvalue(),
+                        #                    file_name="bar_chart.png", mime="image/png", key="download_bar")
+
+                with tab2:
+                    b_ind_outcomes = st.session_state['b_ind_outcomes']
+                    i_ind_outcomes = st.session_state['i_ind_outcomes']
+                    data1 = b_ind_outcomes[["Run", "Scenario", "death_cause"]]
+                    data2 = i_ind_outcomes[["Run", "Scenario", "death_cause"]]
+                    df = pd.concat([data1, data2])
+                    df_filtered = df[df["death_cause"] != "none"]
+
+                    death_counts = df_filtered.groupby(["Scenario", "death_cause"]).size().reset_index(name="count")
+                    death_counts["proportion"] = death_counts.groupby("Scenario")["count"].transform(
+                        lambda x: x / x.sum())
+
+                    chart = alt.Chart(death_counts).mark_bar().encode(
+                        x=alt.X("Scenario:N", title="Scenario"),
+                        y=alt.Y("proportion:Q", stack="normalize", title="Proportion of Deaths"),
+                        color=alt.Color("death_cause:N", title="Cause of Death"),
+                        tooltip=["Scenario", "death_cause", alt.Tooltip("proportion:Q", format=".1%")]
+                    ).properties(
+                        width=600,
+                        height=400,
+                        title="Proportion of Maternal Death Causes by Scenario"
+                    )
+
+                    st.altair_chart(chart)
+
+                with tab3:
+                    df_all = pd.concat([b_ind_outcomes, i_ind_outcomes], ignore_index=True)
+                    #select Run, Scenario, and death_cause columns
+                    df_all = df_all[['Run', 'Scenario', 'death_cause']]
+                    #groub by Run, Scenario, and death_cause and calculate mean of death_cause
+                    df_all = df_all.groupby(['Run', 'Scenario', 'death_cause'], as_index=False).mean('death_cause')
+
+
+            if selected_plot == "Severe maternal outcomes":
+                st.markdown("<h3 style='text-align: left;'>Severe maternal outcomes, including near misses and maternal deaths</h3>",
+                            unsafe_allow_html=True)
+
+                tab1, tab2 = st.tabs(["SMO rate", "Death rate among SMOs"])
+
+                with tab1:
+                    df_severe_comps = prepare_chart_data(b_df, i_df, 'severe_comps', 'Live Births Final', n_months, n_runs, 100)
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        line_data = create_line_data(df_severe_comps, 100)
+                        ymax = line_data['Rate'].max()
+                        chart = line_chart_ci(line_data, "Severe complications rate by month", "Rate", [0, ymax])
+                        st.altair_chart(chart)
+                    with col2:
+                        bar_data = create_bar_data(df_severe_comps, 100)
+                        chart = bar_chart_ci(bar_data, "Severe complications rate annually", "Rate", [0, ymax])
+                        st.altair_chart(chart)
+
+                with tab2:
+                    df_death_severe = prepare_chart_data(b_df, i_df, 'Deaths', 'severe_comps', n_months, n_runs, 100)
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        line_data = create_line_data(df_death_severe, 100)
+                        ymax = line_data['Rate'].max()
+                        chart = line_chart_ci(line_data, "Death rate among severe complications by month", "Rate", [0, ymax])
+                        st.altair_chart(chart)
+                    with col2:
+                        bar_data = create_bar_data(df_death_severe, 100)
+                        ymax = bar_data['Rate'].max()
+                        chart = bar_chart_ci(bar_data, "Death rate among severe complications annually", "Rate", [0, ymax])
+                        st.altair_chart(chart)
+
+
+            if selected_plot == "Maternal complication rate":
+                st.markdown("<h3 style='text-align: left;'>Complications per 100 live births</h3>",
+                            unsafe_allow_html=True)
+
+                tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs(["Death-related", "Anemia", "Prolonged labor", "PPH", "Sepsis", "Eclampsia", "Obstructed labor", "Ruptured uterus", "APH"])
+
+                with tab1:
+                    df_MCR = prepare_chart_data(b_df, i_df, "Comps after transfer", 'Live Births Final', n_months, n_runs, 100)
+                    # Get unique levels and create a multiselect box
+                    all_levels = df_MCR['Level'].unique().tolist()
+                    selected_levels = st.multiselect("Select Delivery Location Level(s) to Show", options=all_levels,
+                                                     default=all_levels, key="mcr_level_multiselect")
+
+                    # Filter the data based on selected levels
+                    df_MCR = df_MCR[df_MCR["Level"].isin(selected_levels)]
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        line_data = create_line_data(df_MCR, 100)
+                        ymax = line_data['Upper_rate'].max()
+                        chart = line_chart_ci(line_data, "Complications rate by month", "Rate", [0, ymax])
+                        st.altair_chart(chart)
+                    with col2:
+                        bar_data = create_bar_data(df_MCR, 100)
+                        chart = bar_chart_ci(bar_data, "Complications rate annually", "Rate", [0, ymax])
+                        st.altair_chart(chart)
+
+                with tab2:
+                    df_anemia = prepare_chart_data(b_df, i_df, 'Anemia', 'Live Births Final', n_months, n_runs, 100)
+                    # Get unique levels and create a multiselect box
+                    all_levels = df_anemia['Level'].unique().tolist()
+                    selected_levels = st.multiselect("Select Delivery Location Level(s) to Show", options=all_levels,
+                                                     default=all_levels, key="anemia_level_multiselect")
+
+                    # Filter the data based on selected levels
+                    df_anemia = df_anemia[df_anemia["Level"].isin(selected_levels)]
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        line_data = create_line_data(df_anemia, 100)
+                        ymax = line_data['Upper_rate'].max()
+                        chart = line_chart_ci(line_data, "Anemia rate by month", "Rate", [0, ymax])
+                        st.altair_chart(chart)
+                    with col2:
+                        bar_data = create_bar_data(df_anemia, 100)
+                        ymax = bar_data['Upper_rate'].max()
+                        chart = bar_chart_ci(bar_data, "Anemia rate annually", "Rate", [0, ymax])
+                        st.altair_chart(chart)
+
+                with tab3:
+                    df_PL = prepare_chart_data(b_df, i_df, 'PL', 'Live Births Final', n_months, n_runs, 100)
+                    # Get unique levels and create a multiselect box
+                    all_levels = df_PL['Level'].unique().tolist()
+                    selected_levels = st.multiselect("Select Delivery Location Level(s) to Show", options=all_levels,
+                                                     default=all_levels, key="PL_level_multiselect")
+
+                    # Filter the data based on selected levels
+                    df_PL = df_PL[df_PL["Level"].isin(selected_levels)]
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        line_data = create_line_data(df_PL, 100)
+                        ymax = line_data['Upper_rate'].max()
+                        chart = line_chart_ci(line_data, "Prolonged labor rate by month", "Rate", [0, ymax])
+                        st.altair_chart(chart)
+                    with col2:
+                        bar_data = create_bar_data(df_PL, 100)
+                        ymax = bar_data['Upper_rate'].max()
+                        chart = bar_chart_ci(bar_data, "Prolonged labor rate annually", "Rate", [0, ymax])
+                        st.altair_chart(chart)
+
+                with tab4:
+                    df_PPH = prepare_chart_data(b_df, i_df, 'pph', 'Live Births Final', n_months, n_runs, 100)
+                    # Get unique levels and create a multiselect box
+                    all_levels = df_PPH['Level'].unique().tolist()
+                    selected_levels = st.multiselect("Select Delivery Location Level(s) to Show", options=all_levels,
+                                                     default=all_levels, key="PPH_level_multiselect")
+
+                    # Filter the data based on selected levels
+                    df_PPH = df_PPH[df_PPH["Level"].isin(selected_levels)]
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        line_data = create_line_data(df_PPH, 100)
+                        ymax = line_data['Upper_rate'].max()
+                        chart = line_chart_ci(line_data, "Postpartum hemorrhage rate by month", "Rate", [0, ymax])
+                        st.altair_chart(chart)
+                    with col2:
+                        bar_data = create_bar_data(df_PPH, 100)
+                        ymax = bar_data['Upper_rate'].max()
+                        chart = bar_chart_ci(bar_data, "Postpartum hemorrhage rate annually", "Rate", [0, ymax])
+                        st.altair_chart(chart)
+
+                with tab5:
+                    df_sepsis = prepare_chart_data(b_df, i_df, 'mat_sepsis', 'Live Births Final', n_months, n_runs, 100)
+                    # Get unique levels and create a multiselect box
+                    all_levels = df_sepsis['Level'].unique().tolist()
+                    selected_levels = st.multiselect("Select Delivery Location Level(s) to Show", options=all_levels,
+                                                     default=all_levels, key="sepsis_level_multiselect")
+
+                    # Filter the data based on selected levels
+                    df_sepsis = df_sepsis[df_sepsis["Level"].isin(selected_levels)]
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        line_data = create_line_data(df_sepsis, 100)
+                        ymax = line_data['Upper_rate'].max()
+                        chart = line_chart_ci(line_data, "Sepsis rate by month", "Rate", [0, ymax])
+                        st.altair_chart(chart)
+                    with col2:
+                        bar_data = create_bar_data(df_sepsis, 100)
+                        ymax = bar_data['Upper_rate'].max()
+                        chart = bar_chart_ci(bar_data, "Sepsis rate annually", "Rate", [0, ymax])
+                        st.altair_chart(chart)
+
+                with tab6:
+                    df_eclampsia = prepare_chart_data(b_df, i_df, 'eclampsia', 'Live Births Final', n_months, n_runs, 100)
+                    # Get unique levels and create a multiselect box
+                    all_levels = df_eclampsia['Level'].unique().tolist()
+                    selected_levels = st.multiselect("Select Delivery Location Level(s) to Show", options=all_levels,
+                                                     default=all_levels, key="eclampsia_level_multiselect")
+
+                    # Filter the data based on selected levels
+                    df_eclampsia = df_eclampsia[df_eclampsia["Level"].isin(selected_levels)]
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        line_data = create_line_data(df_eclampsia, 100)
+                        ymax = line_data['Upper_rate'].max()
+                        chart = line_chart_ci(line_data, "Eclampsia rate by month", "Rate", [0, ymax])
+                        st.altair_chart(chart)
+                    with col2:
+                        bar_data = create_bar_data(df_eclampsia, 100)
+                        ymax = bar_data['Upper_rate'].max()
+                        chart = bar_chart_ci(bar_data, "Eclampsia rate annually", "Rate", [0, ymax])
+                        st.altair_chart(chart)
+
+                with tab7:
+                    df_obstructed = prepare_chart_data(b_df, i_df, 'OL', 'Live Births Final', n_months, n_runs, 100)
+                    # Get unique levels and create a multiselect box
+                    all_levels = df_obstructed['Level'].unique().tolist()
+                    selected_levels = st.multiselect("Select Delivery Location Level(s) to Show", options=all_levels,
+                                                     default=all_levels, key="ol_level_multiselect")
+
+                    # Filter the data based on selected levels
+                    df_obstructed = df_obstructed[df_obstructed["Level"].isin(selected_levels)]
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        line_data = create_line_data(df_obstructed, 100)
+                        ymax = line_data['Upper_rate'].max()
+                        chart = line_chart_ci(line_data, "Obstructed labor rate by month", "Rate", [0, ymax])
+                        st.altair_chart(chart)
+                    with col2:
+                        bar_data = create_bar_data(df_obstructed, 100)
+                        ymax = bar_data['Upper_rate'].max()
+                        chart = bar_chart_ci(bar_data, "Obstructed labor rate annually", "Rate", [0, ymax])
+                        st.altair_chart(chart)
+
+                    # bar_data_number = create_bar_data(df_obstructed, 1)
+                    # bar_data_number['Counts'] = bar_data_number['Counts'] / n_runs
+                    # bar_data_number['Counts'] = bar_data_number['Counts'].astype(int)
+                    #
+                    # def bar_chart_num(bar_data, title, ytitle, ydomain):
+                    #     layered_chart = (
+                    #             alt.Chart(bar_data)
+                    #             .mark_bar()
+                    #             .encode(
+                    #                 x=alt.X("Scenario:N", axis=None),  # X-axis for Scenario
+                    #                 y=alt.Y("Counts:Q", axis=alt.Axis(title=ytitle), scale=alt.Scale(domain=ydomain)),
+                    #                 color=alt.Color("Scenario:N", legend=alt.Legend(title="Scenario")),
+                    #                 # Color by Scenario
+                    #                 tooltip=["Scenario:N", "Level:N", "Counts:Q"]
+                    #             )
+                    #     ).properties(width=150, height=300)  # Set width and height for each column
+                    #
+                    #     chart = layered_chart.facet(
+                    #         column=alt.Column(
+                    #             "Level:N",  # Facet by Level
+                    #             title=None,  # Remove column title
+                    #             header=alt.Header(labelOrient="bottom", labelFontSize=12)  # Customize header
+                    #         )
+                    #     ).configure_title(anchor="middle")  # Center-align the title
+                    #
+                    #     chart = chart.properties(
+                    #         title=alt.TitleParams(text=title, anchor="middle")
+                    #     ).interactive()
+                    #     return chart
+                    # ymax = bar_data_number['Counts'].max()
+                    # chart = bar_chart_num(bar_data_number, "Number of obstructed labor annually", "Count", [0, ymax])
+                    # st.altair_chart(chart)
+
+                with tab8:
+                    df_ruptured_uterus = prepare_chart_data(b_df, i_df, 'ruptured_uterus', 'Live Births Final', n_months, n_runs, 100)
+                    # Get unique levels and create a multiselect box
+                    all_levels = df_ruptured_uterus['Level'].unique().tolist()
+                    selected_levels = st.multiselect("Select Delivery Location Level(s) to Show", options=all_levels,
+                                                     default=all_levels, key="ruptured_uterus_level_multiselect")
+
+                    # Filter the data based on selected levels
+                    df_ruptured_uterus = df_ruptured_uterus[df_ruptured_uterus["Level"].isin(selected_levels)]
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        line_data = create_line_data(df_ruptured_uterus, 100)
+                        ymax = line_data['Upper_rate'].max()
+                        chart = line_chart_ci(line_data, "Ruptured uterus rate by month", "Rate", [0, ymax])
+                        st.altair_chart(chart)
+                    with col2:
+                        bar_data = create_bar_data(df_ruptured_uterus, 100)
+                        ymax = bar_data['Upper_rate'].max()
+                        chart = bar_chart_ci(bar_data, "Ruptured uterus rate annually", "Rate", [0, ymax])
+                        st.altair_chart(chart)
+
+                with tab9:
+                    df_aph = prepare_chart_data(b_df, i_df, 'aph', 'Live Births Final', n_months, n_runs, 100)
+                    # Get unique levels and create a multiselect box
+                    all_levels = df_aph['Level'].unique().tolist()
+                    selected_levels = st.multiselect("Select Delivery Location Level(s) to Show", options=all_levels,
+                                                     default=all_levels, key="aph_level_multiselect")
+
+                    # Filter the data based on selected levels
+                    df_aph = df_aph[df_aph["Level"].isin(selected_levels)]
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        line_data = create_line_data(df_aph, 100)
+                        ymax = line_data['Upper_rate'].max()
+                        chart = line_chart_ci(line_data, "Antepartum hemorrhage rate by month", "Rate", [0, ymax])
+                        st.altair_chart(chart)
+                    with col2:
+                        bar_data = create_bar_data(df_aph, 100)
+                        ymax = bar_data['Upper_rate'].max()
+                        chart = bar_chart_ci(bar_data, "Antepartum hemorrhage rate annually", "Rate", [0, ymax])
+                        st.altair_chart(chart)
+
+            if selected_plot == "Preterm rate":
+                st.markdown("<h3 style='text-align: left;'>Preterm births per 100 live births</h3>",
+                            unsafe_allow_html=True)
+
+                df_PT = prepare_chart_data(b_df, i_df, 'Preterm', 'Live Births Final', n_months, n_runs, 100)
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    line_data = create_line_data(df_PT, 100)
+                    chart = line_chart_ci(line_data, "Preterm rate by month", "Rate", [0, 50])
+                    st.altair_chart(chart)
+
+                with col2:
+                    bar_data = create_bar_data(df_PT, 100)
+                    chart = bar_chart_ci(bar_data, "Preterm rate annually", "Rate", [0, 50])
+                    st.altair_chart(chart)
+
+
+            if selected_plot == "Neonatal complication rate":
+                st.markdown("<h3 style='text-align: left;'>Neonatal complications per 100 live births</h3>",
+                            unsafe_allow_html=True)
+
+                tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["RDS", "IVH", "Sepsis", "NEC", "hypoxia", "asphyxia"])
+                with tab1:
+                    df_RDS = prepare_chart_data(b_df, i_df, 'RDS', 'Live Births Final', n_months, n_runs, 100)
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        line_data = create_line_data(df_RDS, 100)
+                        chart = line_chart_ci(line_data, "RDS rate by month", "Rate", [0, 6])
+                        st.altair_chart(chart)
+                    with col2:
+                        bar_data = create_bar_data(df_RDS, 100)
+                        chart = bar_chart_ci(bar_data, "RDS rate annually", "Rate", [0, 6])
+                        st.altair_chart(chart)
+                with tab2:
+                    df_IVH = prepare_chart_data(b_df, i_df, 'IVH', 'Live Births Final', n_months, n_runs, 100)
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        line_data = create_line_data(df_IVH, 100)
+                        chart = line_chart_ci(line_data, "IVH rate by month", "Rate", [0, 4])
+                        st.altair_chart(chart)
+                    with col2:
+                        bar_data = create_bar_data(df_IVH, 100)
+                        chart = bar_chart_ci(bar_data, "IVH rate annually", "Rate", [0, 4])
+                        st.altair_chart(chart)
+                with tab3:
+                    df_Sepsis = prepare_chart_data(b_df, i_df, 'neo_sepsis', 'Live Births Final', n_months, n_runs, 100)
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        line_data = create_line_data(df_Sepsis, 100)
+                        chart = line_chart_ci(line_data, "Sepsis rate by month", "Rate", [0, 5])
+                        st.altair_chart(chart)
+                    with col2:
+                        bar_data = create_bar_data(df_Sepsis, 100)
+                        chart = bar_chart_ci(bar_data, "Sepsis rate annually", "Rate", [0, 5])
+                        st.altair_chart(chart)
+                with tab4:
+                    df_NEC = prepare_chart_data(b_df, i_df, 'NEC', 'Live Births Final', n_months, n_runs, 100)
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        line_data = create_line_data(df_NEC, 100)
+                        chart = line_chart_ci(line_data, "NEC rate by month", "Rate", [0, 1])
+                        st.altair_chart(chart)
+                    with col2:
+                        bar_data = create_bar_data(df_NEC, 100)
+                        chart = bar_chart_ci(bar_data, "NEC rate annually", "Rate", [0, 1])
+                        st.altair_chart(chart)
+                with tab5:
+                    df_hypoxia = prepare_chart_data(b_df, i_df, 'hypoxia', 'Live Births Final', n_months, n_runs, 100)
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        line_data = create_line_data(df_hypoxia, 100)
+                        chart = line_chart_ci(line_data, "Hypoxia rate by month", "Rate", [0, 12])
+                        st.altair_chart(chart)
+                    with col2:
+                        bar_data = create_bar_data(df_hypoxia, 100)
+                        chart = bar_chart_ci(bar_data, "Hypoxia rate annually", "Rate", [0, 12])
+                        st.altair_chart(chart)
+                with tab6:
+                    df_asphyxia = prepare_chart_data(b_df, i_df, 'asphyxia', 'Live Births Final', n_months, n_runs, 100)
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        line_data = create_line_data(df_asphyxia, 100)
+                        chart = line_chart_ci(line_data, "Asphyxia rate by month", "Rate", [0, 8])
+                        st.altair_chart(chart)
+                    with col2:
+                        bar_data = create_bar_data(df_asphyxia, 100)
+                        chart = bar_chart_ci(bar_data, "Asphyxia rate annually", "Rate", [0, 8])
+                        st.altair_chart(chart)
+
+            if selected_plot == "High-risk pregnancies":
+                st.markdown("<h3 style='text-align: left;'>High-risk pregnancies per 100 live births</h3>",
+                            unsafe_allow_html=True)
+
+                df_HRP = prepare_chart_data(b_df, i_df, 'High risk', 'Live Births Final', n_months, n_runs, 100)
+                col1, col2 = st.columns(2)
+                with col1:
+                    line_data = create_line_data(df_HRP, 100)
+                    chart = line_chart_ci(line_data, "High-risk pregnancies rate by month", "Rate", [0, 100])
+                    st.altair_chart(chart)
+                with col2:
+                    bar_data = create_bar_data(df_HRP, 100)
+                    chart = bar_chart_ci(bar_data, "High-risk pregnancies rate annually", "Rate", [0, 100])
+                    st.altair_chart(chart)
+
+            if selected_plot == "Neonatal mortality rate":
+                st.markdown("<h3 style='text-align: left;'>Neonatal deaths per 1,000 live births</h3>",
+                            unsafe_allow_html=True)
+
+                df_NM = prepare_chart_data(b_df, i_df, 'Neonatal Deaths', 'Live Births Final', n_months, n_runs, 1000)
+                col1, col2 = st.columns(2)
+                with col1:
+                    line_data = create_line_data(df_NM, 1000)
+                    ymax = line_data['Upper_rate'].max() + 5
+                    chart = line_chart_ci(line_data, "Neonatal mortality rate by month", "NMR", [0, ymax])
+                    st.altair_chart(chart)
+                with col2:
+                    bar_data = create_bar_data(df_NM, 1000)
+                    ymax = bar_data['Rate'].max() + 5
+                    chart = bar_chart_ci(bar_data, "Neonatal mortality rate annually", "NMR", [0, ymax])
+                    st.altair_chart(chart)
+
+            if selected_plot == "Stillbirth rate":
+                st.markdown("<h3 style='text-align: left;'>Stillbirths per 1,000 live births</h3>",
+                            unsafe_allow_html=True)
+
+                tab1, tab2 = st.tabs(["Intrapartum", "Antepartum"])
+
+                with tab1:
+                    df_SB = prepare_chart_data(b_df, i_df, 'stillbirths', 'Live Births Final', n_months, n_runs, 1000)
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        line_data = create_line_data(df_SB, 1000)
+                        chart = line_chart_ci(line_data, "Stillbirth rate by month", "Rate (per 1000)", [0, 100])
+                        st.altair_chart(chart)
+                    with col2:
+                        bar_data = create_bar_data(df_SB, 1000)
+                        chart = bar_chart_ci(bar_data, "Stillbirth rate annually", "Rate (per 1000)", [0, 100])
+                        st.altair_chart(chart)
+
+                with tab2:
+                    pass
+
+
+            if selected_plot == "Normal referral":
+                st.markdown("<h3 style='text-align: left;'>Normal referrals to L4/5 facilities per 100 live births</h3>",
+                            unsafe_allow_html=True)
+
+                tab1, tab2, tab3 = st.tabs(["Self referrals", "Referrals using free bodas", "Total referrals"])
+
+                with tab1:
+                    df_self_refer = prepare_referral_data(b_df, i_df, 'Self_referrals', n_months, n_runs, 100)
+                    col1, col2 = st.columns(2)
+                    ymax = 100 #df_self_refer['Rate'].max()
+                    with col1:
+                        line_data = create_line_data(df_self_refer, 100)
+                        chart = line_chart_ci(line_data, "Self-referral rate by month", "Rate", [0, ymax])
+                        st.altair_chart(chart)
+                    with col2:
+                        bar_data = create_bar_data(df_self_refer, 100)
+                        chart = bar_chart_ci(bar_data, "Self-referral rate annually", "Rate", [0, ymax])
+                        st.altair_chart(chart)
+
+                with tab2:
+                    df_free_refer = prepare_referral_data(b_df, i_df, 'Free_referrals', n_months, n_runs, 100)
+                    col1, col2 = st.columns(2)
+                    ymax = 100
+                    #ymax = df_free_refer['Rate'].max()
+                    with col1:
+                        line_data = create_line_data(df_free_refer, 100)
+                        chart = line_chart_ci(line_data, "Public referral rate by month", "Rate", [0, ymax])
+                        st.altair_chart(chart)
+                    with col2:
+                        bar_data = create_bar_data(df_free_refer, 100)
+                        chart = bar_chart_ci(bar_data, "Public referral rate annually", "Rate", [0, ymax])
+                        st.altair_chart(chart)
+
+                with tab3:
+                    df_refer = prepare_referral_data(b_df, i_df, 'Normal_referrals', n_months, n_runs, 100)
+                    col1, col2 = st.columns(2)
+                    ymax = 100
+                    #ymax = df_refer['Rate'].max()
+                    with col1:
+                        line_data = create_line_data(df_refer, 100)
+                        chart = line_chart_ci(line_data, "Total referral rate by month", "Rate", [0, ymax])
+                        st.altair_chart(chart)
+                    with col2:
+                        bar_data = create_bar_data(df_refer, 100)
+                        chart = bar_chart_ci(bar_data, "Total referral rate annually", "Rate", [0, ymax])
+                        st.altair_chart(chart)
+
+
+            if selected_plot == "Emergency transfer":
+                st.markdown("<h3 style='text-align: left;'>Emergency transfers per 100 live births</h3>",
+                            unsafe_allow_html=True)
+                tab1, tab2 = st.tabs(["For predicted pre-labor complications", "For actually occured complications"])
+
+                with tab1:
+                    df_EM = prepare_chart_data(b_df, i_df, 'ER_trans_pred', 'Live Births Final', n_months, n_runs, 100)
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        line_data = create_line_data(df_EM, 100)
+                        ymax = line_data['Upper_rate'].max()
+                        chart = line_chart_ci(line_data, "Emergency transfer rate by month", "Rate", [0, ymax])
+                        st.altair_chart(chart)
+                    with col2:
+                        bar_data = create_bar_data(df_EM, 100)
+                        chart = bar_chart_ci(bar_data, "Emergency transfer rate annually", "Rate", [0, ymax])
+                        st.altair_chart(chart)
+
+                with tab2:
+                    df_ET = prepare_chart_data(b_df, i_df, 'ER_trans_actual', 'Live Births Final', n_months, n_runs, 100)
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        line_data = create_line_data(df_ET, 100)
+                        ymax = line_data['Upper_rate'].max()
+                        chart = line_chart_ci(line_data, "Emergency transfer rate by month", "Rate", [0, ymax])
+                        st.altair_chart(chart)
+                    with col2:
+                        bar_data = create_bar_data(df_ET, 100)
+                        chart = bar_chart_ci(bar_data, "Emergency transfer rate annually", "Rate", [0, ymax])
+                        st.altair_chart(chart)
+
+            if selected_plot == "DALYs averted":
+                st.markdown("<h3 style='text-align: left;'>Disability-adjusted life years (DALYs) averted</h3>",
+                            unsafe_allow_html=True)
+                tab1, tab2, tab3 = st.tabs(["Maternal", "Neonatal", "All"])
+
+                with tab1:
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        df_DALY_avt = Acum_DALY_df('M_DALYs', 'Live Births Final', 100000)
+
+                        ymin = df_DALY_avt['Rate'].min()
+                        ymax = df_DALY_avt['Rate'].max()
+                        chart = (
+                            alt.Chart(df_DALY_avt, title="Accumulated DALYs Averted by Month")
+                            .mark_line()
+                            .encode(
+                                x=alt.X("Month:Q", title="Time since the start of intervention implementation (Months)"),
+                                y=alt.Y("Rate:Q", axis=alt.Axis(title="DALYs per 100,000 population"),
+                                        scale=alt.Scale(domain=[ymin, ymax])),
+                                tooltip=["Month:N", "Rate:Q"]
+                            ).properties(width=700, height=400).interactive()
+                        )
+                        chart = chart.configure_title(
+                            anchor='middle'
+                        )
+
+                        st.altair_chart(chart)
+
+                    with col2:
+                        num = df_DALY_avt.loc[df_DALY_avt['Month'] == n_months - 1, 'Rate'].values[0]
+                        st.markdown(
+                            f"<p style='font-size:30px;'>The DALYs averted by intervention in total is ~ **{round(num)}** per 100,000 pregnant mothers.</p>",
+                            unsafe_allow_html=True)
+
+                with tab2:
+                    col1, col2 = st.columns(2)
+                    with col1:
+
+                        df_DALY_avt = Acum_DALY_df('N_DALYs', 'Live Births Final', 100000)
+
+                        ymin = df_DALY_avt['Rate'].min()
+                        ymax = df_DALY_avt['Rate'].max()
+                        chart = (
+                            alt.Chart(df_DALY_avt, title="Accumulated DALYs Averted by Month")
+                            .mark_line()
+                            .encode(
+                                x=alt.X("Month:Q", title="Time since the start of intervention implementation (Months)"),
+                                y=alt.Y("Rate:Q", axis=alt.Axis(title="DALYs per 100,000 population"),
+                                        scale=alt.Scale(domain=[ymin, ymax])),
+                                tooltip=["Month:N", "Rate:Q"]
+                            ).properties(width=700, height=400).interactive()
+                        )
+                        chart = chart.configure_title(
+                            anchor='middle'
+                        )
+
+                        st.altair_chart(chart)
+
+                    with col2:
+                        num = df_DALY_avt.loc[df_DALY_avt['Month'] == n_months - 1, 'Rate'].values[0]
+                        st.markdown(
+                            f"<p style='font-size:30px;'>The DALYs averted by intervention in total is ~ **{round(num)}** per 100,000 live births.</p>",
+                            unsafe_allow_html=True)
+
+                with tab3:
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        df_DALY_avt = Acum_DALY_df('DALYs', 'Live Births Final', 100000)
+
+                        ymin = df_DALY_avt['Rate'].min()
+                        ymax = df_DALY_avt['Rate'].max()
+
+                        chart = (
+                            alt.Chart(df_DALY_avt, title="Accumulated DALYs Averted by Month")
+                            .mark_line()
+                            .encode(
+                                x=alt.X("Month:Q", title="Time since the start of intervention implementation (Months)"),
+                                y=alt.Y("Rate:Q", axis=alt.Axis(title="DALYs per 100,000 population"),
+                                        scale=alt.Scale(domain=[ymin, ymax])),
+                                tooltip=["Month:N", "Rate:Q"]
+                            ).properties(width=700, height=400).interactive()
+                        )
+                        chart = chart.configure_title(
+                            anchor='middle'
+                        )
+
+                        st.altair_chart(chart)
+
+                    with col2:
+                        num = df_DALY_avt.loc[df_DALY_avt['Month'] == n_months - 1, 'Rate'].values[0]
+                        st.markdown(
+                            f"<p style='font-size:30px;'>The DALYs averted by intervention in total is ~ **{round(num)}** per 100,000 dyads.</p>",
+                            unsafe_allow_html=True)
+
+            if selected_plot == "DALYs":
+                st.markdown("<h3 style='text-align: left;'>Disability-adjusted life years (DALYs)</h3>",
+                            unsafe_allow_html=True)
+
+                tab1, tab2, tab3 = st.tabs(["Maternal", "Neonatal", "All"])
+
+                with tab1:
+                    df_DALY = prepare_chart_data(b_df, i_df, 'M_DALYs', 'Live Births Final', n_months, n_runs, 100000)
+
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        line_data = create_line_data(df_DALY, 100000)
+                        ymax = line_data['Upper_rate'].max()
+                        chart = line_chart_ci(line_data, "Maternal DALYs by month", "DALYs per 100,000 population", [0, ymax])
+                        st.altair_chart(chart)
+
+                    with col2:
+                        bar_data = create_bar_data(df_DALY, 100000)
+                        ymax = bar_data['Upper_rate'].max()
+                        chart = bar_chart_ci(bar_data, "Maternal DALYs annually", "DALYs per 100,000 population", [0, ymax])
+                        st.altair_chart(chart)
+
+                with tab2:
+                    df_DALY = prepare_chart_data(b_df, i_df, 'N_DALYs', 'Live Births Final', n_months, n_runs, 100000)
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        line_data = create_line_data(df_DALY, 100000)
+                        ymax = line_data['Upper_rate'].max()
+                        chart = line_chart_ci(line_data, "Neonatal DALYs by month", "DALYs per 100,000 population", [0, ymax])
+                        st.altair_chart(chart)
+                    with col2:
+                        bar_data = create_bar_data(df_DALY, 100000)
+                        ymax = bar_data['Upper_rate'].max()
+                        chart = bar_chart_ci(bar_data, "Neonatal DALYs annually", "DALYs per 100,000 population", [0, ymax])
+                        st.altair_chart(chart)
+
+                with tab3:
+                    df_DALY = prepare_chart_data(b_df, i_df, 'DALYs', 'Live Births Final', n_months, n_runs, 100000)
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        line_data = create_line_data(df_DALY, 100000)
+                        ymax = line_data['Upper_rate'].max()
+                        chart = line_chart_ci(line_data, "DALYs by month", "DALYs per 100,000 population", [0, ymax])
+                        st.altair_chart(chart)
+                    with col2:
+                        bar_data = create_bar_data(df_DALY, 100000)
+                        ymax = bar_data['Upper_rate'].max()
+                        chart = bar_chart_ci(bar_data, "DALYs annually", "DALYs per 100,000 population", [0, ymax])
+                        st.altair_chart(chart)
+
+    elif st.session_state.b_df is None or st.session_state.i_df is None:
+        st.warning("Please run the model first before generating plots.")
+

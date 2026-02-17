@@ -1,0 +1,382 @@
+Iteration No: 1 started. Evaluating function at random point.
+
+--- Calibration Iteration ---
+Parameters:
+  p_aph                 : 0.0230
+  p_ruptured_uterus     : 0.0168
+
+Target vs Simulated Outcomes:
+  p_aph_fac              | Simulated: 0.0236, Target: 0.0180, Relative Error: +31.04%
+  p_uterine_fac          | Simulated: 0.0175, Target: 0.0197, Relative Error: -11.18%
+
+RMSE Loss: 0.233279
+-----------------------------
+
+Iteration No: 1 ended. Evaluation done at random point.
+Time taken: 89.2952
+Function value obtained: 0.2333
+Current minimum: 0.2333
+Iteration No: 2 started. Evaluating function at random point.
+
+--- Calibration Iteration ---
+Parameters:
+  p_aph                 : 0.0228
+  p_ruptured_uterus     : 0.0210
+
+Target vs Simulated Outcomes:
+  p_aph_fac              | Simulated: 0.0234, Target: 0.0180, Relative Error: +30.09%
+  p_uterine_fac          | Simulated: 0.0216, Target: 0.0197, Relative Error: +9.55%
+
+RMSE Loss: 0.223194
+-----------------------------
+
+Iteration No: 2 ended. Evaluation done at random point.
+Time taken: 89.3388
+Function value obtained: 0.2232
+Current minimum: 0.2232
+Iteration No: 3 started. Evaluating function at random point.
+
+--- Calibration Iteration ---
+Parameters:
+  p_aph                 : 0.0195
+  p_ruptured_uterus     : 0.0160
+
+Target vs Simulated Outcomes:
+  p_aph_fac              | Simulated: 0.0199, Target: 0.0180, Relative Error: +10.70%
+  p_uterine_fac          | Simulated: 0.0166, Target: 0.0197, Relative Error: -15.97%
+
+RMSE Loss: 0.135900
+-----------------------------
+
+Iteration No: 3 ended. Evaluation done at random point.
+Time taken: 88.7062
+Function value obtained: 0.1359
+Current minimum: 0.1359
+Iteration No: 4 started. Evaluating function at random point.
+
+--- Calibration Iteration ---
+Parameters:
+  p_aph                 : 0.0196
+  p_ruptured_uterus     : 0.0183
+
+Target vs Simulated Outcomes:
+  p_aph_fac              | Simulated: 0.0201, Target: 0.0180, Relative Error: +11.53%
+  p_uterine_fac          | Simulated: 0.0190, Target: 0.0197, Relative Error: -3.72%
+
+RMSE Loss: 0.085679
+-----------------------------
+
+Iteration No: 4 ended. Evaluation done at random point.
+Time taken: 88.7709
+Function value obtained: 0.0857
+Current minimum: 0.0857
+Iteration No: 5 started. Evaluating function at random point.
+
+--- Calibration Iteration ---
+Parameters:
+  p_aph                 : 0.0164
+  p_ruptured_uterus     : 0.0215
+
+Target vs Simulated Outcomes:
+  p_aph_fac              | Simulated: 0.0169, Target: 0.0180, Relative Error: -6.11%
+  p_uterine_fac          | Simulated: 0.0221, Target: 0.0197, Relative Error: +12.09%
+
+RMSE Loss: 0.095797
+-----------------------------
+
+Iteration No: 5 ended. Evaluation done at random point.
+Time taken: 87.8241
+Function value obtained: 0.0958
+Current minimum: 0.0857
+Iteration No: 6 started. Evaluating function at random point.
+
+--- Calibration Iteration ---
+Parameters:
+  p_aph                 : 0.0156
+  p_ruptured_uterus     : 0.0222
+
+Target vs Simulated Outcomes:
+  p_aph_fac              | Simulated: 0.0160, Target: 0.0180, Relative Error: -10.94%
+  p_uterine_fac          | Simulated: 0.0228, Target: 0.0197, Relative Error: +15.72%
+
+RMSE Loss: 0.135432
+-----------------------------
+
+Iteration No: 6 ended. Evaluation done at random point.
+Time taken: 88.3114
+Function value obtained: 0.1354
+Current minimum: 0.0857
+Iteration No: 7 started. Evaluating function at random point.
+
+--- Calibration Iteration ---
+Parameters:
+  p_aph                 : 0.0244
+  p_ruptured_uterus     : 0.0150
+
+Target vs Simulated Outcomes:
+  p_aph_fac              | Simulated: 0.0250, Target: 0.0180, Relative Error: +39.01%
+  p_uterine_fac          | Simulated: 0.0156, Target: 0.0197, Relative Error: -21.01%
+
+RMSE Loss: 0.313291
+-----------------------------
+
+Iteration No: 7 ended. Evaluation done at random point.
+Time taken: 87.6908
+Function value obtained: 0.3133
+Current minimum: 0.0857
+Iteration No: 8 started. Evaluating function at random point.
+
+--- Calibration Iteration ---
+Parameters:
+  p_aph                 : 0.0249
+  p_ruptured_uterus     : 0.0212
+
+Target vs Simulated Outcomes:
+  p_aph_fac              | Simulated: 0.0256, Target: 0.0180, Relative Error: +42.15%
+  p_uterine_fac          | Simulated: 0.0218, Target: 0.0197, Relative Error: +10.45%
+
+RMSE Loss: 0.307035
+-----------------------------
+
+Iteration No: 8 ended. Evaluation done at random point.
+Time taken: 88.6490
+Function value obtained: 0.3070
+Current minimum: 0.0857
+Iteration No: 9 started. Evaluating function at random point.
+
+--- Calibration Iteration ---
+Parameters:
+  p_aph                 : 0.0211
+  p_ruptured_uterus     : 0.0151
+
+Target vs Simulated Outcomes:
+  p_aph_fac              | Simulated: 0.0217, Target: 0.0180, Relative Error: +20.56%
+  p_uterine_fac          | Simulated: 0.0156, Target: 0.0197, Relative Error: -20.76%
+
+RMSE Loss: 0.206634
+-----------------------------
+
+Iteration No: 9 ended. Evaluation done at random point.
+Time taken: 87.2409
+Function value obtained: 0.2066
+Current minimum: 0.0857
+Iteration No: 10 started. Evaluating function at random point.
+
+--- Calibration Iteration ---
+Parameters:
+  p_aph                 : 0.0152
+  p_ruptured_uterus     : 0.0202
+
+Target vs Simulated Outcomes:
+  p_aph_fac              | Simulated: 0.0157, Target: 0.0180, Relative Error: -12.89%
+  p_uterine_fac          | Simulated: 0.0209, Target: 0.0197, Relative Error: +6.03%
+
+RMSE Loss: 0.100655
+-----------------------------
+
+Iteration No: 10 ended. Evaluation done at random point.
+Time taken: 87.9927
+Function value obtained: 0.1007
+Current minimum: 0.0857
+Iteration No: 11 started. Evaluating function at random point.
+
+--- Calibration Iteration ---
+Parameters:
+  p_aph                 : 0.0190
+  p_ruptured_uterus     : 0.0155
+
+Target vs Simulated Outcomes:
+  p_aph_fac              | Simulated: 0.0195, Target: 0.0180, Relative Error: +8.40%
+  p_uterine_fac          | Simulated: 0.0160, Target: 0.0197, Relative Error: -18.86%
+
+RMSE Loss: 0.145969
+-----------------------------
+
+Iteration No: 11 ended. Evaluation done at random point.
+Time taken: 87.6113
+Function value obtained: 0.1460
+Current minimum: 0.0857
+Iteration No: 12 started. Evaluating function at random point.
+
+--- Calibration Iteration ---
+Parameters:
+  p_aph                 : 0.0247
+  p_ruptured_uterus     : 0.0173
+
+Target vs Simulated Outcomes:
+  p_aph_fac              | Simulated: 0.0254, Target: 0.0180, Relative Error: +41.21%
+  p_uterine_fac          | Simulated: 0.0179, Target: 0.0197, Relative Error: -8.97%
+
+RMSE Loss: 0.298232
+-----------------------------
+
+Iteration No: 12 ended. Evaluation done at random point.
+Time taken: 86.9465
+Function value obtained: 0.2982
+Current minimum: 0.0857
+Iteration No: 13 started. Evaluating function at random point.
+
+--- Calibration Iteration ---
+Parameters:
+  p_aph                 : 0.0159
+  p_ruptured_uterus     : 0.0212
+
+Target vs Simulated Outcomes:
+  p_aph_fac              | Simulated: 0.0163, Target: 0.0180, Relative Error: -9.17%
+  p_uterine_fac          | Simulated: 0.0218, Target: 0.0197, Relative Error: +10.47%
+
+RMSE Loss: 0.098433
+-----------------------------
+
+Iteration No: 13 ended. Evaluation done at random point.
+Time taken: 86.9636
+Function value obtained: 0.0984
+Current minimum: 0.0857
+Iteration No: 14 started. Evaluating function at random point.
+
+--- Calibration Iteration ---
+Parameters:
+  p_aph                 : 0.0188
+  p_ruptured_uterus     : 0.0248
+
+Target vs Simulated Outcomes:
+  p_aph_fac              | Simulated: 0.0193, Target: 0.0180, Relative Error: +7.33%
+  p_uterine_fac          | Simulated: 0.0255, Target: 0.0197, Relative Error: +29.30%
+
+RMSE Loss: 0.213573
+-----------------------------
+
+Iteration No: 14 ended. Evaluation done at random point.
+Time taken: 87.3296
+Function value obtained: 0.2136
+Current minimum: 0.0857
+Iteration No: 15 started. Evaluating function at random point.
+
+--- Calibration Iteration ---
+Parameters:
+  p_aph                 : 0.0197
+  p_ruptured_uterus     : 0.0236
+
+Target vs Simulated Outcomes:
+  p_aph_fac              | Simulated: 0.0202, Target: 0.0180, Relative Error: +11.98%
+  p_uterine_fac          | Simulated: 0.0242, Target: 0.0197, Relative Error: +22.97%
+
+RMSE Loss: 0.183219
+-----------------------------
+
+Iteration No: 15 ended. Evaluation done at random point.
+Time taken: 88.8064
+Function value obtained: 0.1832
+Current minimum: 0.0857
+Iteration No: 16 started. Evaluating function at random point.
+
+--- Calibration Iteration ---
+Parameters:
+  p_aph                 : 0.0218
+  p_ruptured_uterus     : 0.0195
+
+Target vs Simulated Outcomes:
+  p_aph_fac              | Simulated: 0.0224, Target: 0.0180, Relative Error: +24.71%
+  p_uterine_fac          | Simulated: 0.0202, Target: 0.0197, Relative Error: +2.45%
+
+RMSE Loss: 0.175569
+-----------------------------
+
+Iteration No: 16 ended. Evaluation done at random point.
+Time taken: 87.6377
+Function value obtained: 0.1756
+Current minimum: 0.0857
+Iteration No: 17 started. Evaluating function at random point.
+
+--- Calibration Iteration ---
+Parameters:
+  p_aph                 : 0.0151
+  p_ruptured_uterus     : 0.0244
+
+Target vs Simulated Outcomes:
+  p_aph_fac              | Simulated: 0.0156, Target: 0.0180, Relative Error: -13.50%
+  p_uterine_fac          | Simulated: 0.0250, Target: 0.0197, Relative Error: +27.10%
+
+RMSE Loss: 0.214060
+-----------------------------
+
+Iteration No: 17 ended. Evaluation done at random point.
+Time taken: 87.0236
+Function value obtained: 0.2141
+Current minimum: 0.0857
+Iteration No: 18 started. Evaluating function at random point.
+
+--- Calibration Iteration ---
+Parameters:
+  p_aph                 : 0.0206
+  p_ruptured_uterus     : 0.0189
+
+Target vs Simulated Outcomes:
+  p_aph_fac              | Simulated: 0.0211, Target: 0.0180, Relative Error: +17.38%
+  p_uterine_fac          | Simulated: 0.0195, Target: 0.0197, Relative Error: -1.01%
+
+RMSE Loss: 0.123111
+-----------------------------
+
+Iteration No: 18 ended. Evaluation done at random point.
+Time taken: 86.9893
+Function value obtained: 0.1231
+Current minimum: 0.0857
+Iteration No: 19 started. Evaluating function at random point.
+
+--- Calibration Iteration ---
+Parameters:
+  p_aph                 : 0.0152
+  p_ruptured_uterus     : 0.0173
+
+Target vs Simulated Outcomes:
+  p_aph_fac              | Simulated: 0.0156, Target: 0.0180, Relative Error: -13.33%
+  p_uterine_fac          | Simulated: 0.0179, Target: 0.0197, Relative Error: -9.06%
+
+RMSE Loss: 0.113989
+-----------------------------
+
+Iteration No: 19 ended. Evaluation done at random point.
+Time taken: 86.9164
+Function value obtained: 0.1140
+Current minimum: 0.0857
+Iteration No: 20 started. Evaluating function at random point.
+
+--- Calibration Iteration ---
+Parameters:
+  p_aph                 : 0.0174
+  p_ruptured_uterus     : 0.0218
+
+Target vs Simulated Outcomes:
+  p_aph_fac              | Simulated: 0.0179, Target: 0.0180, Relative Error: -0.28%
+  p_uterine_fac          | Simulated: 0.0224, Target: 0.0197, Relative Error: +13.88%
+
+RMSE Loss: 0.098183
+-----------------------------
+
+Iteration No: 20 ended. Evaluation done at random point.
+Time taken: 86.7463
+Function value obtained: 0.0982
+Current minimum: 0.0857
+Iteration No: 21 started. Searching for the next optimal point.
+
+--- Calibration Iteration ---
+Parameters:
+  p_aph                 : 0.0176
+  p_ruptured_uterus     : 0.0191
+
+Target vs Simulated Outcomes:
+  p_aph_fac              | Simulated: 0.0181, Target: 0.0180, Relative Error: +0.75%
+  p_uterine_fac          | Simulated: 0.0198, Target: 0.0197, Relative Error: +0.26%
+
+RMSE Loss: 0.005628
+-----------------------------
+
+
+⏹️ Early stopping triggered. RMSE: 0.005628
+
+✅ Optimization stopped early.
+Best RMSE achieved: 0.005628
+Best Parameters:
+  p_aph                 : 0.0176
+  p_ruptured_uterus     : 0.0191
