@@ -233,6 +233,7 @@ def get_parameters(rng = None):
         't_l4_l5_severe': 44.7,                             # probability of transfer from L4 to L5
 
         ##parameters for single interventions
+
         #ANC
         'S_iv_iron': 0.44,                                                                                                            # the supply level of IV iron at facilities
         #Intrapartum + PNC
@@ -250,6 +251,12 @@ def get_parameters(rng = None):
         'E_MgSO4': sample_from_ci(0.41, 0.29, 0.58, n=11444, kind='RR', size=1, rng = rng)[0],                     # efficacy of MGSO4 in reducing eclampsia
         'E_antibiotics': sample_from_ci(0.67, 0.56, 0.79, n=14590, kind='RR', size=1, rng = rng)[0],               # efficacy of antibiotics in reducing maternal sepsis
         'E_oxytocin': sample_from_ci(0.91, 0.827, 0.993, n=46, kind='proportion', size=1, rng = rng)[0],           # efficacy of oxytocin
+        # PROMPTS mechanism parameters (NOT user inputs)
+        'phone_ownership': 0.89,
+        'intervention_fidelity': 0.87,
+        'OR_anc4p': 1.38,
+        'sen_risk_trad_target': 0.95,
+        'spec_risk_trad_target': 0.631,
 
         ##parameters in DALY calculation##
         'DW': { # disability weights for different conditions

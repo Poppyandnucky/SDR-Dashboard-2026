@@ -1,3 +1,17 @@
+def clip01(x):
+    return float(np.clip(x, 0.0, 1.0))
+
+def odds_update(p, OR):
+    p = clip01(p)
+    OR = float(OR)
+    if p <= 0.0:
+        return 0.0
+    if p >= 1.0:
+        return 1.0
+    odds = p / (1.0 - p)
+    odds_new = odds * OR
+    return clip01(odds_new / (1.0 + odds_new))
+
 import random
 import numpy as np
 import math
@@ -59,6 +73,7 @@ def f_ANC_LB_effect_vectorized(track, LB_base, param, flags, i, int_period, rng)
     ##-------------------Intervention Set Up----------------------##
     flag_ANC = flags["flag_ANC"]
     flag_POCUS = flags["flag_us"]
+    flag_PROMPTS = flags["flag_PROMPTS"]
 
     # ANC intervention
     P_ANC_base = param['p_ANC_base']
@@ -68,6 +83,30 @@ def f_ANC_LB_effect_vectorized(track, LB_base, param, flags, i, int_period, rng)
     else:
         P_ANC = P_ANC_base
 
+    # ------------------- PROMPTS BLOCK A: Increase 4+ANC via engagement ------------------- #
+    if flag_PROMPTS:
+        # dashboard / baseline constants (safe defaults)
+        adoption_prompts = clip01(param["HSS"].get("adoption_prompts", 1.0))
+        chv_engagement = clip01(param["HSS"].get("chv_engagement", 1.0))
+        phone_ownership = clip01(param.get("phone_ownership", 0.89))
+        intervention_fidelity = clip01(param.get("intervention_fidelity", 0.87))
+
+        # clip CHV engagement for probability usage
+        chv_engagement = clip01(chv_engagement)
+
+        # participation and effective engagement
+        P_participation = clip01(adoption_prompts * chv_engagement * phone_ownership)
+        engagement_level = clip01(P_participation * intervention_fidelity)
+
+        # map engagement to effective OR on ANC4+
+        OR_anc4p = float(param.get("OR_anc4p", 1.38))
+        OR_anc4p_eff = 1.0 + (OR_anc4p - 1.0) * engagement_level
+
+        # apply OR update to system-level P_ANC
+        P_ANC = odds_update(P_ANC, OR_anc4p_eff)
+    else:
+        engagement_level = 0.0
+
     # POCUS intervention
     i_pocus = np.zeros(num_mothers, dtype=int)
     if flag_POCUS:
@@ -76,6 +115,11 @@ def f_ANC_LB_effect_vectorized(track, LB_base, param, flags, i, int_period, rng)
     else:
         sen_risk = param["sen_risk_trad"]
         spec_risk = param["spec_risk_trad"]
+        if flags.get("flag_PROMPTS", 0):
+            sen_target = param.get("sen_risk_trad_target", sen_risk)
+            spec_target = param.get("spec_risk_trad_target", spec_risk)
+            sen_risk = clip01(sen_risk + (sen_target - sen_risk) * engagement_level)
+            spec_risk = clip01(spec_risk + (spec_target - spec_risk) * engagement_level)
 
     if not flag_POCUS:
         p_elec_CS_highrisk = param["p_elec_CS|highrisk"]                  # probability of elective CS given high risk

@@ -672,6 +672,7 @@ def P_intervention(int_flag, int_name, int_param, flags, param, S, P):
 def reset_flags():
     flags = {
         'flag_SDR': 0,
+        'flag_PROMPTS': 0,
         #SDR Demand
         'flag_CHV': 0,
         'flag_pushback': 0,
@@ -698,7 +699,7 @@ def reset_flags():
     }
     return flags
 
-def reset_E():
+def reset_E(): 
     E = {}
     E["sens_us"] = 0.95
     E["spec_us"] = 0.95
@@ -721,6 +722,8 @@ def reset_HSS(slider_params):
     HSS["sensor_ratio"] = 0
     HSS['CHV_memory'] = "Always Forget"  # Default memory model for CHVs
     HSS['tau_decay'] = 6
+    HSS['adoption_prompts'] = 0.0
+    HSS['chv_engagement'] = 0.0
     return HSS
 
 def reset_S(slider_params):
