@@ -255,9 +255,11 @@ def get_parameters(rng = None):
         'phone_ownership': 0.89,
         'intervention_fidelity': 0.87,
         'OR_anc4p': 1.38,
-        'sen_risk_trad_target': 0.95,
+        'sen_risk_trad_target': 0.95, ## under case where mothers recognize danger signs
         'spec_risk_trad_target': 0.631,
-
+        'p_move_home_base': 0.3,
+        ###  parameter 
+        
         ##parameters in DALY calculation##
         'DW': { # disability weights for different conditions
             'anemia': sample_from_ci(0.052, 0.0338, 0.0757, kind='mean', size=1, rng = rng)[0],

@@ -99,11 +99,16 @@ def f_ANC_LB_effect_vectorized(track, LB_base, param, flags, i, int_period, rng)
         engagement_level = clip01(P_participation * intervention_fidelity)
 
         # map engagement to effective OR on ANC4+
-        OR_anc4p = float(param.get("OR_anc4p", 1.38))
-        OR_anc4p_eff = 1.0 + (OR_anc4p - 1.0) * engagement_level
+        OR_anc4p = float(param.get("OR_anc4p", 1.50))
+        # anc4p_eff = 1.0 + (OR_anc4p - 1.0) * engagement_level
+        OR_anc4p_eff = np.exp(engagement_level * np.log(OR_anc4p))
 
         # apply OR update to system-level P_ANC
+        print(P_ANC)
         P_ANC = odds_update(P_ANC, OR_anc4p_eff)
+        P_ANC = P_ANC
+        print(P_ANC, P_participation, engagement_level, OR_anc4p_eff)
+
     else:
         engagement_level = 0.0
 
@@ -206,6 +211,10 @@ def f_ANC_LB_effect_vectorized(track, LB_base, param, flags, i, int_period, rng)
     RR_l45_poorQOC = param['RR_l45_poorQOC']
 
     # Adjusted probability matrices
+
+    # distribution of mothers to delivery location - no ANC 
+    # distrubition of mothers to delivery location - low-risk
+    # distrubition of mothers to delivery location - high-risk
     prob_matrix_noANC_adj = adjust_probabilities(prob_matrix_noANC, RR_l45_poorQOC)
     prob_matrix_lowrisk_adj = adjust_probabilities(prob_matrix_lowrisk, RR_l45_poorQOC)
     prob_matrix_highrisk_adj = adjust_probabilities(prob_matrix_highrisk, RR_l45_poorQOC)
@@ -244,14 +253,34 @@ def f_ANC_LB_effect_vectorized(track, LB_base, param, flags, i, int_period, rng)
     i_loc[anc_highrisk_mask & negative_mask] = i_loc_anc_highrisk_neg[anc_highrisk_mask & negative_mask]
 
     # #draw location assignments for all mothers using each strategy
-    # i_loc_noanc_all = rng.choice(3, p=prob_matrix_noANC, size=num_mothers)
-    # i_loc_anc_highrisk_all = rng.choice(3, p=prob_matrix_highrisk, size=num_mothers)
-    # i_loc_anc_lowrisk_all = rng.choice(3, p=prob_matrix_lowrisk, size=num_mothers)
-    # #apply results only to relevant mothers
-    # i_loc = np.zeros(num_mothers, dtype=int)
-    # i_loc[noanc_mask] = i_loc_noanc_all[noanc_mask]
-    # i_loc[anc_highrisk_mask] = i_loc_anc_highrisk_all[anc_highrisk_mask]
-    # i_loc[anc_lowrisk_mask] = i_loc_anc_lowrisk_all[anc_lowrisk_mask]
+    i_loc_noanc_all = rng.choice(3, p=prob_matrix_noANC, size=num_mothers)
+    i_loc_anc_highrisk_all = rng.choice(3, p=prob_matrix_highrisk, size=num_mothers)
+    i_loc_anc_lowrisk_all = rng.choice(3, p=prob_matrix_lowrisk, size=num_mothers)
+    #apply results only to relevant mothers
+    i_loc = np.zeros(num_mothers, dtype=int)
+    i_loc[noanc_mask] = i_loc_noanc_all[noanc_mask]
+    i_loc[anc_highrisk_mask] = i_loc_anc_highrisk_all[anc_highrisk_mask]
+    i_loc[anc_lowrisk_mask] = i_loc_anc_lowrisk_all[anc_lowrisk_mask]
+
+
+    # # ## PROMPTS re-allocation ## 
+    if flag_PROMPTS:
+        # - p_move_home_base: max fraction of home-deliverers that PROMPTS can shift
+        # - p_to_L45: conditional probability that a shifted mother goes to L4/5 (else L2/
+        # 3)
+        p_move_home_base = float(param.get("p_move_home_base", 0.30))
+        p_move_home = clip01(p_move_home_base * engagement_level)
+        p_to_L23 = 0.1
+        p_to_L45 = 1 - p_to_L23
+
+        home_mask = (i_loc == 0)
+        move_mask = home_mask & (rng.random(num_mothers) < p_move_home)
+        i_loc[move_mask] = rng.choice(
+            [1, 2],
+            size=int(np.sum(move_mask)),
+            p=[p_to_L23, p_to_L45]
+        )
+    
 
     #Reallocate mothers if overcapacity
     n_l45 = np.count_nonzero(i_loc == 2)
@@ -263,6 +292,7 @@ def f_ANC_LB_effect_vectorized(track, LB_base, param, flags, i, int_period, rng)
     mask_relocate_l23 = np.zeros(num_mothers, dtype=bool)            # apply relocation
     mask_relocate_l23[relocate_indices] = True
     i_loc[mask_relocate_l23] = 1
+    print(exceed_lb, np.sum(mask_relocate_l23), np.sum(i_loc == 2))
 
     ##-------------------Elective C-section Decision----------------------##
     elcs_mask1 = (i_loc == 2) & (i_risk_pred == 1) & (i_preterm_pred == 0) & (i_ANC == 1)

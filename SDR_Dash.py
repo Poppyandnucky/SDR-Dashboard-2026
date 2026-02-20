@@ -148,53 +148,68 @@ def render_hss(preset_demand_scenario, preset_supply_scenario):
                 # Update session state
                 st.session_state['P_L45'] = i_HSS["P_L45"]
 
-        # # =========================
-        # # PROMPTS (Demand-side)
-        # # =========================
-        # st.markdown("---")
-        # st.text("PROMPTS (Engagement program)")
+        # # # =========================
+        # # # PROMPTS (Demand-side)
+        # # # =========================
+        # # st.markdown("---")
+        # # st.text("PROMPTS (Engagement program)")
 
-        colP1, colP2 = st.columns(2)
-        with colP1:
-            prompts_int = st.checkbox(
-                "Enable PROMPTS",
-                value=bool(st.session_state.get("flag_PROMPTS", 0)),
-                help="Enable PROMPTS engagement program (affects engagement-related mechanisms in LB_effect)."
-            )
+        # colP1, colP2 = st.columns(2)
+        # with colP1:
+        #     prompts_int = st.checkbox(
+        #         "Enable PROMPTS",
+        #         value=bool(st.session_state.get("flag_PROMPTS", 0)),
+        #         help="Enable PROMPTS engagement program (affects engagement-related mechanisms in LB_effect)."
+        #     )
 
-        with colP2:
-            i_flags["flag_PROMPTS"] = 1 if prompts_int else 0
-            st.session_state["flag_PROMPTS"] = int(prompts_int)
+        # with colP2:
+        #     i_flags["flag_PROMPTS"] = 1 if prompts_int else 0
+        #     st.session_state["flag_PROMPTS"] = int(prompts_int)
 
-        if prompts_int:
-            colP3, colP4 = st.columns(2)
+        # if prompts_int:
+        #     colP3, colP4, colP5 = st.columns(3)
 
-            with colP3:
-                adoption_default = int(st.session_state.get("adoption_prompts", 100))
-                adoption_val = st.slider(
-                    "PROMPTS adoption",
-                    min_value=0, max_value=100, step=5,
-                    value=adoption_default,
-                    format="%d%%",
-                    help="Program adoption level."
-                )
-                i_HSS["adoption_prompts"] = adoption_val / 100.0
-                st.session_state["adoption_prompts"] = adoption_val
+        #     with colP3:
+        #         adoption_default = int(st.session_state.get("adoption_prompts", 100))
+        #         adoption_val = st.slider(
+        #             "PROMPTS adoption",
+        #             min_value=0, max_value=100, step=5,
+        #             value=adoption_default,
+        #             format="%d%%",
+        #             help="Program adoption level."
+        #         )
+        #         i_HSS["adoption_prompts"] = adoption_val / 100.0
+        #         st.session_state["adoption_prompts"] = adoption_val
 
-            with colP4:
-                engage_default = int(st.session_state.get("chv_engagement", 100))
-                engage_val = st.slider(
-                    "CHV engagement (PROMPTS)",
-                    min_value=0, max_value=100, step=5,
-                    value=engage_default,
-                    format="%d%%",
-                    help="CHV engagement level used ONLY inside PROMPTS."
-                )
-                i_HSS["chv_engagement"] = engage_val / 100.0
-                st.session_state["chv_engagement"] = engage_val
-        else:
-            i_HSS["adoption_prompts"] = 0.0
-            i_HSS["chv_engagement"] = 0.0
+        #     with colP4:
+        #         engage_default = int(st.session_state.get("chv_engagement", 100))
+        #         engage_val = st.slider(
+        #             "CHV engagement (PROMPTS)",
+        #             min_value=0, max_value=100, step=5,
+        #             value=engage_default,
+        #             format="%d%%",
+        #             help="CHV engagement level used ONLY inside PROMPTS."
+        #         )
+        #         i_HSS["chv_engagement"] = engage_val / 100.0
+        #         st.session_state["chv_engagement"] = engage_val
+
+        #     with colP5: 
+        #         prompts_effect_default = int(st.session_state.get("intervention_fidelity", 100))
+        #         prompts_effect_val = st.slider(
+        #             "Intervention Fidelity",
+        #             min_value=87, max_value=100, step=5,
+        #             value=prompts_effect_default,
+        #             format="%d%%",
+        #             help="Effectiveness of PROMPTS in increasing intention to deliver at L4/5."
+        #         )
+        #         i_HSS["prompts_effect"] = prompts_effect_val / 100.0
+        #         st.session_state["prompts_effect"] = prompts_effect_val
+
+
+        # else:
+        #     i_HSS["adoption_prompts"] = 0.0
+        #     i_HSS["chv_engagement"] = 0.0
+        #     i_HSS["intervention_fidelity"] = 0.0
                 
         col1_7, col1_8 = st.columns(2)
         with col1_7:
@@ -393,6 +408,197 @@ def render_hss(preset_demand_scenario, preset_supply_scenario):
                 i_flags['flag_transfer'] = 0
                 i_HSS["P_transfer"] = 0
 
+def render_prompts():
+    st.subheader(":bulb: MOMISH Interventions")
+
+    colP1, colP2 = st.columns(2)
+    with colP1:
+        prompts_int = st.toggle(
+            "Enable PROMPTS",
+            value=bool(st.session_state.get("flag_PROMPTS", 0)),
+            help="Enable PROMPTS engagement program (affects engagement-related mechanisms in LB_effect).",
+            key="prompts_enable"
+        )
+
+    with colP2:
+        i_flags["flag_PROMPTS"] = 1 if prompts_int else 0
+        st.session_state["flag_PROMPTS"] = int(prompts_int)
+
+    if prompts_int:
+        colP3, colP4, colP5 = st.columns(3)
+
+        with colP3:
+            adoption_default = int(st.session_state.get("adoption_prompts", 100))
+            adoption_val = st.slider(
+                "PROMPTS adoption",
+                min_value=0, max_value=100, step=5,
+                value=adoption_default,
+                format="%d%%",
+                help="Program adoption level.",
+                key="prompts_adoption"
+            )
+            i_HSS["adoption_prompts"] = adoption_val / 100.0
+            st.session_state["adoption_prompts"] = adoption_val
+
+        with colP4:
+            engage_default = int(st.session_state.get("chv_engagement", 100))
+            engage_val = st.slider(
+                "CHV engagement (PROMPTS)",
+                min_value=0, max_value=100, step=5,
+                value=engage_default,
+                format="%d%%",
+                help="CHV engagement level used ONLY inside PROMPTS.",
+                key="prompts_engagement"
+            )
+            i_HSS["chv_engagement"] = engage_val / 100.0
+            st.session_state["chv_engagement"] = engage_val
+
+        with colP5: 
+            prompts_effect_default = int(st.session_state.get("intervention_fidelity", 100))
+            prompts_effect_val = st.slider(
+                "Intervention Fidelity",
+                min_value=87, max_value=100, step=5,
+                value=prompts_effect_default,
+                format="%d%%",
+                help="Effectiveness of PROMPTS in increasing intention to deliver at L4/5."
+            )
+            i_HSS["prompts_effect"] = prompts_effect_val / 100.0
+            st.session_state["prompts_effect"] = prompts_effect_val
+    else:
+        i_HSS["adoption_prompts"] = 0.0
+        i_HSS["chv_engagement"] = 0.0
+
+    # ==========================================================
+    # BLOCK 2 — MENTOR
+    # ==========================================================
+    col5, col6 = st.columns(2)
+    with col5:
+        mentor_int = st.toggle(
+            "MENTORS Intervention",
+            value=bool(st.session_state.get("flag_MENTOR", 0)),
+            key="mentor_enable"
+        )
+
+    with col6:
+        i_flags["flag_MENTOR"] = 1 if mentor_int else 0
+        st.session_state["flag_MENTOR"] = int(mentor_int)
+
+    if mentor_int:
+        col7, col8 = st.columns(2)
+        with col7:
+            adoption_default = int(st.session_state.get("adoption_mentor", 100))
+            adoption_val = st.slider(
+                "Adoption of MENTORS",
+                0, 100, adoption_default, 5,
+                format="%d%%",
+                key="mentor_adoption"
+            )
+            i_HSS["adoption_mentor"] = adoption_val / 100.0
+            st.session_state["adoption_mentor"] = adoption_val
+
+        with col8:
+            engage_default = int(st.session_state.get("mentor_intensity", 100))
+            engage_val = st.slider(
+                "On-site attendance of MENTORS sessions",
+                0, 100, engage_default, 5,
+                format="%d%%",
+                key="mentor_intensity"
+            )
+            i_HSS["mentor_intensity"] = engage_val / 100.0
+            # st.session_state["mentor_intensity"] = engage_val
+    else:
+        i_HSS["adoption_mentor"] = 0.0
+        i_HSS["mentor_intensity"] = 0.0
+
+
+    # ==========================================================
+    # BLOCK 3 — SMS
+    # ==========================================================
+    col9, col10 = st.columns(2)
+    with col9:
+        pulse_int = st.toggle(
+            "PULSE Intervention",
+            value=bool(st.session_state.get("flag_pulse", 0)),
+            key="pulse_enable"
+        )
+
+    with col10:
+        i_flags["flag_pulse"] = 1 if pulse_int else 0
+        st.session_state["flag_pulse"] = int(pulse_int)
+
+    if pulse_int:
+        pulse_default = int(st.session_state.get("pulse_coverage", 100))
+        pulse_val = st.slider(
+            "Adoption of PULSE",
+            0, 100, pulse_default, 5,
+            format="%d%%",
+            key="pulse_coverage"
+        )
+        i_HSS["pulse_coverage"] = pulse_val / 100.0
+        # st.session_state["pulse_coverage"] = pulse_val
+    else:
+        i_HSS["pulse_coverage"] = 0.0
+        i_HSS["pulse_effectiveness"] = 0.0
+
+
+    # ==========================================================
+    # BLOCK 4 — BLOOD INTERVENTION
+    # ==========================================================
+    col13, col14 = st.columns(2)
+    with col13:
+        blood_int = st.toggle(
+            "Blood Intervention",
+            value=bool(st.session_state.get("flag_blood", 0)),
+            key="blood_enable"
+        )
+
+    with col14:
+        i_flags["flag_blood"] = 1 if blood_int else 0
+        st.session_state["flag_blood"] = int(blood_int)
+
+    if blood_int:
+        blood_default = int(st.session_state.get("blood_participation", 100))
+        blood_val = st.slider(
+            "Adoption of Blood Tracking System",
+            0, 100, blood_default, 5,
+            format="%d%%",
+            key="blood_participation"
+        )
+        i_HSS["blood_participation"] = blood_val / 100.0
+        # st.session_state["blood_participation"] = blood_val
+    else:
+        i_HSS["blood_participation"] = 0.0
+        i_HSS["blood_intensity"] = 0.0
+
+    # ==========================================================
+    # BLOCK 5 — Referral Systems & EMT Training INTERVENTION
+    # ==========================================================
+    col15, col16 = st.columns(2)
+    with col15:
+        emt_int = st.toggle(
+            "Referral Systems & EMT Training Intervention",
+            value=bool(st.session_state.get("flag_emt", 0)),
+            key="emt_enable"
+        )
+
+    with col16:
+        i_flags["flag_emt"] = 1 if emt_int else 0
+        st.session_state["flag_emt"] = int(emt_int)
+
+    if emt_int:
+        emt_default = int(st.session_state.get("emt_participation", 100))
+        emt_val = st.slider(
+            "Emergency vehicle capacity",
+            0, 100, emt_default, 5,
+            format="%d%%",
+            key="emt_participation"
+        )
+        i_HSS["emt_participation"] = emt_val / 100.0
+        # st.session_state["emt_participation"] = emt_val
+    else:
+        i_HSS["emt_participation"] = 0.0
+        i_HSS["emt_intensity"] = 0.0
+        
 # Function to render Single Interventions
 def render_single():
     col1, col2 = st.columns(2)
@@ -528,6 +734,8 @@ if 'b_df_multiple' not in st.session_state:
     st.session_state.b_df_multiple = None
 
 
+
+
 with st.expander("⚙️ **Scenario Settings** (Click to expand/collapse)", expanded=True):
     # Leading Question
     if st.session_state.intervention_selection is None:
@@ -540,6 +748,9 @@ with st.expander("⚙️ **Scenario Settings** (Click to expand/collapse)", expa
             st.session_state.intervention_selection = "Single"
         if st.button(":three: Both"):
             st.session_state.intervention_selection = "Both"
+        if st.button(":four: MOMISH Interventions"):
+            st.session_state.intervention_selection = "PROMPTS"
+
 
     if st.session_state.intervention_selection == "HSS":
         st.button("🔙 Back to Intervention Options", on_click=go_back_to_main)
@@ -583,6 +794,11 @@ with st.expander("⚙️ **Scenario Settings** (Click to expand/collapse)", expa
         render_hss(preset_demand_scenario=None, preset_supply_scenario=None)
         st.markdown("---")
         render_single()
+        st.session_state.scenario_selected = True
+
+    elif st.session_state.intervention_selection == "PROMPTS":
+        st.button("🔙 Back to Intervention Options", on_click=go_back_to_main)
+        render_prompts()
         st.session_state.scenario_selected = True
 
 with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expanded=True)):

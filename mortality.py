@@ -1,4 +1,5 @@
 import numpy as np
+from LB_effect import clip01
 from global_func import baseline_p_death, P_intervention
 import streamlit as st
 
@@ -46,6 +47,8 @@ def initialize_MM_params_vectorized(track, param, flags, i, MC, M, NC):
     return P, n, MC, M, NC, E, OR, MD, ND, W
 
 def f_MM_vectorized(track, param, flags, i, MC, M, NC, individual_outcomes, rng):
+
+
     # Initialize parameters and counters
     P, n, MC, M, NC, E, OR, MD, ND, W = initialize_MM_params_vectorized(track, param, flags, i, MC, M, NC)
 
