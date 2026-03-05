@@ -27,6 +27,38 @@ MODEL = {
 slider_params = get_slider_params()
 i_flags, i_E, i_HSS, i_S = reset_flags(), reset_E(), reset_HSS(slider_params), reset_S(slider_params)
 
+
+def render_calculation_sidebar():
+    st.sidebar.header("Calculated Summary")
+
+    if not st.session_state.get("model_finished", False):
+        st.sidebar.caption("Run the model to view intervention calculations.")
+        return
+
+    i_ind_outcomes = st.session_state.get("i_ind_outcomes")
+    print_outcomes = i_ind_outcomes.loc[i_ind_outcomes['Run']==3]
+    st.sidebar.write(print_outcomes.head())  # Debug: Display the first few rows of the individual outcomes DataFrame
+    
+    st.sidebar.subheader("Intervention Totals")
+
+    if print_outcomes is None or print_outcomes.empty:
+        st.sidebar.caption("No intervention outcomes available.")
+        return
+
+    total_mothers = print_outcomes.shape[0]
+    st.sidebar.metric("Mothers", f"{total_mothers:,}")
+
+    if "i_mat_death" in print_outcomes.columns:
+        # total_deaths = int(print_outcomes["i_mat_death"].sum())
+        total_deaths = np.sum(print_outcomes['i_mat_death']==1)
+        st.sidebar.metric("Maternal deaths (observed)", f"{total_deaths:,}")
+
+    df_fac = print_outcomes.loc[print_outcomes['i_mat_death'] == 1, 'i_loc_new_v2']
+    df_facility = df_fac.value_counts().reset_index()
+
+    st.sidebar.subheader("By Facility")
+    st.sidebar.dataframe(df_facility, use_container_width=True, hide_index=True)
+
 def go_back_to_main():
     st.session_state.intervention_selection = None
     st.session_state.hss_mode = None
@@ -831,7 +863,7 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
                 # st.slider("Number of runs", min_value=1, max_value=300, step=1, value=10,
                 #                             help="Number of simulation runs to average over")
 
-
+    render_calculation_sidebar()
 
     if "b_df" not in st.session_state or "i_df" not in st.session_state or "n_months" not in st.session_state or "i_param" not in st.session_state or "n_runs" not in st.session_state or "int_period" not in st.session_state:
         st.session_state.b_df = None

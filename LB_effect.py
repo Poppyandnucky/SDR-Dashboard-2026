@@ -263,23 +263,23 @@ def f_ANC_LB_effect_vectorized(track, LB_base, param, flags, i, int_period, rng)
     i_loc[anc_lowrisk_mask] = i_loc_anc_lowrisk_all[anc_lowrisk_mask]
 
 
-    # # ## PROMPTS re-allocation ## 
-    if flag_PROMPTS:
-        # - p_move_home_base: max fraction of home-deliverers that PROMPTS can shift
-        # - p_to_L45: conditional probability that a shifted mother goes to L4/5 (else L2/
-        # 3)
-        p_move_home_base = float(param.get("p_move_home_base", 0.30))
-        p_move_home = clip01(p_move_home_base * engagement_level)
-        p_to_L23 = 0.1
-        p_to_L45 = 1 - p_to_L23
+    # # # ## PROMPTS re-allocation ## 
+    # if flag_PROMPTS:
+    #     # - p_move_home_base: max fraction of home-deliverers that PROMPTS can shift
+    #     # - p_to_L45: conditional probability that a shifted mother goes to L4/5 (else L2/
+    #     # 3)
+    #     p_move_home_base = float(param.get("p_move_home_base", 0.30))
+    #     p_move_home = clip01(p_move_home_base * engagement_level)
+    #     p_to_L23 = 0.1
+    #     p_to_L45 = 1 - p_to_L23
 
-        home_mask = (i_loc == 0)
-        move_mask = home_mask & (rng.random(num_mothers) < p_move_home)
-        i_loc[move_mask] = rng.choice(
-            [1, 2],
-            size=int(np.sum(move_mask)),
-            p=[p_to_L23, p_to_L45]
-        )
+    #     home_mask = (i_loc == 0)
+    #     move_mask = home_mask & (rng.random(num_mothers) < p_move_home)
+    #     i_loc[move_mask] = rng.choice(
+    #         [1, 2],
+    #         size=int(np.sum(move_mask)),
+    #         p=[p_to_L23, p_to_L45]
+    #     )
     
 
     #Reallocate mothers if overcapacity
