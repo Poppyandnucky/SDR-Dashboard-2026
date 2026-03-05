@@ -36,7 +36,7 @@ def render_calculation_sidebar():
         return
 
     i_ind_outcomes = st.session_state.get("i_ind_outcomes")
-    print_outcomes = i_ind_outcomes.loc[i_ind_outcomes['Run']==3]
+    print_outcomes = i_ind_outcomes.loc[i_ind_outcomes['Run']==1]
     st.sidebar.write(print_outcomes.head())  # Debug: Display the first few rows of the individual outcomes DataFrame
     
     st.sidebar.subheader("Intervention Totals")
@@ -912,7 +912,10 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
             int_period = MODEL["int_period"]
 
             if not MODEL["multiple_run"]:  # SINGLE RUN MODE
+                # num_seeds = n_months * int_period
+                # base_seed = np.random.default_rng().integers(low=0, high=1e6, size=num_seeds)[0]
                 base_seed = np.random.default_rng().integers(low=0, high=1e6, size=1)[0]
+                # base_seed = 2025
                 rng_param = np.random.default_rng(base_seed)
 
                 b_param = get_parameters(rng = rng_param)
@@ -2893,7 +2896,9 @@ if st.session_state.b_df is not None and st.session_state.i_df is not None:
                         bar_data = create_bar_data(df_MCR, 100)
                         chart = bar_chart_ci(bar_data, "Complications rate annually", "Rate", [0, ymax])
                         st.altair_chart(chart)
-
+                    ## MEIBIN ALTERED ## 
+                    st.text(f'complications: {i_df["severe_comps"]}')
+                    st.text(f'complications: {b_df["severe_comps"]}')
                 with tab2:
                     df_anemia = prepare_chart_data(b_df, i_df, 'Anemia', 'Live Births Final', n_months, n_runs, 100)
                     # Get unique levels and create a multiselect box

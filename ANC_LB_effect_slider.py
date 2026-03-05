@@ -27,7 +27,7 @@ E["Postterm_LMP"] = param["E_Posterm_LMP"]
 P_home_noANC, P_l45_fac, P_home_lowrisk, P_L23_highrisk, Sen_traditional, Spec_traditional = \
 0.7056735167353498, 0.21039299793502853, 0.17051451153731043, 0.36751767996993084, 0.7939486174518111, 0.6311811663318615
 
-random.seed(0)
+random.seed(10)
 def f_ANC_LB_slider(P_ANC_slider):
     P_fac_noANC = 1 - P_home_noANC
     P_L45_noANC = P_fac_noANC * P_l45_fac
