@@ -39,7 +39,9 @@ def run_model_dash(param, flags, n_months, int_period, base_seed = None):
     for i in range(n_months):
         if i >= 0:
             if base_seed is not None:
-                rng = np.random.default_rng(base_seed)
+                print(base_seed)
+                rng = np.random.default_rng(base_seed[i])
+
             #Updating features due to intervention changes
             track = update_capacity(track, param, i, flags, int_period)
 
