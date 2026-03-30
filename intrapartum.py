@@ -136,20 +136,53 @@ def initialize_intra_params(individual_outcomes, track, flags, param, i, rng):
         E["sen_hypoxia_IS"] = param["sen_hypoxia_IS"]
         E["spec_hypoxia_IS"] = param["spec_hypoxia_IS"]
 
-    # Single interventions
-    P["knowledge"] = np.array([0, param['base_knowledge_L23'], param['base_knowledge_L45'], param['base_knowledge_L45']])
+        # Single interventions
+    P["knowledge"] = np.array([
+        0,
+        param['base_knowledge_L23'],
+        param['base_knowledge_L45'],
+        param['base_knowledge_L45']
+    ])
+
     if flags['flag_performance']:
         P["knowledge"][2] = param["HSS"]["knowledge"]
         P["knowledge"][3] = param["HSS"]["knowledge"]
+
+    # MENTORS intervention
+    if flags['flag_MENTOR'] == 1:
+        adoption_rate = np.clip(param["HSS"].get("mentor_adoption", 0.0), 0.0, 1.0)
+        attendance_rate = np.clip(param["HSS"].get("mentor_attendance", 0.0), 0.0, 1.0)
+        fidelity_rate = np.clip(param["HSS"].get("mentor_fidelity", 0.0), 0.0, 1.0)
+
+        mentors_coverage = adoption_rate * attendance_rate * fidelity_rate
+
+        OR_knowledge = 199
+        OR_eff = 1.0 + mentors_coverage * (OR_knowledge - 1.0)
+
+        P["knowledge"][1] = np.clip(P["knowledge"][1], 1e-6, 1 - 1e-6)
+        odds_base_23 = P["knowledge"][1] / (1.0 - P["knowledge"][1])
+        odds_new_23 = OR_eff * odds_base_23
+        P["knowledge"][1] = odds_new_23 / (1.0 + odds_new_23)
+
+        P["knowledge"][2] = np.clip(P["knowledge"][2], 1e-6, 1 - 1e-6)
+        odds_base_45 = P["knowledge"][2] / (1.0 - P["knowledge"][2])
+        odds_new_45 = OR_eff * odds_base_45
+        P["knowledge"][2] = odds_new_45 / (1.0 + odds_new_45)
+
+        P["knowledge"][3] = np.clip(P["knowledge"][3], 1e-6, 1 - 1e-6)
+        odds_base_5 = P["knowledge"][3] / (1.0 - P["knowledge"][3])
+        odds_new_5 = OR_eff * odds_base_5
+        P["knowledge"][3] = odds_new_5 / (1.0 + odds_new_5)
+
     E["int_pph"] = param['E_pph_bundle']
-    E["stillbirth_CS"] = param["E_stillbirth_CS"]   # efficacy of timely CS in preventing stillbirth by hypoxia
-    E["oxytocin"] = param["E_oxytocin"]  # efficacy of oxytocin
+    E["stillbirth_CS"] = param["E_stillbirth_CS"]
+    E["oxytocin"] = param["E_oxytocin"]
     P["pph_bundle"] = P_intervention('flag_pph_bundle', "pph_bundle", 'S_pph_bundle', flags, param, S, P)
     P["oxytocin"] = P_intervention('flag_oxytocin', "oxytocin", "S_oxytocin", flags, param, S, P)
     E["int_eclampsia"] = param['E_MgSO4']
     E["int_sepsis"] = param['E_antibiotics']
-    P["MgSO4"] = P_intervention('flag_MgSO4',"MgSO4", 'S_MgSO4', flags, param, S, P)
-    P["antibiotics"] = P_intervention('flag_antibiotics',"antibiotics", 'S_antibiotics', flags, param, S, P)
+    P["MgSO4"] = P_intervention('flag_MgSO4', "MgSO4", 'S_MgSO4', flags, param, S, P)
+    P["antibiotics"] = P_intervention('flag_antibiotics', "antibiotics", 'S_antibiotics', flags, param, S, P)
 
     # Initialize counters
     MC = {}  # dict to restore maternal complications

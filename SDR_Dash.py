@@ -5,6 +5,7 @@ import altair as alt
 import math
 import scipy.stats as stats
 import time
+import copy
 import matplotlib.pyplot as plt
 import seaborn as sns
 from parameters import get_parameters, get_slider_params, calculate_derived_parameters
@@ -501,47 +502,61 @@ def render_prompts():
         i_HSS["chv_engagement"] = 0.0
 
     # ==========================================================
-    # BLOCK 2 — MENTOR
+    # BLOCK 2 — MENTORS
     # ==========================================================
     col5, col6 = st.columns(2)
+
     with col5:
-        mentor_int = st.toggle(
+        mentor_on = st.toggle(
             "MENTORS Intervention",
             value=bool(st.session_state.get("flag_MENTOR", 0)),
             key="mentor_enable"
         )
 
     with col6:
-        i_flags["flag_MENTOR"] = 1 if mentor_int else 0
-        st.session_state["flag_MENTOR"] = int(mentor_int)
+        i_flags["flag_MENTOR"] = 1 if mentor_on else 0
+        st.session_state["flag_MENTOR"] = int(mentor_on)
 
-    if mentor_int:
-        col7, col8 = st.columns(2)
+    if mentor_on:
+        col7, col8, col9 = st.columns(3)
+
         with col7:
-            adoption_default = int(st.session_state.get("adoption_mentor", 100))
+            adoption_default = int(st.session_state.get("mentor_adoption", 70))
             adoption_val = st.slider(
                 "Adoption of MENTORS",
                 0, 100, adoption_default, 5,
                 format="%d%%",
-                key="mentor_adoption"
+                key="mentor_adoption_slider"
             )
-            i_HSS["adoption_mentor"] = adoption_val / 100.0
-            st.session_state["adoption_mentor"] = adoption_val
+            i_HSS["mentor_adoption"] = adoption_val / 100.0
+            st.session_state["mentor_adoption"] = adoption_val
 
         with col8:
-            engage_default = int(st.session_state.get("mentor_intensity", 100))
-            engage_val = st.slider(
+            attendance_default = int(st.session_state.get("mentor_attendance", 70))
+            attendance_val = st.slider(
                 "On-site attendance of MENTORS sessions",
-                0, 100, engage_default, 5,
+                0, 100, attendance_default, 5,
                 format="%d%%",
-                key="mentor_intensity"
+                key="mentor_attendance_slider"
             )
-            i_HSS["mentor_intensity"] = engage_val / 100.0
-            # st.session_state["mentor_intensity"] = engage_val
-    else:
-        i_HSS["adoption_mentor"] = 0.0
-        i_HSS["mentor_intensity"] = 0.0
+            i_HSS["mentor_attendance"] = attendance_val / 100.0
+            st.session_state["mentor_attendance"] = attendance_val
 
+        with col9:
+            fidelity_default = int(st.session_state.get("mentor_fidelity", 80))
+            fidelity_val = st.slider(
+                "Fidelity in delivering MENTORS sessions",
+                0, 100, fidelity_default, 5,
+                format="%d%%",
+                key="mentor_fidelity_slider"
+            )
+            i_HSS["mentor_fidelity"] = fidelity_val / 100.0
+            st.session_state["mentor_fidelity"] = fidelity_val
+
+    else:
+        i_HSS["mentor_adoption"] = 0.0
+        i_HSS["mentor_attendance"] = 0.0
+        i_HSS["mentor_fidelity"] = 0.0
 
     # ==========================================================
     # BLOCK 3 — SMS
@@ -764,6 +779,18 @@ if 'selected_outcomes' not in st.session_state:
     st.session_state.selected_outcomes = []
 if 'b_df_multiple' not in st.session_state:
     st.session_state.b_df_multiple = None
+if 'compare_two_interventions' not in st.session_state:
+    st.session_state.compare_two_interventions = False
+if 'dual_first_config' not in st.session_state:
+    st.session_state.dual_first_config = None
+if 'reference_label' not in st.session_state:
+    st.session_state.reference_label = "Baseline"
+if 'target_label' not in st.session_state:
+    st.session_state.target_label = "Intervention"
+if 'ab_base_df' not in st.session_state:
+    st.session_state.ab_base_df = None
+if 'ab_base_ind_outcomes' not in st.session_state:
+    st.session_state.ab_base_ind_outcomes = None
 
 
 
@@ -826,6 +853,9 @@ with st.expander("⚙️ **Scenario Settings** (Click to expand/collapse)", expa
         render_hss(preset_demand_scenario=None, preset_supply_scenario=None)
         st.markdown("---")
         render_single()
+        st.markdown("---")
+        st.subheader("MOMISH interventions")
+        render_prompts()
         st.session_state.scenario_selected = True
 
     elif st.session_state.intervention_selection == "PROMPTS":
@@ -863,6 +893,30 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
                 # st.slider("Number of runs", min_value=1, max_value=300, step=1, value=10,
                 #                             help="Number of simulation runs to average over")
 
+        st.markdown("---")
+        st.session_state.compare_two_interventions = st.checkbox(
+            "Compare two interventions directly (A vs B)",
+            value=st.session_state.compare_two_interventions,
+            help="First click Run to capture Intervention A. Then adjust settings and click Run again for Intervention B."
+        )
+        if st.session_state.compare_two_interventions:
+            col_a, col_b = st.columns(2)
+            with col_a:
+                st.session_state.reference_label = st.text_input(
+                    "Intervention A label",
+                    value=st.session_state.reference_label if st.session_state.reference_label != "Baseline" else "Intervention A"
+                )
+            with col_b:
+                st.session_state.target_label = st.text_input(
+                    "Intervention B label",
+                    value=st.session_state.target_label if st.session_state.target_label != "Intervention" else "Intervention B"
+                )
+
+            if st.session_state.dual_first_config is None:
+                st.info("A/B mode: first click Run to capture Intervention A.")
+            else:
+                st.success("Intervention A captured. Adjust settings and click Run for Intervention B.")
+
     render_calculation_sidebar()
 
     if "b_df" not in st.session_state or "i_df" not in st.session_state or "n_months" not in st.session_state or "i_param" not in st.session_state or "n_runs" not in st.session_state or "int_period" not in st.session_state:
@@ -890,6 +944,9 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
             st.session_state.model_finished = False
             st.session_state.b_df = None
             st.session_state.b_df_multiple = None
+            st.session_state.dual_first_config = None
+            st.session_state.ab_base_df = None
+            st.session_state.ab_base_ind_outcomes = None
             st.session_state.selected_outcomes = []
             st.success("All settings have been reset! Please rerun the model with the new settings.")
 
@@ -900,7 +957,8 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
             current_config = {
                             "multiple_run": MODEL["multiple_run"], 
                             "n_runs": MODEL["n_runs"], 
-                            "n_months": MODEL["n_months"]
+                            "n_months": MODEL["n_months"],
+                            "compare_two_interventions": st.session_state.compare_two_interventions
                         }
             
             if st.session_state.get("baseline_config") != current_config:
@@ -922,6 +980,20 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
             ### MODEL PARAMETERS ###
             n_months = MODEL["n_months"]
             int_period = MODEL["int_period"]
+            compare_two_interventions = st.session_state.compare_two_interventions
+
+            if compare_two_interventions and st.session_state.dual_first_config is None:
+                st.session_state.dual_first_config = {
+                    "flags": copy.deepcopy(i_flags),
+                    "E": copy.deepcopy(i_E),
+                    "S": copy.deepcopy(i_S),
+                    "HSS": copy.deepcopy(i_HSS),
+                }
+                st.session_state.ab_base_df = None
+                st.session_state.ab_base_ind_outcomes = None
+                st.session_state.model_finished = False
+                st.info("Intervention A has been captured. Please adjust settings and click Run again to execute Intervention B.")
+                st.stop()
 
             if not MODEL["multiple_run"]:  # SINGLE RUN MODE
                 num_seeds = n_months 
@@ -943,6 +1015,11 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
                 b_HSS = reset_HSS(slider_params)
                 b_S = reset_S(slider_params)
                 b_E = reset_E()
+                if compare_two_interventions and st.session_state.dual_first_config is not None:
+                    b_flags = copy.deepcopy(st.session_state.dual_first_config["flags"])
+                    b_E = copy.deepcopy(st.session_state.dual_first_config["E"])
+                    b_S = copy.deepcopy(st.session_state.dual_first_config["S"])
+                    b_HSS = copy.deepcopy(st.session_state.dual_first_config["HSS"])
 
                 b_param.update({"E": b_E, "S": b_S, "HSS": b_HSS})
                 i_param.update({"E": i_E, "S": i_S, "HSS": i_HSS})
@@ -953,24 +1030,40 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
                 # i_param.update({"E": i_E, "S": i_S, "HSS": i_HSS})
 
                 # Run baseline model only if not already stored
-                if st.session_state.b_df is None:
-                    status.text("⏳ Running Baseline Model...")
-                    # rng_model = np.random.default_rng(base_seed)
-                    b_df, b_ind_outcomes, _ = run_model_dash(b_param, b_flags, n_months, int_period, base_seed = base_seeds)
-                    #b_df, b_ind_outcomes, _ = run_model_dash(b_param, b_flags, n_months, int_period, rng = rng_model)
-                    b_ind_outcomes["Run"] = 1
-                    b_ind_outcomes["Scenario"] = "Baseline"
-                    st.session_state.b_df = b_df
-                    st.session_state.b_ind_outcomes = b_ind_outcomes
-                    status.text("✅ Baseline Model Completed!")
+                # Always run baseline with the same base_seeds as intervention below.
+                # If we skipped this when b_df was cached, intervention would use newly drawn seeds
+                # while baseline stayed on old seeds (misaligned comparisons — e.g. MOMISH-only runs).
+                status.text("⏳ Running Baseline Model...")
+                b_df, b_ind_outcomes, _ = run_model_dash(b_param, b_flags, n_months, int_period, base_seed=base_seeds)
+                b_ind_outcomes["Run"] = 1
+                b_ind_outcomes["Scenario"] = st.session_state.reference_label if compare_two_interventions else "Baseline"
+                st.session_state.b_df = b_df
+                st.session_state.b_ind_outcomes = b_ind_outcomes
+                status.text("✅ Baseline Model Completed!")
 
                 # Run intervention model
-                status.text("⏳ Running Intervention Model...")
+                status.text("⏳ Running Comparison Model...")
                 # rng_model = np.random.default_rng(base_seed)
                 i_df, i_ind_outcomes, _ = run_model_dash(i_param, i_flags, n_months, int_period, base_seed = base_seeds)
                 #i_df, i_ind_outcomes, _ = run_model_dash(i_param, i_flags, n_months, int_period, rng = rng_model)
                 i_ind_outcomes["Run"] = 1
-                i_ind_outcomes["Scenario"] = "Intervention"
+                i_ind_outcomes["Scenario"] = st.session_state.target_label if compare_two_interventions else "Intervention"
+
+                # In A/B mode, also run plain baseline once for column comparison
+                if compare_two_interventions:
+                    status.text("⏳ Running Plain Baseline for A/B column comparison...")
+                    base_param = get_parameters(rng=np.random.default_rng(base_seed))
+                    base_param = calculate_derived_parameters(base_param)
+                    base_flags = reset_flags()
+                    base_HSS = reset_HSS(slider_params)
+                    base_S = reset_S(slider_params)
+                    base_E = reset_E()
+                    base_param.update({"E": base_E, "S": base_S, "HSS": base_HSS})
+                    ab_base_df, ab_base_ind_outcomes, _ = run_model_dash(base_param, base_flags, n_months, int_period, base_seed=base_seeds)
+                    ab_base_ind_outcomes["Run"] = 1
+                    ab_base_ind_outcomes["Scenario"] = "Baseline"
+                    st.session_state.ab_base_df = ab_base_df
+                    st.session_state.ab_base_ind_outcomes = ab_base_ind_outcomes
 
                 # Retrieve cached baseline results
                 b_df = st.session_state.b_df
@@ -991,8 +1084,8 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
                 # seeds = np.random.default_rng(2025).integers(low=0, high=1e6, size=total_runs * n_months)
 
                 # Initialize Baseline Model Once if not stored
-                if st.session_state.b_df_multiple is None:
-                    status.text("⏳ Running Baseline Model for Multiple Runs...")
+                if st.session_state.b_df_multiple is None or compare_two_interventions:
+                    status.text("⏳ Running Reference Model for Multiple Runs...")
 
                     temp_b_df = []  # Store results in list before concatenating (better performance)
                     temp_b_ind_outcomes = []
@@ -1009,6 +1102,11 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
                         b_param = calculate_derived_parameters(b_param)
                         
                         b_flags, b_HSS, b_S, b_E = reset_flags(), reset_HSS(slider_params), reset_S(slider_params), reset_E()
+                        if compare_two_interventions and st.session_state.dual_first_config is not None:
+                            b_flags = copy.deepcopy(st.session_state.dual_first_config["flags"])
+                            b_E = copy.deepcopy(st.session_state.dual_first_config["E"])
+                            b_S = copy.deepcopy(st.session_state.dual_first_config["S"])
+                            b_HSS = copy.deepcopy(st.session_state.dual_first_config["HSS"])
                         b_param.update({"E": b_E, "S": b_S, "HSS": b_HSS})
 
                         # Pass the ARRAY of monthly seeds to run_model_dash
@@ -1016,7 +1114,7 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
                         
                         b_df_i["Run"] = run_index + 1
                         b_ind_outcomes_i["Run"] = run_index + 1
-                        b_ind_outcomes_i["Scenario"] = "Baseline"
+                        b_ind_outcomes_i["Scenario"] = st.session_state.reference_label if compare_two_interventions else "Baseline"
                         temp_b_df.append(b_df_i)
                         temp_b_ind_outcomes.append(b_ind_outcomes_i)
 
@@ -1032,12 +1130,6 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
                         # b_df_i, b_ind_outcomes_i, _ = run_model_dash(b_param, b_flags, n_months, int_period, base_seed = base_seeds)
                         # #b_df_i, b_ind_outcomes_i, _ = run_model_dash(b_param, b_flags, n_months, int_period,
                         #                                          rng=None)
-                        b_df_i["Run"] = run_index + 1
-                        b_ind_outcomes_i["Run"] = run_index  + 1
-                        b_ind_outcomes_i["Scenario"] = "Baseline"
-                        temp_b_df.append(b_df_i)
-                        temp_b_ind_outcomes.append(b_ind_outcomes_i)
-
                         # Time tracking & progress update
                         iter_time_taken = time.time() - iter_start_time
                         avg_time_per_run = iter_time_taken if avg_time_per_run is None else (
@@ -1045,7 +1137,7 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
                                                                                                         run_index + 1)
                         remaining_time = avg_time_per_run * (total_runs - (run_index + 1))
                         progress_bar.progress((run_index + 1) / total_runs)
-                        status.text(f"⏳ Running Baseline Model... {run_index + 1}/{total_runs} runs completed. "
+                        status.text(f"⏳ Running Reference Model... {run_index + 1}/{total_runs} runs completed. "
                                     f"Estimated time left: {remaining_time / 60:.1f} min.")
                         # st.text(f"CPU usage: {psutil.cpu_percent()}%")
                         # usage_per_core = psutil.cpu_percent(percpu=True)
@@ -1068,7 +1160,7 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
                     st.session_state.b_df_multiple = pd.concat(temp_b_df, ignore_index=True)
                     st.session_state.b_ind_outcomes = pd.concat(temp_b_ind_outcomes, ignore_index=True)
 
-                    status.text("✅ Baseline Model Completed!")
+                    status.text("✅ Reference Model Completed!")
 
                 # Retrieve cached baseline results
                 b_df = st.session_state.b_df_multiple
@@ -1095,7 +1187,7 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
                     
                     i_df_i["Run"] = run_index + 1
                     i_ind_outcomes_i["Run"] = run_index + 1
-                    i_ind_outcomes_i["Scenario"] = "Intervention"
+                    i_ind_outcomes_i["Scenario"] = st.session_state.target_label if compare_two_interventions else "Intervention"
                     temp_i_df.append(i_df_i)
                     temp_i_ind_outcomes.append(i_ind_outcomes_i)
                     # Reset flags and initialize parameters for each run
@@ -1121,7 +1213,7 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
                                                                                                     run_index + 1)
                     remaining_time = avg_time_per_run * (total_runs - (run_index + 1))
                     progress_bar.progress((run_index + 1) / total_runs)
-                    status.text(f"⏳ Running Intervention Model... {run_index + 1}/{total_runs} runs completed. "
+                    status.text(f"⏳ Running Comparison Model... {run_index + 1}/{total_runs} runs completed. "
                                 f"Estimated time left: {remaining_time / 60:.1f} min.")
                     # st.text(f"CPU usage: {psutil.cpu_percent()}%")
                     # usage_per_core = psutil.cpu_percent(percpu=True)
@@ -1131,6 +1223,32 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
                 # Store intervention results
                 i_df = pd.concat(temp_i_df, ignore_index=True)
                 i_ind_outcomes = pd.concat(temp_i_ind_outcomes, ignore_index=True)
+
+                # In A/B mode, also run plain baseline for multiple runs
+                if compare_two_interventions:
+                    status.text("⏳ Running Plain Baseline for A/B column comparison...")
+                    temp_ab_base_df = []
+                    temp_ab_base_ind_outcomes = []
+                    for run_index in range(total_runs):
+                        monthly_seeds_for_this_run = run_seeds_matrix[run_index]
+                        param_rng = np.random.default_rng(monthly_seeds_for_this_run[0])
+                        base_param = get_parameters(rng=param_rng)
+                        base_param = calculate_derived_parameters(base_param)
+                        base_flags = reset_flags()
+                        base_HSS = reset_HSS(slider_params)
+                        base_S = reset_S(slider_params)
+                        base_E = reset_E()
+                        base_param.update({"E": base_E, "S": base_S, "HSS": base_HSS})
+                        ab_base_df_i, ab_base_ind_outcomes_i, _ = run_model_dash(base_param, base_flags, n_months, int_period, base_seed=monthly_seeds_for_this_run)
+                        ab_base_df_i["Run"] = run_index + 1
+                        ab_base_ind_outcomes_i["Run"] = run_index + 1
+                        ab_base_ind_outcomes_i["Scenario"] = "Baseline"
+                        temp_ab_base_df.append(ab_base_df_i)
+                        temp_ab_base_ind_outcomes.append(ab_base_ind_outcomes_i)
+
+                    st.session_state.ab_base_df = pd.concat(temp_ab_base_df, ignore_index=True)
+                    st.session_state.ab_base_ind_outcomes = pd.concat(temp_ab_base_ind_outcomes, ignore_index=True)
+
                 status.text("✅ Model Run Completed!")
 
             # Total execution time
@@ -1158,10 +1276,11 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
             if download_option:
                 if "b_ind_outcomes" in st.session_state and not st.session_state.b_ind_outcomes.empty:
                     csv_baseline = st.session_state.b_ind_outcomes.to_csv(index=False)
-                    st.download_button(label="📥 Download Baseline.csv", data=csv_baseline, file_name="baseline.csv",
+                    baseline_filename = f"{st.session_state.reference_label.replace(' ', '_')}.csv"
+                    st.download_button(label=f"📥 Download {baseline_filename}", data=csv_baseline, file_name=baseline_filename,
                                        mime="text/csv")
                 else:
-                    st.warning("⚠️ Baseline data is not available. Please run the model first.")
+                    st.warning("⚠️ Reference scenario data is not available. Please run the model first.")
 
                 scenario_name = st.text_input("**Enter Intervention Scenario Name:**", placeholder="e.g., Scenario_1")
                 st.session_state.scenario_name = scenario_name
@@ -1306,13 +1425,25 @@ if st.session_state.b_df is not None and st.session_state.i_df is not None:
                 return df_indicator
 
             def prepare_chart_data(b_df, i_df, numerator, dominator, n_months, n_runs, multiplier):
-                b_df_ind = prepare_indicator_df(b_df, numerator, n_months, n_runs, 'Baseline')
-                i_df_ind = prepare_indicator_df(i_df, numerator, n_months, n_runs, 'Intervention')
+                b_df_ind = prepare_indicator_df(b_df, numerator, n_months, n_runs, st.session_state.reference_label)
+                i_df_ind = prepare_indicator_df(i_df, numerator, n_months, n_runs, st.session_state.target_label)
                 df_ind = pd.concat([b_df_ind, i_df_ind], ignore_index=True)
 
-                b_df_lb = prepare_indicator_df(b_df, dominator, n_months, n_runs, 'Baseline')
-                i_df_lb = prepare_indicator_df(i_df, dominator, n_months, n_runs, 'Intervention')
+                b_df_lb = prepare_indicator_df(b_df, dominator, n_months, n_runs, st.session_state.reference_label)
+                i_df_lb = prepare_indicator_df(i_df, dominator, n_months, n_runs, st.session_state.target_label)
                 df_lb = pd.concat([b_df_lb, i_df_lb], ignore_index=True)
+
+                # In Both + A/B mode, add plain baseline as the 3rd scenario for bar/column comparisons
+                if (
+                    st.session_state.get("compare_two_interventions", False)
+                    and st.session_state.get("intervention_selection") == "Both"
+                    and st.session_state.get("ab_base_df") is not None
+                ):
+                    ab_base_df = st.session_state.ab_base_df
+                    base_df_ind = prepare_indicator_df(ab_base_df, numerator, n_months, n_runs, "Baseline")
+                    base_df_lb = prepare_indicator_df(ab_base_df, dominator, n_months, n_runs, "Baseline")
+                    df_ind = pd.concat([df_ind, base_df_ind], ignore_index=True)
+                    df_lb = pd.concat([df_lb, base_df_lb], ignore_index=True)
 
                 df = df_ind.merge(df_lb, on=['Month', 'Run', 'Scenario', 'Level'], suffixes=('_ind', '_lb'))
                 df.columns = ['Month', 'Run', 'Scenario', 'Level', 'Counts', 'Denominator']
@@ -1340,7 +1471,7 @@ if st.session_state.b_df is not None and st.session_state.i_df is not None:
                 return df
 
             def create_line_data(data, multiplier):
-                line_data = data[data['Scenario'] == 'Intervention'].copy()
+                line_data = data[data['Scenario'] == st.session_state.target_label].copy()
                 # line_data = line_data.apply(add_poisson_ci, axis=1, multiplier=multiplier)
                 # line_data = line_data.apply(lambda x: round(x, 2) if x.name in ['Rate', 'Lower_rate', 'Upper_rate'] else x)
 
@@ -1355,7 +1486,7 @@ if st.session_state.b_df is not None and st.session_state.i_df is not None:
                 })
 
                 # Step 3: Add back Scenario label and round
-                line_data['Scenario'] = 'Intervention'
+                line_data['Scenario'] = st.session_state.target_label
                 line_data[['Rate', 'Lower_rate', 'Upper_rate']] = line_data[['Rate', 'Lower_rate', 'Upper_rate']].round(
                     2)
                 return line_data
@@ -1425,13 +1556,27 @@ if st.session_state.b_df is not None and st.session_state.i_df is not None:
 
             def bar_chart_ci(bar_data, title, ytitle, ydomain):
                 num_facets = len(bar_data["Level"].unique())
+                scenario_values = bar_data["Scenario"].dropna().unique().tolist()
+                preferred_order = ["Baseline", st.session_state.reference_label, st.session_state.target_label]
+                scenario_domain = [s for s in preferred_order if s in scenario_values]
+                scenario_domain.extend([s for s in scenario_values if s not in scenario_domain])
+                scenario_color_map = {
+                    "Baseline": "#1F3A93",
+                    st.session_state.reference_label: "#4C78A8",
+                    st.session_state.target_label: "#72B7B2",
+                }
+                scenario_colors = [scenario_color_map.get(s, "#54A24B") for s in scenario_domain]
                 layered_chart = (
                         alt.Chart(bar_data)
                         .mark_bar()
                         .encode(
                             x=alt.X("Scenario:N", axis=None),  # X-axis for Scenario
                             y=alt.Y("Rate:Q", axis=alt.Axis(title=ytitle, titleFontSize=16, labelFontSize=14), scale=alt.Scale(domain=ydomain)),
-                            color=alt.Color("Scenario:N", legend=alt.Legend(title="Scenario", titleFontSize=16, labelFontSize=14)),  # Color by Scenario
+                            color=alt.Color(
+                                "Scenario:N",
+                                legend=alt.Legend(title="Scenario", titleFontSize=16, labelFontSize=14),
+                                scale=alt.Scale(domain=scenario_domain, range=scenario_colors),
+                            ),  # Color by Scenario
                             tooltip=["Scenario:N", "Level:N", "Rate:Q", "Lower_rate:Q", "Upper_rate:Q"]
                         )
                         + alt.Chart(bar_data)

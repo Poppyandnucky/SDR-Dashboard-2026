@@ -680,6 +680,7 @@ def reset_flags():
         'flag_LB': 0,
         #SDR Supply
         'flag_performance': 0,
+        'flag_MENTOR': 0,
         'flag_capacity': 0,
         'flag_labor': 0,
         'flag_refer': 0,
