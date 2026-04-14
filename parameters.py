@@ -243,7 +243,8 @@ def get_parameters(rng = None):
         'S_MgSO4': np.array([0, 0, 0.77, 0.77]),                                                                                      # the supply level of MgSO4 at L4/5
         'S_antibiotics': np.array([0, 0, 0.48, 0.48]),                                                                                # the supply level of antibiotics at L4/5
         "OR_RDS_treat": 0.53,                                                                                                         # odds ratio of preterm having RDS given treatment
-        'OR_IVH_treat': 0.38,                                                                                                         # odds ratio of preterm having IVH given treatment
+        'OR_IVH_treat': 0.38, 
+        "OR_knowledge": 1.99,                                                                                                        # odds ratio of preterm having IVH given treatment
         'OR_NEC_treat': sample_from_ci(0.28, 0.14, 0.56, n=580, kind='OR', size=1, rng = rng)[0],                  # odds ratio of preterm having NEC given treatment
         'RR_Sepsis_treat': sample_from_ci(0.24, 0.13, 0.44, n=2063, kind='RR', size=1, rng = rng)[0],              # relative risk of preterm having sepsis given treatment
         'E_pph_bundle': sample_from_ci(0.51, 0.44, 0.60, kind='RR', size=1, rng = rng)[0],                         # efficacy of obstetric drape in reducing PPH

@@ -441,30 +441,154 @@ def render_hss(preset_demand_scenario, preset_supply_scenario):
                 i_flags['flag_transfer'] = 0
                 i_HSS["P_transfer"] = 0
 
+
+def sync_param_momish_from_hss(i_param, i_HSS):
+    """Align top-level param keys with dashboard i_HSS (LB_effect + intrapartum may read either)."""
+    i_param["intervention_fidelity"] = float(
+        i_HSS.get("prompts_effect", i_param.get("intervention_fidelity", 0.87))
+    )
+    for _k in ("mentor_adoption", "mentor_attendance", "mentor_fidelity"):
+        if _k in i_HSS:
+            i_param[_k] = float(i_HSS[_k])
+
+
+def apply_momish_facility_delivery(i_flags, i_HSS, slider_params, choice_key, intervention_selection):
+    """
+    Map MOMISH "Overall facility delivery" to HSS infrastructure (no sliders here).
+    - high: same numeric presets as render_hss(Aggressive, Match Demand)
+    - low:  same as render_hss(Conservative, Match Demand)
+    - off:  baseline / no HSS demand–supply stack (does not clear PROMPTS/MENTOR/PULSE fields)
+    - follow: only used when intervention_selection == \"Both\" — keep i_HSS/i_flags from render_hss above
+    """
+    if choice_key == "follow":
+        return
+
+    Demand_scenarios = {
+        "Conservative": {"P_ANC": 70, "P_L45": 53},
+        "Moderate": {"P_ANC": 80, "P_L45": 68},
+        "Aggressive": {"P_ANC": 90, "P_L45": 90},
+    }
+    Capacity_match = {
+        "Conservative": 25.0,
+        "Moderate": 50.0,
+        "Aggressive": 85.0,
+    }
+
+    if choice_key == "off":
+        i_flags["flag_SDR"] = 0
+        i_flags["flag_CHV"] = 0
+        i_flags["flag_ANC"] = 0
+        i_flags["flag_LB"] = 0
+        i_flags["flag_performance"] = 0
+        i_flags["flag_capacity"] = 0
+        i_flags["flag_labor"] = 0
+        i_flags["flag_equipment"] = 0
+        i_flags["flag_refer"] = 0
+        i_flags["flag_transfer"] = 0
+        i_HSS["P_ANC"] = slider_params["p_ANC_base_slider"]
+        i_HSS["P_L45"] = slider_params["base_p_45_slider"]
+        i_HSS["knowledge"] = slider_params["base_knowledge_L45_slider"]
+        i_HSS["capacity_added"] = 0
+        i_HSS["labor_ratio"] = 0
+        i_HSS["sensor_ratio"] = 0
+        i_HSS["P_refer"] = 0
+        i_HSS["P_transfer"] = 0
+        i_HSS["tau_decay"] = 6
+        i_HSS["CHV_memory"] = "Always Forget"
+        i_HSS["referadded"] = 0
+        i_HSS["transadded"] = 0
+        i_HSS["supply_level"] = 0
+        st.session_state["P_ANC"] = i_HSS["P_ANC"]
+        st.session_state["P_L45"] = i_HSS["P_L45"]
+        return
+
+    scenario = "Aggressive" if choice_key == "high" else "Conservative"
+    d = Demand_scenarios[scenario]
+    i_flags["flag_SDR"] = 1
+    i_flags["flag_CHV"] = 1
+    i_flags["flag_ANC"] = 1
+    i_flags["flag_LB"] = 1
+    i_flags["flag_performance"] = 1
+    i_flags["flag_capacity"] = 1
+    i_flags["flag_labor"] = 1
+    i_flags["flag_equipment"] = 1
+    i_flags["flag_refer"] = 1
+    i_flags["flag_transfer"] = 1
+
+    i_HSS["P_ANC"] = d["P_ANC"] / 100.0
+    p_l45_exp = get_P_l45(i_HSS["P_ANC"], slider_params)
+    min_l45 = round(p_l45_exp * 100) if p_l45_exp is not None else 0
+    p_l45_pct = max(min_l45, d["P_L45"])
+    i_HSS["P_L45"] = p_l45_pct / 100.0
+    i_HSS["tau_decay"] = 6
+    i_HSS["CHV_memory"] = "Logistic Decay"
+
+    i_HSS["knowledge"] = 1.0
+    i_HSS["capacity_added"] = Capacity_match[scenario] / 100.0
+    i_HSS["labor_ratio"] = 1.0
+    i_HSS["sensor_ratio"] = 1.0
+    i_HSS["P_refer"] = 1.0
+    i_HSS["P_transfer"] = 1.0
+
+    st.session_state["P_ANC"] = i_HSS["P_ANC"]
+    st.session_state["P_L45"] = i_HSS["P_L45"]
+
+
 def render_prompts():
     st.subheader(":bulb: MOMISH Interventions")
 
-    colP1, colP2 = st.columns(2)
-    with colP1:
-        prompts_int = st.toggle(
-            "Enable PROMPTS",
-            value=bool(st.session_state.get("flag_PROMPTS", 0)),
-            help="Enable PROMPTS engagement program (affects engagement-related mechanisms in LB_effect).",
-            key="prompts_enable"
-        )
+    _intervention = st.session_state.get("intervention_selection")
+    if _intervention == "Both":
+        _facility_spec = [
+            ("Use HSS from Scenario Settings", "follow"),
+            ("Low overall facility delivery", "low"),
+            ("High overall facility delivery", "high"),
+            ("Not enabled (no HSS)", "off"),
+        ]
+    else:
+        _facility_spec = [
+            ("Not enabled (no HSS)", "off"),
+            ("Low — Conservative preset", "low"),
+            ("High — Aggressive preset", "high"),
+        ]
+    _facility_labels = [x[0] for x in _facility_spec]
+    _facility_map = dict(_facility_spec)
+    st.markdown("**Overall facility delivery**")
+    _facility_choice_label = st.radio(
+        "HSS demand/supply context for PROMPTS & MENTORS (no sliders)",
+        _facility_labels,
+        horizontal=True,
+        key=f"momish_facility_delivery_radio_{_intervention}",
+        help=(
+            "High / Low apply the same numeric presets as HSS **Scenario** mode (Aggressive or Conservative) with **Match Demand** supply. "
+            "Not enabled turns off the HSS demand–supply stack (baseline facility context). "
+            + (
+                "In **Both** mode, the first option keeps the HSS values from the Scenario Settings expander above."
+                if _intervention == "Both"
+                else "In **MOMISH-only** mode there is no separate HSS screen — pick Low/High here to embed facility context."
+            )
+        ),
+    )
+    _facility_choice_key = _facility_map[_facility_choice_label]
 
-    with colP2:
-        i_flags["flag_PROMPTS"] = 1 if prompts_int else 0
-        st.session_state["flag_PROMPTS"] = int(prompts_int)
+    prompts_enabled = st.toggle(
+        "Enable PROMPTS",
+        value=bool(st.session_state.get("flag_PROMPTS", 0)),
+        help="Enable PROMPTS engagement",
+        key="prompts_enable"
+    )
 
-    if prompts_int:
-        colP3, colP4, colP5 = st.columns(3)
+    i_flags["flag_PROMPTS"] = 1 if prompts_enabled else 0
+    st.session_state["flag_PROMPTS"] = int(prompts_enabled)
+
+    if prompts_enabled:
+        colP3, colP4 = st.columns(2)
 
         with colP3:
             adoption_default = int(st.session_state.get("adoption_prompts", 100))
             adoption_val = st.slider(
                 "PROMPTS adoption",
-                min_value=0, max_value=100, step=5,
+                min_value=0, max_value=100, step=2,
                 value=adoption_default,
                 format="%d%%",
                 help="Program adoption level.",
@@ -477,29 +601,66 @@ def render_prompts():
             engage_default = int(st.session_state.get("chv_engagement", 100))
             engage_val = st.slider(
                 "CHV engagement (PROMPTS)",
-                min_value=0, max_value=100, step=5,
+                min_value=0, max_value=100, step=2,
                 value=engage_default,
                 format="%d%%",
-                help="CHV engagement level used ONLY inside PROMPTS.",
+                help="CHV engagement level used only inside PROMPTS.",
                 key="prompts_engagement"
             )
             i_HSS["chv_engagement"] = engage_val / 100.0
             st.session_state["chv_engagement"] = engage_val
 
-        with colP5: 
-            prompts_effect_default = int(st.session_state.get("intervention_fidelity", 100))
-            prompts_effect_val = st.slider(
-                "Intervention Fidelity",
-                min_value=87, max_value=100, step=5,
-                value=prompts_effect_default,
-                format="%d%%",
-                help="Effectiveness of PROMPTS in increasing intention to deliver at L4/5."
+        col_if_s, col_if_f = st.columns(2)
+        prompts_if_bundle_options = ["Default", "Low", "High"]
+        prompts_if_default = st.session_state.get("prompts_intervention_fidelity_bundle", "Default")
+        if prompts_if_default not in prompts_if_bundle_options:
+            prompts_if_default = "Default"
+
+        prompts_if_prev_key = "prompts_intervention_fidelity_bundle_prev"
+        if "prompts_effect_slider" not in st.session_state:
+            # Start from 0; presets apply only after the user picks/changes scenario
+            st.session_state["prompts_effect_slider"] = 0
+
+        prompts_if_bundle_map = {
+            "Default": 70,
+            "Low": 60,
+            "High": 80,
+        }
+
+        with col_if_s:
+            prompts_if_bundle = st.selectbox(
+                "PROMPTS intervention fidelity — scenario",
+                options=prompts_if_bundle_options,
+                index=prompts_if_bundle_options.index(prompts_if_default),
+                key="prompts_intervention_fidelity_bundle_select",
+                help="Choosing a scenario presets the slider on the right; you can still drag the slider.",
             )
-            i_HSS["prompts_effect"] = prompts_effect_val / 100.0
-            st.session_state["prompts_effect"] = prompts_effect_val
+            st.session_state["prompts_intervention_fidelity_bundle"] = prompts_if_bundle
+
+        preset_if = prompts_if_bundle_map[prompts_if_bundle]
+        _prev_if = st.session_state.get(prompts_if_prev_key)
+        if _prev_if is None:
+            st.session_state[prompts_if_prev_key] = prompts_if_bundle
+        elif _prev_if != prompts_if_bundle:
+            st.session_state["prompts_effect_slider"] = preset_if
+            st.session_state[prompts_if_prev_key] = prompts_if_bundle
+
+        with col_if_f:
+            prompts_effect_val = st.slider(
+                "Intervention fidelity",
+                min_value=0,
+                max_value=100,
+                step=2,
+                format="%d%%",
+                help="Effectiveness of PROMPTS in increasing intention to deliver at L4/5.",
+                key="prompts_effect_slider",
+            )
+        i_HSS["prompts_effect"] = prompts_effect_val / 100.0
+        st.session_state["prompts_effect"] = prompts_effect_val
     else:
         i_HSS["adoption_prompts"] = 0.0
         i_HSS["chv_engagement"] = 0.0
+        i_HSS["prompts_effect"] = 0.0
 
     # ==========================================================
     # BLOCK 2 — MENTORS
@@ -518,13 +679,13 @@ def render_prompts():
         st.session_state["flag_MENTOR"] = int(mentor_on)
 
     if mentor_on:
-        col7, col8, col9 = st.columns(3)
+        col7, col8 = st.columns(2)
 
         with col7:
             adoption_default = int(st.session_state.get("mentor_adoption", 70))
             adoption_val = st.slider(
                 "Adoption of MENTORS",
-                0, 100, adoption_default, 5,
+                0, 100, adoption_default, 2,
                 format="%d%%",
                 key="mentor_adoption_slider"
             )
@@ -535,23 +696,60 @@ def render_prompts():
             attendance_default = int(st.session_state.get("mentor_attendance", 70))
             attendance_val = st.slider(
                 "On-site attendance of MENTORS sessions",
-                0, 100, attendance_default, 5,
+                0, 100, attendance_default, 2,
                 format="%d%%",
                 key="mentor_attendance_slider"
             )
             i_HSS["mentor_attendance"] = attendance_val / 100.0
             st.session_state["mentor_attendance"] = attendance_val
 
-        with col9:
-            fidelity_default = int(st.session_state.get("mentor_fidelity", 80))
+        col_m_s, col_m_f = st.columns(2)
+        mentor_fidelity_options = ["Default", "Low", "High"]
+        mentor_fidelity_choice_default = st.session_state.get(
+            "mentor_session_fidelity_bundle", "Default"
+        )
+        if mentor_fidelity_choice_default not in mentor_fidelity_options:
+            mentor_fidelity_choice_default = "Default"
+
+        bundle_prev_key = "mentor_session_fidelity_bundle_prev"
+        if "mentor_fidelity_slider" not in st.session_state:
+            st.session_state["mentor_fidelity_slider"] = 0
+
+        mentor_fidelity_bundle_map = {
+            "Default": 70,
+            "Low": 60,
+            "High": 80,
+        }
+
+        with col_m_s:
+            mentor_fidelity_choice = st.selectbox(
+                "MENTORS session fidelity — scenario",
+                options=mentor_fidelity_options,
+                index=mentor_fidelity_options.index(mentor_fidelity_choice_default),
+                key="mentor_session_fidelity_bundle_select",
+                help="Choosing a scenario presets the fidelity slider on the right; you can still drag the slider.",
+            )
+            st.session_state["mentor_session_fidelity_bundle"] = mentor_fidelity_choice
+
+        preset_pct = mentor_fidelity_bundle_map[mentor_fidelity_choice]
+        _prev_m = st.session_state.get(bundle_prev_key)
+        if _prev_m is None:
+            st.session_state[bundle_prev_key] = mentor_fidelity_choice
+        elif _prev_m != mentor_fidelity_choice:
+            st.session_state["mentor_fidelity_slider"] = preset_pct
+            st.session_state[bundle_prev_key] = mentor_fidelity_choice
+
+        with col_m_f:
             fidelity_val = st.slider(
                 "Fidelity in delivering MENTORS sessions",
-                0, 100, fidelity_default, 5,
+                min_value=0,
+                max_value=100,
+                step=2,
                 format="%d%%",
-                key="mentor_fidelity_slider"
+                key="mentor_fidelity_slider",
             )
-            i_HSS["mentor_fidelity"] = fidelity_val / 100.0
-            st.session_state["mentor_fidelity"] = fidelity_val
+        i_HSS["mentor_fidelity"] = fidelity_val / 100.0
+        st.session_state["mentor_fidelity"] = fidelity_val
 
     else:
         i_HSS["mentor_adoption"] = 0.0
@@ -645,7 +843,11 @@ def render_prompts():
     else:
         i_HSS["emt_participation"] = 0.0
         i_HSS["emt_intensity"] = 0.0
-        
+
+    apply_momish_facility_delivery(
+        i_flags, i_HSS, slider_params, _facility_choice_key, _intervention
+    )
+
 # Function to render Single Interventions
 def render_single():
     col1, col2 = st.columns(2)
@@ -850,13 +1052,51 @@ with st.expander("⚙️ **Scenario Settings** (Click to expand/collapse)", expa
 
     elif st.session_state.intervention_selection == "Both":
         st.button("🔙 Back to Intervention Options", on_click=go_back_to_main)
-        render_hss(preset_demand_scenario=None, preset_supply_scenario=None)
-        st.markdown("---")
-        render_single()
-        st.markdown("---")
-        st.subheader("MOMISH interventions")
-        render_prompts()
-        st.session_state.scenario_selected = True
+        st.subheader("2. Choose how you want to explore HSS interventions (with Single + MOMISH below):")
+
+        if st.button("📊 Select Pre-set Scenarios", key="both_btn_scenarios"):
+            st.session_state.hss_mode = "Scenarios"
+
+        if st.button("🎛️ Customize Manually", key="both_btn_manual"):
+            st.session_state.hss_mode = "Manual"
+
+        if st.session_state.hss_mode == "Scenarios":
+            st.button("🔙 Back to HSS Options", on_click=go_back_to_hss, key="both_back_hss_scenarios")
+            st.subheader("3. Select a scenario:")
+            col_b1, col_b2 = st.columns(2)
+            with col_b1:
+                demand_scenario_both = st.selectbox(
+                    "**3.1 Choose a pre-set demand scenario**",
+                    ["Conservative", "Moderate", "Aggressive"],
+                    key="both_demand_preset",
+                )
+                supply_scenario_both = st.selectbox(
+                    "**3.2 Choose a pre-set supply scenario**",
+                    ["Match Demand", "Cannot Meet Demand"],
+                    key="both_supply_preset",
+                )
+            with col_b2:
+                pass
+            render_hss(
+                preset_demand_scenario=demand_scenario_both,
+                preset_supply_scenario=supply_scenario_both,
+            )
+            st.markdown("---")
+            render_single()
+            st.markdown("---")
+            st.subheader("MOMISH interventions")
+            render_prompts()
+            st.session_state.scenario_selected = True
+
+        elif st.session_state.hss_mode == "Manual":
+            st.button("🔙 Back to HSS Options", on_click=go_back_to_hss, key="both_back_hss_manual")
+            render_hss(preset_demand_scenario=None, preset_supply_scenario=None)
+            st.markdown("---")
+            render_single()
+            st.markdown("---")
+            st.subheader("MOMISH interventions")
+            render_prompts()
+            st.session_state.scenario_selected = True
 
     elif st.session_state.intervention_selection == "PROMPTS":
         st.button("🔙 Back to Intervention Options", on_click=go_back_to_main)
@@ -1023,6 +1263,7 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
 
                 b_param.update({"E": b_E, "S": b_S, "HSS": b_HSS})
                 i_param.update({"E": i_E, "S": i_S, "HSS": i_HSS})
+                sync_param_momish_from_hss(i_param, i_HSS)
 
                 # rng_clone = np.random.default_rng(base_seed)
                 # i_param = get_parameters(rng = rng_clone)
@@ -1181,6 +1422,7 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
                     i_param = get_parameters(rng=param_rng)
                     i_param = calculate_derived_parameters(i_param)
                     i_param.update({"E": i_E, "S": i_S, "HSS": i_HSS})
+                    sync_param_momish_from_hss(i_param, i_HSS)
 
                     # Pass the exact same ARRAY of monthly seeds
                     i_df_i, i_ind_outcomes_i, _ = run_model_dash(i_param, i_flags, n_months, int_period, base_seed=monthly_seeds_for_this_run)

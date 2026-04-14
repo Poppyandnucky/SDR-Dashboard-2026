@@ -89,7 +89,10 @@ def f_ANC_LB_effect_vectorized(track, LB_base, param, flags, i, int_period, rng)
         adoption_prompts = clip01(param["HSS"].get("adoption_prompts", 1.0))
         chv_engagement = clip01(param["HSS"].get("chv_engagement", 1.0))
         phone_ownership = clip01(param.get("phone_ownership", 0.89))
-        intervention_fidelity = clip01(param.get("intervention_fidelity", 0.87))
+        # Dashboard writes the slider as HSS["prompts_effect"]; legacy name is top-level intervention_fidelity
+        intervention_fidelity = clip01(
+            param["HSS"].get("prompts_effect", param.get("intervention_fidelity", 0.87))
+        )
 
         # clip CHV engagement for probability usage
         chv_engagement = clip01(chv_engagement)
@@ -104,10 +107,7 @@ def f_ANC_LB_effect_vectorized(track, LB_base, param, flags, i, int_period, rng)
         OR_anc4p_eff = np.exp(engagement_level * np.log(OR_anc4p))
 
         # apply OR update to system-level P_ANC
-        print(P_ANC)
         P_ANC = odds_update(P_ANC, OR_anc4p_eff)
-        P_ANC = P_ANC
-        print(P_ANC, P_participation, engagement_level, OR_anc4p_eff)
 
     else:
         engagement_level = 0.0
@@ -318,6 +318,19 @@ def f_ANC_LB_effect_vectorized(track, LB_base, param, flags, i, int_period, rng)
     if flags['flag_performance']:
         P_knowledge[2] = param["HSS"]["knowledge"]
         P_knowledge[3] = param["HSS"]["knowledge"]
+    # MENTORS: same mechanism as intrapartum.initialize_intra_params (dashboard keys live under param["HSS"])
+    if flags.get("flag_MENTOR"):
+        adoption_rate = clip01(float(param["HSS"].get("mentor_adoption", param.get("mentor_adoption", 0.0))))
+        attendance_rate = clip01(float(param["HSS"].get("mentor_attendance", param.get("mentor_attendance", 0.0))))
+        fidelity_rate = clip01(float(param["HSS"].get("mentor_fidelity", param.get("mentor_fidelity", 0.0))))
+        mentors_coverage = adoption_rate * attendance_rate * fidelity_rate
+        OR_knowledge = float(param.get("OR_knowledge", 1.99))
+        OR_eff = 1.0 + mentors_coverage * (OR_knowledge - 1.0)
+        for idx in (1, 2, 3):
+            p_k = float(np.clip(P_knowledge[idx], 1e-6, 1.0 - 1e-6))
+            odds_base = p_k / (1.0 - p_k)
+            odds_new = OR_eff * odds_base
+            P_knowledge[idx] = float(odds_new / (1.0 + odds_new))
     P_close_to_L23 = param["close_to_L23"]
     P_close_to_L45 = 1 - P_close_to_L23
     P_iv_iron = param["S"]["iv_iron"] * (P_knowledge[1] * P_close_to_L23 + P_knowledge[3] * P_close_to_L45)

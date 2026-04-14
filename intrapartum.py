@@ -148,15 +148,21 @@ def initialize_intra_params(individual_outcomes, track, flags, param, i, rng):
         P["knowledge"][2] = param["HSS"]["knowledge"]
         P["knowledge"][3] = param["HSS"]["knowledge"]
 
-    # MENTORS intervention
-    if flags['flag_MENTOR'] == 1:
-        adoption_rate = np.clip(param["HSS"].get("mentor_adoption", 0.0), 0.0, 1.0)
-        attendance_rate = np.clip(param["HSS"].get("mentor_attendance", 0.0), 0.0, 1.0)
-        fidelity_rate = np.clip(param["HSS"].get("mentor_fidelity", 0.0), 0.0, 1.0)
+    # MENTORS intervention (HSS dict + optional top-level copies from sync_param_momish_from_hss)
+    if flags.get("flag_MENTOR"):
+        adoption_rate = np.clip(
+            float(param["HSS"].get("mentor_adoption", param.get("mentor_adoption", 0.0))), 0.0, 1.0
+        )
+        attendance_rate = np.clip(
+            float(param["HSS"].get("mentor_attendance", param.get("mentor_attendance", 0.0))), 0.0, 1.0
+        )
+        fidelity_rate = np.clip(
+            float(param["HSS"].get("mentor_fidelity", param.get("mentor_fidelity", 0.0))), 0.0, 1.0
+        )
 
         mentors_coverage = adoption_rate * attendance_rate * fidelity_rate
 
-        OR_knowledge = 199
+        OR_knowledge = float(param.get("OR_knowledge", 1.99))
         OR_eff = 1.0 + mentors_coverage * (OR_knowledge - 1.0)
 
         P["knowledge"][1] = np.clip(P["knowledge"][1], 1e-6, 1 - 1e-6)
@@ -183,7 +189,11 @@ def initialize_intra_params(individual_outcomes, track, flags, param, i, rng):
     E["int_sepsis"] = param['E_antibiotics']
     P["MgSO4"] = P_intervention('flag_MgSO4', "MgSO4", 'S_MgSO4', flags, param, S, P)
     P["antibiotics"] = P_intervention('flag_antibiotics', "antibiotics", 'S_antibiotics', flags, param, S, P)
-
+    print("P['knowledge']", P["knowledge"])
+    print(P["antibiotics"])
+    print("P['MgSO4']", P["MgSO4"])
+    print("P['oxytocin']", P["oxytocin"])
+    print("P['pph_bundle']", P["pph_bundle"])
     # Initialize counters
     MC = {}  # dict to restore maternal complications
     NC = {}  # dict to restore neonatal complications

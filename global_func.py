@@ -724,7 +724,7 @@ def reset_HSS(slider_params):
     HSS['CHV_memory'] = "Always Forget"  # Default memory model for CHVs
     HSS['tau_decay'] = 6
     HSS['adoption_prompts'] = 0.0
-    HSS['chv_engagement'] = 0.0,
+    HSS['chv_engagement'] = 0.0
     HSS['prompts_effect'] = 0.0
     return HSS
 
