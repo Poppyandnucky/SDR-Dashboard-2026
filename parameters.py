@@ -36,9 +36,9 @@ def get_slider_params():
         'p_ANC_base_slider': 0.56,                              #Baseline probability of 4+ ANC - default value of slider
         'S_pph_bundle_slider': np.array([0, 0, 0, 0]),          #PPH bundle implementation - default value of slider
         'S_iv_iron_slider': 0.44,                               #IV iron implementation - default value of slider
-        'S_MgSO4_slider': np.array([0, 0, 0.77, 0.77]),         #MgSO4 implementation - default value of slider
-        'S_antibiotics_slider': np.array([0, 0, 0.48, 0.48]),   #Antibiotics implementation - default value of slider
-        'S_oxytocin_slider': np.array([0, 0, 0.78, 0.78]),      #Oxytocin implementation - default value of slider
+        'S_MgSO4_slider': np.array([0, 0.73 * (1 - 0.311), 0.77, 0.77]),         #MgSO4 implementation - default value of slider
+        'S_antibiotics_slider': np.array([0, 0.38 * (1 - 0.311), 0.48, 0.48]),   #Antibiotics implementation - default value of slider
+        'S_oxytocin_slider': np.array([0, 0.33 * (1 - 0.311), 0.78, 0.78]),      #Oxytocin implementation - default value of slider
         't_l23_l45_notsevere_slider': 76,                       #Probability of referral from L2/3 to L4/5 for not severe cases - default value of slider
     }
     return slider_params
@@ -240,8 +240,8 @@ def get_parameters(rng = None):
         'S_oxytocin_l45': sample_from_ci(0.78, 0.706, 0.854, n=120, kind='proportion', size=1, rng = rng)[0],      # the supply level of oxytocin at L4/5
         'S_preterm_treat_l45': sample_from_ci(0.35, 0.285, 0.415, n=206, kind='proportion', size=1, rng = rng)[0], # the supply level of preterm treatment at L4/5
         'S_pph_bundle': np.array([0, 0, 0, 0]),                                                                                       # the supply level of obstetric drape at L4/5
-        'S_MgSO4': np.array([0, 0, 0.77, 0.77]),                                                                                      # the supply level of MgSO4 at L4/5
-        'S_antibiotics': np.array([0, 0, 0.48, 0.48]),                                                                                # the supply level of antibiotics at L4/5
+        'S_MgSO4': np.array([0, 0.73 * (1 - 0.311), 0.77, 0.77]),                                                                      # supply level of MgSO4 by facility level
+        'S_antibiotics': np.array([0, 0.38 * (1 - 0.311), 0.48, 0.48]),                                                                  # supply level of antibiotics by facility level
         "OR_RDS_treat": 0.53,                                                                                                         # odds ratio of preterm having RDS given treatment
         'OR_IVH_treat': 0.38, 
         "OR_knowledge": 1.99,                                                                                                        # odds ratio of preterm having IVH given treatment
@@ -255,7 +255,7 @@ def get_parameters(rng = None):
         # PROMPTS mechanism parameters (NOT user inputs)
         'phone_ownership': 0.89,
         'intervention_fidelity': 0.87,
-        'OR_anc4p': 1.38,
+        'OR_anc4p': 1.38,  # default; dashboard PROMPTS slider overrides when PROMPTS is enabled
         'sen_risk_trad_target': 0.95, ## under case where mothers recognize danger signs
         'spec_risk_trad_target': 0.631,
         'p_move_home_base': 0.3,
@@ -379,7 +379,7 @@ def calculate_derived_parameters(param):
     param["RDS_T"] = P_RDS(param) # probability of RDS by GA with treatment
 
     # supply
-    param["S_oxytocin"] = np.array([0, 0, param["S_oxytocin_l45"], param["S_oxytocin_l45"]])                         # supply level of oxytocin at different facility levels
+    param["S_oxytocin"] = np.array([0, 0.33 * (1 - 0.311), param["S_oxytocin_l45"], param["S_oxytocin_l45"]])       # supply level of oxytocin by facility level
     param["S_preterm_treat"] = np.array([0, 0, param["S_preterm_treat_l45"], param["S_preterm_treat_l45"]])          # supply level of preterm treatment at different facility levels
     return param
 

@@ -447,6 +447,8 @@ def sync_param_momish_from_hss(i_param, i_HSS):
     i_param["intervention_fidelity"] = float(
         i_HSS.get("prompts_effect", i_param.get("intervention_fidelity", 0.87))
     )
+    if i_HSS.get("OR_anc4p") is not None:
+        i_param["OR_anc4p"] = float(i_HSS["OR_anc4p"])
     for _k in ("mentor_adoption", "mentor_attendance", "mentor_fidelity"):
         if _k in i_HSS:
             i_param[_k] = float(i_HSS[_k])
@@ -657,10 +659,27 @@ def render_prompts():
             )
         i_HSS["prompts_effect"] = prompts_effect_val / 100.0
         st.session_state["prompts_effect"] = prompts_effect_val
+
+        if "prompts_or_anc4p" not in st.session_state:
+            st.session_state["prompts_or_anc4p"] = 1.38
+        st.session_state["prompts_or_anc4p"] = max(
+            1.15, min(1.44, float(st.session_state["prompts_or_anc4p"]))
+        )
+        or_anc4p_val = st.slider(
+            "PROMPTS effect on 4+ ANC (OR)",
+            min_value=1.15,
+            max_value=1.44,
+            step=0.01,
+            format="%.2f",
+            help="Odds ratio for 4+ ANC when PROMPTS is on (LB_effect).",
+            key="prompts_or_anc4p",
+        )
+        i_HSS["OR_anc4p"] = float(or_anc4p_val)
     else:
         i_HSS["adoption_prompts"] = 0.0
         i_HSS["chv_engagement"] = 0.0
         i_HSS["prompts_effect"] = 0.0
+        i_HSS.pop("OR_anc4p", None)
 
     # ==========================================================
     # BLOCK 2 — MENTORS
