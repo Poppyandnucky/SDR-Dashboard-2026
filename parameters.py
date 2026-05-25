@@ -211,12 +211,18 @@ def get_parameters(rng = None):
         'p_comp_severe_lowrisk': 0.0501,               # probability of severe if complications for low-risk mothers - calibrated to match severe maternal outcome rate at L4/5
         'p_NM_home': 0.235,                            # neonatal mortality rate by home - calibrated to match NMR at home (need revision)
         'weight_facility_neo': 3.15,                   # weight of facility in calculating NMR due to healthcare worker density (need revision)
+        "blood_tracking_upper_bound": 0.133,           # max flag*slider effect on PPH/APH comp_risks in mortality (13.3%)
 
         # known parameters
         'OR_MM_CSvsSVD': sample_from_ci(2.28, 1.87, 2.79, kind='OR', size=1, rng = rng)[0],                                 # odds ratio of maternal mortality by CS vs SVD
         'OR_MM_EmCSvsELCS': sample_from_ci(3.17, 2.48, 4.04, kind='OR', size=1, rng = rng)[0],                              # odds ratio of maternal mortality by emergency CS vs elective CS
         'OR_MM_transfer': sample_from_ci(1.59, 1.30, 1.93, kind='OR', size=1, rng = rng)[0],                                # odds ratio of maternal mortality by transfer
         'OR_NM_transfer': sample_from_ci(2.5, 1.1, 5.6, kind='OR', size=1, rng = rng)[0],                                   # odds ratio of neonatal mortality by transfer
+        "transfer_delay_probs_l23": np.array([0.29, 0.47, 0.24]), # Makueni referral travel time distribution from L2/3: <1h, 1-2h, 2+h
+        "transfer_delay_probs_l45": np.array([0.69, 0.15, 0.15]), # Makueni referral travel time distribution from L4/5: <1h, 1-2h, 2+h
+        "transfer_delay_rr_scale": 0.969442,                      # calibration scale for maternal mortality RR by transfer delay
+        "RR_transfer_delay_1_2": 2.11,                            # RR of maternal mortality for transfer delay 1-2h vs <1h
+        "RR_transfer_delay_2plus": 2.39,                          # RR of maternal mortality for transfer delay 2+h vs <1h
         "D_RDS": np.array([39.7, 20.0]) / 100,              # % P[death|RDS] for GA < 32 or >= 32
         "D_IVH": 11.0 / 100,                                # % P[death|IVH]
         "D_NEC": 21.2 / 100,                                # % P[death|NEC]

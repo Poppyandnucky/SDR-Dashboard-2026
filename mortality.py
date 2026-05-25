@@ -3,6 +3,47 @@ from LB_effect import clip01
 from global_func import baseline_p_death, P_intervention
 import streamlit as st
 
+
+def assign_transfer_delay_categories(param, rng, num_mothers, transfer_mask, i_loc):
+    travel_time_transfer = np.full(num_mothers, -1, dtype=int)  # -1: no transfer, 0: <1h, 1: 1-2h, 2: 2+h
+    from_l23_mask = transfer_mask & (i_loc == 1)
+    from_l45_mask = transfer_mask & ((i_loc == 2) | (i_loc == 3))
+
+    if np.any(from_l23_mask):
+        delay_probs_l23 = np.asarray(param["transfer_delay_probs_l23"], dtype=float)
+        delay_probs_l23 = delay_probs_l23 / delay_probs_l23.sum()
+        travel_time_transfer[from_l23_mask] = rng.choice(
+            [0, 1, 2],
+            size=np.sum(from_l23_mask),
+            p=delay_probs_l23,
+        )
+    if np.any(from_l45_mask):
+        delay_probs_l45 = np.asarray(param["transfer_delay_probs_l45"], dtype=float)
+        delay_probs_l45 = delay_probs_l45 / delay_probs_l45.sum()
+        travel_time_transfer[from_l45_mask] = rng.choice(
+            [0, 1, 2],
+            size=np.sum(from_l45_mask),
+            p=delay_probs_l45,
+        )
+
+    return travel_time_transfer
+
+
+def apply_transfer_delay_rr(p_death, transfer_update_mask, travel_time_transfer, param):
+    transfer_delay_rr = np.ones_like(p_death, dtype=float)
+    rr_scale = float(param.get("transfer_delay_rr_scale", 1.0))
+
+    delay_lt1_mask = transfer_update_mask & (travel_time_transfer == 0)
+    delay_1_2_mask = transfer_update_mask & (travel_time_transfer == 1)
+    delay_2plus_mask = transfer_update_mask & (travel_time_transfer == 2)
+
+    transfer_delay_rr[delay_lt1_mask] = rr_scale
+    transfer_delay_rr[delay_1_2_mask] = rr_scale * param["RR_transfer_delay_1_2"]
+    transfer_delay_rr[delay_2plus_mask] = rr_scale * param["RR_transfer_delay_2plus"]
+
+    p_death[transfer_update_mask] *= transfer_delay_rr[transfer_update_mask]
+    return p_death
+
 def initialize_MM_params_vectorized(track, param, flags, i, MC, M, NC):
     MC = MC
     M = M
@@ -53,6 +94,7 @@ def f_MM_vectorized(track, param, flags, i, MC, M, NC, individual_outcomes, rng)
     P, n, MC, M, NC, E, OR, MD, ND, W = initialize_MM_params_vectorized(track, param, flags, i, MC, M, NC)
 
     # Extract individual-level data
+    i_loc = individual_outcomes["i_loc"].values                  # original delivery location index before emergency transfers (0-3)
     i_loc_new_v2 = individual_outcomes["i_loc_new_v2"].values  # final delivery location index (0-3)
     i_mod = individual_outcomes["i_mod"].values                # mode of delivery (SVD, EmCS, ELCS)
     i_transfer_pred = individual_outcomes["i_transfer_pred"].values     # whether first-time emergency transfer status (0/1)
@@ -84,15 +126,35 @@ def f_MM_vectorized(track, param, flags, i, MC, M, NC, individual_outcomes, rng)
     #Maternal Deaths - different weight version
     death_cause = np.full(num_mothers, "none", dtype=object)
 
+    # Blood tracking: attenuate PPH/APH death weights (dashboard: flag_blood, blood_participation)
+    flag_blood_tracking = float(
+        flags.get("flag_blood_tracking", flags.get("flag_blood", 0))
+    )
+    blood_tracking_slider = float(
+        np.clip(
+            param.get("HSS", {}).get(
+                "blood_tracking_slider",
+                param.get("HSS", {}).get("blood_participation", 0.0),
+            ),
+            0.0,
+            1.0,
+        )
+    )
+    blood_ub = float(param.get("blood_tracking_upper_bound", 0.133))
+    blood_mult = min(
+        1.0,
+        1.0 - flag_blood_tracking * min(blood_tracking_slider, blood_ub),
+    )
+
     # Complication risk weights (constant across locations)
     comp_names = ["pph", "sepsis", "eclampsia", "ol", "other", "aph"]
     comp_risks = np.stack([
-        i_pph_severe * param["MM_weight_pph"],
+        i_pph_severe * param["MM_weight_pph"] * blood_mult,
         i_sepsis_severe * param["MM_weight_sepsis"],
         i_eclampsia_severe * param["MM_weight_eclampsia"],
         i_ol_severe * param["MM_weight_ol"],
         np.ones(num_mothers, dtype=int) * param["p_MM_others"],
-        i_aph_severe * param["MM_weight_aph"],
+        i_aph_severe * param["MM_weight_aph"] * blood_mult,
     ], axis=1)
 
     # Get max risk index and value for each mother
@@ -120,12 +182,10 @@ def f_MM_vectorized(track, param, flags, i, MC, M, NC, individual_outcomes, rng)
                 (1 - p_death[emcs_update_mask]) + (OR["MM_EmCSvsELCS"] * p_death[emcs_update_mask]))
     )  # Update death probability for EmCS cases
 
-    # **Step 4: Apply OR for Transfers**
+    # **Step 4: Apply transfer delay RRs**
     transfer_update_mask = severe_mask & transfer_mask  # Mask for severe cases with emergency transfer
-    p_death[transfer_update_mask] = (
-            OR["MM_transfer"] * p_death[transfer_update_mask] / (
-                (1 - p_death[transfer_update_mask]) + (OR["MM_transfer"] * p_death[transfer_update_mask]))
-    )  # Update death probability for transfer cases
+    travel_time_transfer = assign_transfer_delay_categories(param, rng, num_mothers, transfer_mask, i_loc)
+    p_death = apply_transfer_delay_rr(p_death, transfer_update_mask, travel_time_transfer, param)
 
     # **Step 3: Clip Death Probabilities & Assign Maternal Deaths**
     p_death = np.clip(p_death, 0, 1)  # Ensure probabilities stay within [0,1]
@@ -161,6 +221,7 @@ def f_MM_vectorized(track, param, flags, i, MC, M, NC, individual_outcomes, rng)
     individual_outcomes["i_mat_death"] = i_mort.astype(int)
     individual_outcomes["i_neo_death"] = i_ND.astype(int)
     individual_outcomes["i_transfer"] = i_transfer.astype(int)
+    individual_outcomes["travel_time_transfer"] = travel_time_transfer.astype(int)
     individual_outcomes["death_cause"] = death_cause.astype(str)
 
     return MC, MD, NC, ND, M, individual_outcomes

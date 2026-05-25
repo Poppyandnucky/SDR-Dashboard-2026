@@ -71,6 +71,287 @@ def go_back_to_hss():
     st.session_state.scenario_selected = None
     st.session_state.model_finished = False
 
+
+HSS_DEMAND_PRESETS = {
+    "Conservative": {"P_ANC": 70, "P_L45": 53},
+    "Moderate": {"P_ANC": 80, "P_L45": 68},
+    "Aggressive": {"P_ANC": 90, "P_L45": 90},
+}
+HSS_CAPACITY_MATCH = {
+    "Conservative": 25.0,
+    "Moderate": 50.0,
+    "Aggressive": 85.0,
+}
+HSS_CAPACITY_MISMATCH = {
+    "Conservative": 12.5,
+    "Moderate": 25.0,
+    "Aggressive": 42.5,
+}
+PROMPTS_FIDELITY_PRESET = {"Low": 0.60, "High": 0.80}
+MENTORS_FIDELITY_PRESET = {"Low": 0.60, "High": 0.80}
+
+
+def render_hss_preset():
+    """All (Preset): component toggles + intensity; presets apply only to enabled blocks."""
+    st.subheader(":chart_with_upwards_trend: HSS interventions (Preset)")
+    st.caption(
+        "Choose which components are on, then set intensity. "
+        "Conservative / Moderate / Aggressive values apply only to enabled components."
+    )
+
+    col_d, col_s = st.columns(2)
+    with col_d:
+        st.markdown("**Demand**")
+        enable_chv = st.toggle(
+            "Employ CHVs",
+            value=False,
+            key="preset_enable_chv",
+            help="CHVs refer to Community Healthcare Workers",
+        )
+        intensity = st.radio(
+            "Intervention intensity",
+            list(HSS_DEMAND_PRESETS.keys()),
+            horizontal=True,
+            key="preset_demand_intensity",
+        )
+
+    with col_s:
+        st.markdown("**Supply**")
+        enable_facility = st.toggle(
+            "Upgrade L4/5 facilities",
+            value=False,
+            key="preset_enable_facility",
+        )
+        enable_network = st.toggle(
+            "Upgrade Rescue network",
+            value=False,
+            key="preset_enable_network",
+            help="Referral capacity and emergency transfer",
+        )
+        supply_scenario = st.radio(
+            "Supply relative to demand",
+            ["Match Demand", "Cannot Meet Demand"],
+            horizontal=True,
+            key="preset_supply_scenario",
+        )
+
+    d = HSS_DEMAND_PRESETS[intensity]
+    match_supply = supply_scenario == "Match Demand"
+
+    i_flags["flag_CHV"] = 0
+    i_flags["flag_ANC"] = 0
+    i_flags["flag_LB"] = 0
+    i_HSS["P_ANC"] = slider_params["p_ANC_base_slider"]
+    i_HSS["P_L45"] = slider_params["base_p_45_slider"]
+    i_HSS["tau_decay"] = 6
+    i_HSS["CHV_memory"] = "Always Forget"
+
+    if enable_chv:
+        i_flags["flag_CHV"] = 1
+        i_flags["flag_ANC"] = 1
+        i_flags["flag_LB"] = 1
+        i_HSS["P_ANC"] = d["P_ANC"] / 100.0
+        p_l45_exp = get_P_l45(i_HSS["P_ANC"], slider_params)
+        min_l45 = round(p_l45_exp * 100) if p_l45_exp is not None else 0
+        i_HSS["P_L45"] = max(min_l45, d["P_L45"]) / 100.0
+        i_HSS["tau_decay"] = 6
+        i_HSS["CHV_memory"] = "Logistic Decay"
+        st.session_state["P_ANC"] = i_HSS["P_ANC"]
+        st.session_state["P_L45"] = i_HSS["P_L45"]
+
+    i_flags["flag_performance"] = 0
+    i_flags["flag_capacity"] = 0
+    i_flags["flag_labor"] = 0
+    i_flags["flag_equipment"] = 0
+    i_HSS["knowledge"] = slider_params["base_knowledge_L45_slider"]
+    i_HSS["capacity_added"] = 0
+    i_HSS["labor_ratio"] = 0
+    i_HSS["sensor_ratio"] = 0
+
+    if enable_facility:
+        if match_supply:
+            performance_pct = 100
+            capacity_pct = HSS_CAPACITY_MATCH[intensity]
+            labor_pct = 100
+            equipment_pct = 100
+        else:
+            performance_pct = 75
+            capacity_pct = HSS_CAPACITY_MISMATCH[intensity]
+            labor_pct = 50
+            equipment_pct = 50
+        i_flags["flag_performance"] = 1
+        i_flags["flag_capacity"] = 1
+        i_flags["flag_labor"] = 1
+        i_flags["flag_equipment"] = 1
+        i_HSS["knowledge"] = performance_pct / 100.0
+        i_HSS["capacity_added"] = capacity_pct / 100.0
+        i_HSS["labor_ratio"] = labor_pct / 100.0
+        i_HSS["sensor_ratio"] = equipment_pct / 100.0
+
+    i_flags["flag_refer"] = 0
+    i_flags["flag_transfer"] = 0
+    i_HSS["P_refer"] = 0
+    i_HSS["P_transfer"] = 0
+
+    if enable_network:
+        if match_supply:
+            refer_pct = 100
+            transfer_pct = 100
+        else:
+            refer_pct = 50
+            transfer_pct = 80
+        i_flags["flag_refer"] = 1
+        i_flags["flag_transfer"] = 1
+        i_HSS["P_refer"] = refer_pct / 100.0
+        i_HSS["P_transfer"] = transfer_pct / 100.0
+
+    i_flags["flag_SDR"] = 1 if (enable_chv or enable_facility or enable_network) else 0
+
+
+def render_single_preset():
+    """All (Preset): treatment/diagnosis as enable toggles; parameters use analyst UI defaults."""
+    st.subheader(":pill: Treatment interventions (Preset)")
+    mat_specs = [
+        ("PPH bundle", "flag_pph_bundle", "pph_bundle"),
+        ("IV iron infusion", "flag_iv_iron", "iv_iron"),
+        ("Magnesium sulfate (MgSO4)", "flag_MgSO4", "MgSO4"),
+        ("Antibiotics for maternal sepsis", "flag_antibiotics", "antibiotics"),
+        ("Oxytocin for prolonged labor", "flag_oxytocin", "oxytocin"),
+    ]
+    for label, flag_key, s_key in mat_specs:
+        on = st.toggle(label, value=False, key=f"preset_single_{flag_key}")
+        if on:
+            i_flags[flag_key] = 1
+            i_S[s_key] = 1.0
+        else:
+            i_flags[flag_key] = 0
+            i_S[s_key] = 0
+
+    st.markdown("---")
+    st.subheader(":stethoscope: Diagnosis interventions (Preset)")
+    diag_col1, diag_col2, diag_col3 = st.columns(3)
+    with diag_col1:
+        us_on = st.toggle("AI portable ultrasound (AI-US)", value=False, key="preset_single_us")
+    with diag_col2:
+        sensor_on = st.toggle("Intrapartum sensors", value=False, key="preset_single_intrasensor")
+    with diag_col3:
+        ai_sensor_on = st.toggle(
+            "AI algorithms (intrapartum)",
+            value=False,
+            key="preset_single_sensor_ai",
+            disabled=not sensor_on,
+        )
+
+    if us_on:
+        i_flags["flag_us"] = 1
+        i_E["sens_us"] = 0.95
+        i_E["spec_us"] = 0.95
+        i_S["US"] = 1
+    else:
+        i_flags["flag_us"] = 0
+        i_S["US"] = 0
+
+    if sensor_on:
+        i_flags["flag_intrasensor"] = 1
+        if ai_sensor_on:
+            i_flags["flag_sensor_ai"] = 1
+            i_E["sens_sensor"] = 0.95
+            i_E["spec_sensor"] = 0.95
+        else:
+            i_flags["flag_sensor_ai"] = 0
+    else:
+        i_flags["flag_intrasensor"] = 0
+        i_flags["flag_sensor_ai"] = 0
+
+
+def render_prompts_preset():
+    """All (Preset): MOMISH as checkboxes; low/high fidelity presets for PROMPTS and MENTORS only."""
+    st.subheader(":bulb: MOMISH interventions (Preset)")
+
+    st.markdown("**PROMPTS**")
+    p_col1, p_col2 = st.columns([1, 2])
+    with p_col1:
+        prompts_on = st.checkbox("Enable PROMPTS", value=False, key="preset_prompts_on")
+    with p_col2:
+        prompts_fidelity = st.radio(
+            "PROMPTS fidelity",
+            ["Low Fidelity", "High Fidelity"],
+            horizontal=True,
+            key="preset_prompts_fidelity",
+            disabled=not prompts_on,
+        )
+
+    i_flags["flag_PROMPTS"] = 1 if prompts_on else 0
+    st.session_state["flag_PROMPTS"] = int(prompts_on)
+    if prompts_on:
+        fid_key = "Low" if prompts_fidelity.startswith("Low") else "High"
+        i_HSS["adoption_prompts"] = 1.0
+        i_HSS["chv_engagement"] = 1.0
+        i_HSS["prompts_effect"] = PROMPTS_FIDELITY_PRESET[fid_key]
+        st.session_state["prompts_effect"] = int(PROMPTS_FIDELITY_PRESET[fid_key] * 100)
+        i_HSS["OR_anc4p"] = float(st.session_state.get("prompts_or_anc4p", 1.38))
+    else:
+        i_HSS["adoption_prompts"] = 0.0
+        i_HSS["chv_engagement"] = 0.0
+        i_HSS["prompts_effect"] = 0.0
+        i_HSS.pop("OR_anc4p", None)
+
+    st.markdown("**MENTORS**")
+    m_col1, m_col2 = st.columns([1, 2])
+    with m_col1:
+        mentor_on = st.checkbox("Enable MENTORS", value=False, key="preset_mentor_on")
+    with m_col2:
+        mentor_fidelity = st.radio(
+            "MENTORS fidelity",
+            ["Low Fidelity", "High Fidelity"],
+            horizontal=True,
+            key="preset_mentor_fidelity",
+            disabled=not mentor_on,
+        )
+
+    i_flags["flag_MENTOR"] = 1 if mentor_on else 0
+    st.session_state["flag_MENTOR"] = int(mentor_on)
+    if mentor_on:
+        fid_key = "Low" if mentor_fidelity.startswith("Low") else "High"
+        i_HSS["mentor_adoption"] = 0.70
+        i_HSS["mentor_attendance"] = 0.70
+        i_HSS["mentor_fidelity"] = MENTORS_FIDELITY_PRESET[fid_key]
+        st.session_state["mentor_adoption"] = 70
+        st.session_state["mentor_attendance"] = 70
+        st.session_state["mentor_fidelity"] = int(MENTORS_FIDELITY_PRESET[fid_key] * 100)
+    else:
+        i_HSS["mentor_adoption"] = 0.0
+        i_HSS["mentor_attendance"] = 0.0
+        i_HSS["mentor_fidelity"] = 0.0
+
+    st.markdown("**Other MOMISH programs**")
+    o_col1, o_col2, o_col3 = st.columns(3)
+    with o_col1:
+        pulse_on = st.checkbox("PULSE", value=False, key="preset_pulse_on")
+    with o_col2:
+        blood_on = st.checkbox("Blood tracking", value=False, key="preset_blood_on")
+    with o_col3:
+        emt_on = st.checkbox("Referral systems & EMT training", value=False, key="preset_emt_on")
+
+    i_flags["flag_pulse"] = 1 if pulse_on else 0
+    st.session_state["flag_pulse"] = int(pulse_on)
+    i_HSS["pulse_coverage"] = 1.0 if pulse_on else 0.0
+    if not pulse_on:
+        i_HSS["pulse_effectiveness"] = 0.0
+
+    i_flags["flag_blood"] = 1 if blood_on else 0
+    i_flags["flag_blood_tracking"] = i_flags["flag_blood"]
+    st.session_state["flag_blood"] = int(blood_on)
+    i_HSS["blood_participation"] = 1.0 if blood_on else 0.0
+    i_HSS["blood_tracking_slider"] = i_HSS["blood_participation"]
+
+    i_flags["flag_emt"] = 1 if emt_on else 0
+    st.session_state["flag_emt"] = int(emt_on)
+    i_HSS["emt_participation"] = 1.0 if emt_on else 0.0
+    if not emt_on:
+        i_HSS["emt_intensity"] = 0.0
+
+
 # Function to render HSS interventions
 def render_hss(preset_demand_scenario, preset_supply_scenario):
     # Scenario default values
@@ -818,6 +1099,7 @@ def render_prompts():
 
     with col14:
         i_flags["flag_blood"] = 1 if blood_int else 0
+        i_flags["flag_blood_tracking"] = i_flags["flag_blood"]
         st.session_state["flag_blood"] = int(blood_int)
 
     if blood_int:
@@ -826,12 +1108,15 @@ def render_prompts():
             "Adoption of Blood Tracking System",
             0, 100, blood_default, 5,
             format="%d%%",
-            key="blood_participation"
+            key="blood_participation",
+            help="Scales PPH/APH maternal death weights in mortality; effect capped at 13.3%.",
         )
-        i_HSS["blood_participation"] = blood_val / 100.0
-        # st.session_state["blood_participation"] = blood_val
+        blood_frac = blood_val / 100.0
+        i_HSS["blood_participation"] = blood_frac
+        i_HSS["blood_tracking_slider"] = blood_frac
     else:
         i_HSS["blood_participation"] = 0.0
+        i_HSS["blood_tracking_slider"] = 0.0
         i_HSS["blood_intensity"] = 0.0
 
     # ==========================================================
@@ -1022,13 +1307,15 @@ with st.expander("⚙️ **Scenario Settings** (Click to expand/collapse)", expa
         st.title("Intervention Selection")
         st.subheader("1. Which types of interventions would you like to explore?")
 
+        if st.button("All (Analyst Mode)"):
+            st.session_state.intervention_selection = "Both"
+        if st.button("All (Preset Mode)"):
+            st.session_state.intervention_selection = "BothPreset"
         if st.button(":one: Health Systems Strengthening Interventions (Demand and Supply)"):
             st.session_state.intervention_selection = "HSS"
         if st.button(":two: Single Interventions (Treatment and Diagnosis)"):
             st.session_state.intervention_selection = "Single"
-        if st.button(":three: Both"):
-            st.session_state.intervention_selection = "Both"
-        if st.button(":four: MOMISH Interventions"):
+        if st.button(":three: MOMISH Interventions"):
             st.session_state.intervention_selection = "PROMPTS"
 
 
@@ -1067,6 +1354,19 @@ with st.expander("⚙️ **Scenario Settings** (Click to expand/collapse)", expa
     elif st.session_state.intervention_selection == "Single":
         st.button("🔙 Back to Intervention Options", on_click=go_back_to_main)
         render_single()
+        st.session_state.scenario_selected = True
+
+    elif st.session_state.intervention_selection == "BothPreset":
+        st.button("🔙 Back to Intervention Options", on_click=go_back_to_main)
+        st.caption(
+            "Preset mode: choose enabled interventions and strategy levels only. "
+            "Parameters use predefined values (no sliders)."
+        )
+        render_hss_preset()
+        st.markdown("---")
+        render_single_preset()
+        st.markdown("---")
+        render_prompts_preset()
         st.session_state.scenario_selected = True
 
     elif st.session_state.intervention_selection == "Both":
@@ -1697,7 +1997,7 @@ if st.session_state.b_df is not None and st.session_state.i_df is not None:
                 # In Both + A/B mode, add plain baseline as the 3rd scenario for bar/column comparisons
                 if (
                     st.session_state.get("compare_two_interventions", False)
-                    and st.session_state.get("intervention_selection") == "Both"
+                    and st.session_state.get("intervention_selection") in ("Both", "BothPreset")
                     and st.session_state.get("ab_base_df") is not None
                 ):
                     ab_base_df = st.session_state.ab_base_df
@@ -1862,6 +2162,152 @@ if st.session_state.b_df is not None and st.session_state.i_df is not None:
                 )
 
                 return chart
+
+            def aggregate_deaths_by_cause(ind_outcomes):
+                """Mean maternal death count by cause across simulation runs."""
+                df = ind_outcomes.loc[
+                    ind_outcomes["death_cause"] != "none", ["Run", "death_cause"]
+                ].copy()
+                per_run = (
+                    df.groupby(["Run", "death_cause"], as_index=False)
+                    .size()
+                    .rename(columns={"size": "count"})
+                )
+                if per_run.empty:
+                    return per_run
+                if per_run["Run"].nunique() <= 1:
+                    return per_run.groupby("death_cause", as_index=False)["count"].sum()
+                return per_run.groupby("death_cause", as_index=False)["count"].mean()
+
+            def death_by_cause_comparison_chart(b_ind_outcomes, i_ind_outcomes, ref_name, tgt_name):
+                """
+                Stacked bar: base = reference deaths by cause; overlay = change to target (count delta).
+                Labels show percent change (target vs reference).
+                """
+                cause_order = ["pph", "sepsis", "eclampsia", "ol", "aph", "other"]
+                cause_labels = {
+                    "pph": "PPH",
+                    "sepsis": "Sepsis",
+                    "eclampsia": "Eclampsia",
+                    "ol": "Obstructed labor",
+                    "aph": "APH",
+                    "other": "Other",
+                }
+
+                ref_counts = aggregate_deaths_by_cause(b_ind_outcomes)
+                tgt_counts = aggregate_deaths_by_cause(i_ind_outcomes)
+                if ref_counts.empty and tgt_counts.empty:
+                    return None
+
+                merged = pd.DataFrame({"death_cause": cause_order})
+                merged = merged.merge(
+                    ref_counts.rename(columns={"count": "count_ref"}),
+                    on="death_cause",
+                    how="left",
+                ).merge(
+                    tgt_counts.rename(columns={"count": "count_tgt"}),
+                    on="death_cause",
+                    how="left",
+                )
+                merged[["count_ref", "count_tgt"]] = merged[["count_ref", "count_tgt"]].fillna(0)
+                merged["delta"] = merged["count_tgt"] - merged["count_ref"]
+                merged["pct_change"] = np.where(
+                    merged["count_ref"] > 0,
+                    merged["delta"] / merged["count_ref"] * 100,
+                    np.where(merged["count_tgt"] > 0, np.inf, 0),
+                )
+                merged["cause_label"] = merged["death_cause"].map(cause_labels)
+
+                change_label = f"Change ({tgt_name} − {ref_name})"
+                base_layer = merged.assign(segment=ref_name, y=merged["count_ref"])
+                delta_layer = merged.assign(segment=change_label, y=merged["delta"])
+                stack_df = pd.concat(
+                    [
+                        base_layer[["cause_label", "death_cause", "segment", "y", "count_ref", "count_tgt", "delta", "pct_change"]],
+                        delta_layer[["cause_label", "death_cause", "segment", "y", "count_ref", "count_tgt", "delta", "pct_change"]],
+                    ],
+                    ignore_index=True,
+                )
+                stack_df["segment_order"] = np.where(stack_df["segment"] == ref_name, 0, 1)
+                stack_df["bar_color"] = np.where(
+                    stack_df["segment"] == ref_name,
+                    ref_name,
+                    np.where(stack_df["delta"] > 0, "Increase", "Decrease"),
+                )
+
+                bars = (
+                    alt.Chart(stack_df)
+                    .mark_bar()
+                    .encode(
+                        x=alt.X(
+                            "cause_label:N",
+                            sort=[cause_labels[c] for c in cause_order],
+                            title="Cause of death",
+                        ),
+                        y=alt.Y("y:Q", stack="zero", title="Maternal deaths (mean count)"),
+                        color=alt.Color(
+                            "bar_color:N",
+                            title="Component",
+                            scale=alt.Scale(
+                                domain=[ref_name, "Increase", "Decrease"],
+                                range=["#4C78A8", "#E45756", "#54A24B"],
+                            ),
+                        ),
+                        order=alt.Order("segment_order:O", sort="ascending"),
+                        tooltip=[
+                            alt.Tooltip("cause_label:N", title="Cause"),
+                            alt.Tooltip("count_ref:Q", format=".1f", title=ref_name),
+                            alt.Tooltip("count_tgt:Q", format=".1f", title=tgt_name),
+                            alt.Tooltip("delta:Q", format="+.1f", title="Absolute change"),
+                            alt.Tooltip("pct_change:Q", format="+.1f", title="% change"),
+                        ],
+                    )
+                )
+
+                label_df = merged.copy()
+
+                def _pct_label(row):
+                    if row["count_ref"] > 0:
+                        return f"{row['pct_change']:+.0f}%"
+                    if row["count_tgt"] > 0:
+                        return "new"
+                    return "0%"
+
+                label_df["pct_label"] = label_df.apply(_pct_label, axis=1)
+                label_df["y_top"] = label_df["count_tgt"]
+                label_df["trend"] = np.select(
+                    [label_df["pct_change"] > 0, label_df["pct_change"] < 0],
+                    ["Increase", "Decrease"],
+                    default="No change",
+                )
+
+                labels = (
+                    alt.Chart(label_df)
+                    .mark_text(dy=-8, fontSize=12, fontWeight="bold")
+                    .encode(
+                        x=alt.X(
+                            "cause_label:N",
+                            sort=[cause_labels[c] for c in cause_order],
+                        ),
+                        y=alt.Y("y_top:Q"),
+                        text="pct_label:N",
+                        color=alt.Color(
+                            "trend:N",
+                            scale=alt.Scale(
+                                domain=["Increase", "Decrease", "No change"],
+                                range=["#C44E52", "#2CA02C", "#444444"],
+                            ),
+                            legend=None,
+                        ),
+                    )
+                )
+
+                title = f"Maternal deaths by cause: {ref_name} with change to {tgt_name}"
+                return (bars + labels).properties(
+                    width=700,
+                    height=420,
+                    title=alt.TitleParams(text=title, anchor="middle", fontSize=16),
+                ).configure_axis(labelFontSize=12, titleFontSize=14)
 
             def line_chart_ci_matplotlib(line_data, title, ytitle, ydomain):
                 """
@@ -3232,7 +3678,9 @@ if st.session_state.b_df is not None and st.session_state.i_df is not None:
             if selected_plot == "Maternal mortality rate":
                 st.markdown("<h3 style='text-align: left;'>Maternal deaths per 100,000 live births (MMR)</h3>",
                            unsafe_allow_html=True)
-                tab1, tab2, tab3 = st.tabs(["MMR by location", "Distribution of Causes", "MMR by causes"])
+                tab1, tab2, tab3 = st.tabs(
+                    ["MMR by location", "Distribution of Causes", "Death by cause"]
+                )
 
                 with tab1:
 
@@ -3296,11 +3744,28 @@ if st.session_state.b_df is not None and st.session_state.i_df is not None:
                     st.altair_chart(chart)
 
                 with tab3:
-                    df_all = pd.concat([b_ind_outcomes, i_ind_outcomes], ignore_index=True)
-                    #select Run, Scenario, and death_cause columns
-                    df_all = df_all[['Run', 'Scenario', 'death_cause']]
-                    #groub by Run, Scenario, and death_cause and calculate mean of death_cause
-                    df_all = df_all.groupby(['Run', 'Scenario', 'death_cause'], as_index=False).mean('death_cause')
+                    ref_name = (
+                        st.session_state.reference_label
+                        if st.session_state.compare_two_interventions
+                        else "Baseline"
+                    )
+                    tgt_name = (
+                        st.session_state.target_label
+                        if st.session_state.compare_two_interventions
+                        else "Intervention"
+                    )
+                    st.caption(
+                        f"Bar base: **{ref_name}** maternal deaths by cause (mean count across runs when applicable). "
+                        f"Stacked segment: absolute change from {ref_name} to **{tgt_name}**. "
+                        f"Labels above bars show percent change."
+                    )
+                    cause_chart = death_by_cause_comparison_chart(
+                        b_ind_outcomes, i_ind_outcomes, ref_name, tgt_name
+                    )
+                    if cause_chart is None:
+                        st.info("No attributed maternal deaths in the current run results.")
+                    else:
+                        st.altair_chart(cause_chart, use_container_width=True)
 
 
             if selected_plot == "Severe maternal outcomes":
