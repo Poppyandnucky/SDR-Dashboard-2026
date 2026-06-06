@@ -1,9 +1,16 @@
 import random
+import sys
+from pathlib import Path
+
 import numpy as np
 import streamlit as st
 import math
 
 from numba.core.typing.builtins import Print
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from parameters import get_parameters
 from global_func import odds_prob
@@ -174,4 +181,3 @@ print("Predicted outcomes:", Preterm_fac_mean)  # Debug print
 # # Run the optimization
 # if __name__ == "__main__":
 #     optimize_model()
-
