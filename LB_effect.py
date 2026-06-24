@@ -12,6 +12,39 @@ def odds_update(p, OR):
     odds_new = odds * OR
     return clip01(odds_new / (1.0 + odds_new))
 
+def pulse_effect(
+    indicator_of_interest,
+    targeted_indicator,
+    current_value,
+    target_value,
+    flags,
+    param,
+    clip_min=None,
+    clip_max=None,
+):
+    if targeted_indicator != indicator_of_interest or not flags.get("flag_pulse", 0):
+        return current_value
+
+    pulse_influence_strength = float(param.get("pulse_influence_strength", 0.05))
+    fqa_pulse_modifier = float(param.get("fqa_pulse_modifier", 0.2))
+    pulse_coverage = float(param.get("HSS", {}).get("pulse_coverage", 1.0))
+    flag_fqa = float(flags.get("flag_fqa", 0))
+    pulse_influence_strength_effective = np.clip(
+        pulse_coverage * pulse_influence_strength * (1 + flag_fqa * fqa_pulse_modifier),
+        0,
+        1,
+    )
+
+    indicator_gap = max(current_value - target_value, 0)
+    new_value = current_value - pulse_influence_strength_effective * indicator_gap
+
+    if clip_min is not None or clip_max is not None:
+        low = -np.inf if clip_min is None else clip_min
+        high = np.inf if clip_max is None else clip_max
+        new_value = np.clip(new_value, low, high)
+
+    return new_value
+
 import random
 import numpy as np
 import math
@@ -324,13 +357,13 @@ def f_ANC_LB_effect_vectorized(track, LB_base, param, flags, i, int_period, rng)
         attendance_rate = clip01(float(param["HSS"].get("mentor_attendance", param.get("mentor_attendance", 0.0))))
         fidelity_rate = clip01(float(param["HSS"].get("mentor_fidelity", param.get("mentor_fidelity", 0.0))))
         mentors_coverage = adoption_rate * attendance_rate * fidelity_rate
-        OR_knowledge = float(param.get("OR_knowledge", 1.99))
-        OR_eff = 1.0 + mentors_coverage * (OR_knowledge - 1.0)
-        for idx in (1, 2, 3):
-            p_k = float(np.clip(P_knowledge[idx], 1e-6, 1.0 - 1e-6))
-            odds_base = p_k / (1.0 - p_k)
-            odds_new = OR_eff * odds_base
-            P_knowledge[idx] = float(odds_new / (1.0 + odds_new))
+        mentors_knowledge_target = float(param.get("mentors_knowledge_target", 1.0))
+        P_knowledge[1:4] = np.clip(
+            P_knowledge[1:4]
+            + mentors_coverage * (mentors_knowledge_target - P_knowledge[1:4]),
+            0.0,
+            1.0,
+        )
     P_close_to_L23 = param["close_to_L23"]
     P_close_to_L45 = 1 - P_close_to_L23
     P_iv_iron = param["S"]["iv_iron"] * (P_knowledge[1] * P_close_to_L23 + P_knowledge[3] * P_close_to_L45)
@@ -455,7 +488,16 @@ def shifting_live_births_vectorized(individual_outcomes, param, i, track, flags,
             sorted_movers_indices = movers_intended_indices[np.argsort(move_random_draw_intended)]
 
             num_intended = len(movers_intended_indices)
-            num_l45_max = int(np.floor(Facility_Capacity - num_l45_bf_shift))
+            effective_capacity = -pulse_effect(
+                "Facility_Capacity",
+                "Facility_Capacity",
+                -Facility_Capacity,
+                -num_l45_exp,
+                flags,
+                param,
+            )
+            num_l45_max = int(np.floor(effective_capacity - num_l45_bf_shift))
+            num_l45_max = max(num_l45_max, 0)
             num_select_final = min(num_l45_max, num_intended)
 
             allowed_indices = sorted_movers_indices[:num_select_final]
