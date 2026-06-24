@@ -4,6 +4,12 @@ import random
 from global_func import sample_from_ci, odds_prob, comps_riskstatus_vs_lowrisk, comp2_comp1_anemia, P_RDS
 import streamlit as st
 
+FQA_PULSE_MODIFIER_OPTIONS = {
+    "Low": 0.1,
+    "Medium": 0.2,
+    "High": 0.3,
+}
+
 def get_slider_params():
     slider_params = {
         'p_l45_anc_slider': np.array([
@@ -250,7 +256,7 @@ def get_parameters(rng = None):
         'S_antibiotics': np.array([0, 0.38 * (1 - 0.311), 0.48, 0.48]),                                                                  # supply level of antibiotics by facility level
         "OR_RDS_treat": 0.53,                                                                                                         # odds ratio of preterm having RDS given treatment
         'OR_IVH_treat': 0.38, 
-        "OR_knowledge": 1.99,                                                                                                        # odds ratio of preterm having IVH given treatment
+        "mentors_knowledge_target": 1.0,                                                                                             # knowledge target that MENTORS moves providers toward
         'OR_NEC_treat': sample_from_ci(0.28, 0.14, 0.56, n=580, kind='OR', size=1, rng = rng)[0],                  # odds ratio of preterm having NEC given treatment
         'RR_Sepsis_treat': sample_from_ci(0.24, 0.13, 0.44, n=2063, kind='RR', size=1, rng = rng)[0],              # relative risk of preterm having sepsis given treatment
         'E_pph_bundle': sample_from_ci(0.51, 0.44, 0.60, kind='RR', size=1, rng = rng)[0],                         # efficacy of obstetric drape in reducing PPH
@@ -262,6 +268,27 @@ def get_parameters(rng = None):
         'phone_ownership': 0.89,
         'intervention_fidelity': 0.87,
         'OR_anc4p': 1.38,  # default; dashboard PROMPTS slider overrides when PROMPTS is enabled
+        'fqa_knowledge_improve': 0.043,  # direct FQA increase in healthcare worker knowledge
+        'pulse_influence_strength': 0.05,  # fraction of selected PULSE indicator gap closed each model step
+        # FQA-PULSE interaction:
+        # FQA is modeled as a separate intervention with a direct effect on P["knowledge"].
+        # In addition, when both FQA and PULSE are active, FQA amplifies the PULSE effect.
+        # The amplification level is selected by the user:
+        #   Low    = 0.1 -> PULSE effect multiplied by 1.1
+        #   Medium = 0.2 -> PULSE effect multiplied by 1.2
+        #   High   = 0.3 -> PULSE effect multiplied by 1.3
+        # This modifier should only amplify PULSE when flag_fqa == 1 and flag_pulse == 1.
+        'fqa_pulse_modifier_level': 'Medium',
+        'fqa_pulse_modifier': FQA_PULSE_MODIFIER_OPTIONS['Medium'],
+        'pulse_indicator_threshold': 0.013,
+        'pulse_indicator_targets': {
+            'p_pph': 0.007372925,
+            'p_aph': 0.004540962,
+            'p_OL': 0.01120199,
+            'p_ruptured_uterus': 0.0003560327,
+            'p_eclampsia': 0.001979122,
+            'p_mat_sepsis': 0.0005203555,
+        },
         'sen_risk_trad_target': 0.95, ## under case where mothers recognize danger signs
         'spec_risk_trad_target': 0.631,
         'p_move_home_base': 0.3,

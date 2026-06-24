@@ -3,10 +3,85 @@ import random
 import streamlit as st
 import time
 import pandas as pd
+from LB_effect import pulse_effect
 from global_func import (P_Prolonged, P_Prolonged_vectorized, P_Sepsis_vectorized, P_Sepsis, P_NEC_vectorized, P_NEC,
                          P_IVH_vectorized, P_IVH, comps_riskstatus_vs_lowrisk, \
     sensors_accuracy_vectorized, sensors_accuracy, fetal_sensor_calculator, P_intervention, \
                          intrapartum_prediction, comp_OL_type, comp_severe, emergency_transfer_comps, preterm_complication, SI_reduction)
+
+
+def select_pulse_target(indicator_values, indicator_targets, indicator_threshold):
+    targeted_indicator = None
+    max_gap_ratio = 0.0
+
+    for indicator_name, current_value in indicator_values.items():
+        if indicator_name not in indicator_targets:
+            continue
+
+        target_value = float(indicator_targets[indicator_name])
+        if target_value == 0:
+            continue
+
+        gap_ratio = max((float(current_value) - target_value) / abs(target_value), 0)
+        if gap_ratio > max_gap_ratio:
+            max_gap_ratio = gap_ratio
+            targeted_indicator = indicator_name
+
+    if max_gap_ratio < indicator_threshold:
+        return None
+
+    return targeted_indicator
+
+
+def reduce_binary_indicator_to_prevalence(
+    indicator_array,
+    current_prevalence,
+    target_prevalence,
+    indicator_name,
+    targeted_indicator,
+    flags,
+    param,
+    rng,
+):
+    new_prevalence = pulse_effect(
+        indicator_name,
+        targeted_indicator,
+        current_prevalence,
+        target_prevalence,
+        flags,
+        param,
+        clip_min=0,
+        clip_max=1,
+    )
+
+    if new_prevalence >= current_prevalence:
+        return indicator_array
+
+    indicator_array = np.asarray(indicator_array).copy()
+    current_count = int(np.sum(indicator_array == 1))
+    desired_count = int(round(new_prevalence * len(indicator_array)))
+    n_to_remove = max(current_count - desired_count, 0)
+
+    positive_indices = np.where(indicator_array == 1)[0]
+    if n_to_remove > 0 and len(positive_indices) > 0:
+        remove_indices = rng.choice(
+            positive_indices,
+            size=min(n_to_remove, len(positive_indices)),
+            replace=False,
+        )
+        indicator_array[remove_indices] = 0
+
+    return indicator_array
+
+
+def apply_fqa_effect(P, flags, param):
+    if not flags.get("flag_fqa", 0):
+        return P
+
+    fqa_knowledge_improve = float(param.get("fqa_knowledge_improve", 0.043))
+    P["knowledge"] = np.clip(P["knowledge"] + fqa_knowledge_improve, 0, 1)
+
+    return P
 
 def initialize_intra_params(individual_outcomes, track, flags, param, i, rng):
     i_GA = individual_outcomes['i_GA'].values
@@ -161,24 +236,16 @@ def initialize_intra_params(individual_outcomes, track, flags, param, i, rng):
         )
 
         mentors_coverage = adoption_rate * attendance_rate * fidelity_rate
+        mentors_knowledge_target = float(param.get("mentors_knowledge_target", 1.0))
 
-        OR_knowledge = float(param.get("OR_knowledge", 1.99))
-        OR_eff = 1.0 + mentors_coverage * (OR_knowledge - 1.0)
+        P["knowledge"][1:4] = np.clip(
+            P["knowledge"][1:4]
+            + mentors_coverage * (mentors_knowledge_target - P["knowledge"][1:4]),
+            0,
+            1,
+        )
 
-        P["knowledge"][1] = np.clip(P["knowledge"][1], 1e-6, 1 - 1e-6)
-        odds_base_23 = P["knowledge"][1] / (1.0 - P["knowledge"][1])
-        odds_new_23 = OR_eff * odds_base_23
-        P["knowledge"][1] = odds_new_23 / (1.0 + odds_new_23)
-
-        P["knowledge"][2] = np.clip(P["knowledge"][2], 1e-6, 1 - 1e-6)
-        odds_base_45 = P["knowledge"][2] / (1.0 - P["knowledge"][2])
-        odds_new_45 = OR_eff * odds_base_45
-        P["knowledge"][2] = odds_new_45 / (1.0 + odds_new_45)
-
-        P["knowledge"][3] = np.clip(P["knowledge"][3], 1e-6, 1 - 1e-6)
-        odds_base_5 = P["knowledge"][3] / (1.0 - P["knowledge"][3])
-        odds_new_5 = OR_eff * odds_base_5
-        P["knowledge"][3] = odds_new_5 / (1.0 + odds_new_5)
+    P = apply_fqa_effect(P, flags, param)
 
     E["int_pph"] = param['E_pph_bundle']
     E["stillbirth_CS"] = param["E_stillbirth_CS"]
@@ -383,6 +450,57 @@ def intrapartum_effect_vectorized(track, flags, param, i, individual_outcomes, r
     p_sepsis_other = P["mat_sepsis_other_anemia"][i_anemia_new]
     i_pph = comp_OL_type(num_mothers, i_pph, p_pph_other, other_mask, rng)
     i_mat_sepsis = comp_OL_type(num_mothers, i_mat_sepsis, p_sepsis_other, other_mask, rng)
+
+    # PULSE acts after complications are observed and before downstream transfer/severity logic.
+    targeted_indicator = None
+    if flags.get("flag_pulse", 0):
+        indicator_targets = param.get("pulse_indicator_targets", {})
+        indicator_values = {
+            "p_pph": np.mean(i_pph),
+            "p_aph": np.mean(i_aph),
+            "p_OL": np.mean(i_OL_final),
+            "p_ruptured_uterus": np.mean(i_ruptured_uterus),
+            "p_eclampsia": np.mean(i_eclampsia),
+            "p_mat_sepsis": np.mean(i_mat_sepsis),
+        }
+        targeted_indicator = select_pulse_target(
+            indicator_values,
+            indicator_targets,
+            float(param.get("pulse_indicator_threshold", 0.013)),
+        )
+
+        if targeted_indicator is not None:
+            target_prevalence = float(indicator_targets[targeted_indicator])
+            updated_indicator = reduce_binary_indicator_to_prevalence(
+                {
+                    "p_pph": i_pph,
+                    "p_aph": i_aph,
+                    "p_OL": i_OL_final,
+                    "p_ruptured_uterus": i_ruptured_uterus,
+                    "p_eclampsia": i_eclampsia,
+                    "p_mat_sepsis": i_mat_sepsis,
+                }[targeted_indicator],
+                indicator_values[targeted_indicator],
+                target_prevalence,
+                targeted_indicator,
+                targeted_indicator,
+                flags,
+                param,
+                rng,
+            )
+
+            if targeted_indicator == "p_pph":
+                i_pph = updated_indicator
+            elif targeted_indicator == "p_aph":
+                i_aph = updated_indicator
+            elif targeted_indicator == "p_OL":
+                i_OL_final = updated_indicator
+            elif targeted_indicator == "p_ruptured_uterus":
+                i_ruptured_uterus = updated_indicator
+            elif targeted_indicator == "p_eclampsia":
+                i_eclampsia = updated_indicator
+            elif targeted_indicator == "p_mat_sepsis":
+                i_mat_sepsis = updated_indicator
 
     ####----------------------------Emergency Transfer for complications---------------------------------####
     # ---- Step 1: Pre-transfer complications ----

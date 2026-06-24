@@ -8,7 +8,7 @@ import time
 import copy
 import matplotlib.pyplot as plt
 import seaborn as sns
-from parameters import get_parameters, get_slider_params, calculate_derived_parameters
+from parameters import FQA_PULSE_MODIFIER_OPTIONS, get_parameters, get_slider_params, calculate_derived_parameters
 from model_run import run_model_dash
 from global_func import reset_flags, reset_E, reset_HSS, reset_S, get_P_l45
 st.set_page_config(layout="wide")
@@ -89,6 +89,14 @@ HSS_CAPACITY_MISMATCH = {
 }
 PROMPTS_FIDELITY_PRESET = {"Low": 0.60, "High": 0.80}
 MENTORS_FIDELITY_PRESET = {"Low": 0.60, "High": 0.80}
+FQA_PULSE_MODIFIER_LEVELS = list(FQA_PULSE_MODIFIER_OPTIONS.keys())
+
+
+def fqa_pulse_modifier_default_index():
+    level = st.session_state.get("fqa_pulse_modifier_level", "Medium")
+    if level not in FQA_PULSE_MODIFIER_LEVELS:
+        level = "Medium"
+    return FQA_PULSE_MODIFIER_LEVELS.index(level)
 
 
 def render_hss_preset():
@@ -325,19 +333,32 @@ def render_prompts_preset():
         i_HSS["mentor_fidelity"] = 0.0
 
     st.markdown("**Other MOMISH programs**")
-    o_col1, o_col2, o_col3 = st.columns(3)
+    o_col1, o_col2, o_col3, o_col4 = st.columns(4)
     with o_col1:
         pulse_on = st.checkbox("PULSE", value=False, key="preset_pulse_on")
     with o_col2:
-        blood_on = st.checkbox("Blood tracking", value=False, key="preset_blood_on")
+        fqa_on = st.checkbox("FQA", value=False, key="preset_fqa_on")
     with o_col3:
+        blood_on = st.checkbox("Blood tracking", value=False, key="preset_blood_on")
+    with o_col4:
         emt_on = st.checkbox("Referral systems & EMT training", value=False, key="preset_emt_on")
 
     i_flags["flag_pulse"] = 1 if pulse_on else 0
+    i_flags["flag_fqa"] = 1 if fqa_on else 0
     st.session_state["flag_pulse"] = int(pulse_on)
+    st.session_state["flag_fqa"] = int(fqa_on)
     i_HSS["pulse_coverage"] = 1.0 if pulse_on else 0.0
     if not pulse_on:
         i_HSS["pulse_effectiveness"] = 0.0
+    selected_fqa_pulse_level = st.selectbox(
+        "FQA amplification of PULSE effect",
+        options=FQA_PULSE_MODIFIER_LEVELS,
+        index=fqa_pulse_modifier_default_index(),
+        key="preset_fqa_pulse_modifier_level",
+    )
+    i_HSS["fqa_pulse_modifier_level"] = selected_fqa_pulse_level
+    i_HSS["fqa_pulse_modifier"] = FQA_PULSE_MODIFIER_OPTIONS[selected_fqa_pulse_level]
+    st.session_state["fqa_pulse_modifier_level"] = selected_fqa_pulse_level
 
     i_flags["flag_blood"] = 1 if blood_on else 0
     i_flags["flag_blood_tracking"] = i_flags["flag_blood"]
@@ -730,6 +751,9 @@ def sync_param_momish_from_hss(i_param, i_HSS):
     )
     if i_HSS.get("OR_anc4p") is not None:
         i_param["OR_anc4p"] = float(i_HSS["OR_anc4p"])
+    if i_HSS.get("fqa_pulse_modifier") is not None:
+        i_param["fqa_pulse_modifier_level"] = i_HSS.get("fqa_pulse_modifier_level", "Medium")
+        i_param["fqa_pulse_modifier"] = float(i_HSS["fqa_pulse_modifier"])
     for _k in ("mentor_adoption", "mentor_attendance", "mentor_fidelity"):
         if _k in i_HSS:
             i_param[_k] = float(i_HSS[_k])
@@ -1068,8 +1092,17 @@ def render_prompts():
         )
 
     with col10:
-        i_flags["flag_pulse"] = 1 if pulse_int else 0
-        st.session_state["flag_pulse"] = int(pulse_int)
+        fqa_int = st.toggle(
+            "FQA Intervention",
+            value=bool(st.session_state.get("flag_fqa", 0)),
+            key="fqa_enable",
+            help="FQA directly improves healthcare worker knowledge. When PULSE is also on, it also strengthens PULSE actionable insights.",
+        )
+
+    i_flags["flag_pulse"] = 1 if pulse_int else 0
+    i_flags["flag_fqa"] = 1 if fqa_int else 0
+    st.session_state["flag_pulse"] = int(pulse_int)
+    st.session_state["flag_fqa"] = int(fqa_int)
 
     if pulse_int:
         pulse_default = int(st.session_state.get("pulse_coverage", 100))
@@ -1080,10 +1113,19 @@ def render_prompts():
             key="pulse_coverage"
         )
         i_HSS["pulse_coverage"] = pulse_val / 100.0
-        # st.session_state["pulse_coverage"] = pulse_val
     else:
         i_HSS["pulse_coverage"] = 0.0
         i_HSS["pulse_effectiveness"] = 0.0
+
+    selected_fqa_pulse_level = st.selectbox(
+        "FQA amplification of PULSE effect",
+        options=FQA_PULSE_MODIFIER_LEVELS,
+        index=fqa_pulse_modifier_default_index(),
+        key="fqa_pulse_modifier_level_select",
+    )
+    i_HSS["fqa_pulse_modifier_level"] = selected_fqa_pulse_level
+    i_HSS["fqa_pulse_modifier"] = FQA_PULSE_MODIFIER_OPTIONS[selected_fqa_pulse_level]
+    st.session_state["fqa_pulse_modifier_level"] = selected_fqa_pulse_level
 
 
     # ==========================================================
@@ -1581,6 +1623,8 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
                     b_HSS = copy.deepcopy(st.session_state.dual_first_config["HSS"])
 
                 b_param.update({"E": b_E, "S": b_S, "HSS": b_HSS})
+                if compare_two_interventions:
+                    sync_param_momish_from_hss(b_param, b_HSS)
                 i_param.update({"E": i_E, "S": i_S, "HSS": i_HSS})
                 sync_param_momish_from_hss(i_param, i_HSS)
 
@@ -1668,6 +1712,8 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
                             b_S = copy.deepcopy(st.session_state.dual_first_config["S"])
                             b_HSS = copy.deepcopy(st.session_state.dual_first_config["HSS"])
                         b_param.update({"E": b_E, "S": b_S, "HSS": b_HSS})
+                        if compare_two_interventions:
+                            sync_param_momish_from_hss(b_param, b_HSS)
 
                         # Pass the ARRAY of monthly seeds to run_model_dash
                         b_df_i, b_ind_outcomes_i, _ = run_model_dash(b_param, b_flags, n_months, int_period, base_seed=monthly_seeds_for_this_run)
@@ -2119,8 +2165,8 @@ if st.session_state.b_df is not None and st.session_state.i_df is not None:
                 num_facets = len(bar_data["Level"].unique())
                 scenario_values = bar_data["Scenario"].dropna().unique().tolist()
                 preferred_order = ["Baseline", st.session_state.reference_label, st.session_state.target_label]
-                scenario_domain = [s for s in preferred_order if s in scenario_values]
-                scenario_domain.extend([s for s in scenario_values if s not in scenario_domain])
+                scenario_domain = list(dict.fromkeys(s for s in preferred_order if s in scenario_values))
+                scenario_domain.extend(s for s in scenario_values if s not in scenario_domain)
                 scenario_color_map = {
                     "Baseline": "#1F3A93",
                     st.session_state.reference_label: "#4C78A8",
@@ -4400,4 +4446,3 @@ if st.session_state.b_df is not None and st.session_state.i_df is not None:
 
     elif st.session_state.b_df is None or st.session_state.i_df is None:
         st.warning("Please run the model first before generating plots.")
-

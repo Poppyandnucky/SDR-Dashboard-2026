@@ -137,6 +137,7 @@ def run_model_dash(param, flags, n_months, int_period, base_seed = None):
             df.loc[i, 'Surgical_ratio'] = df.loc[i, 'Surgical_actual'] / df.loc[i, 'Surgical_needed']
             df.loc[i, 'Nurse_ratio'] = df.loc[i, 'Nurse_actual'] / df.loc[i, 'Nurse_needed']
             df.loc[i, 'Anesthetist_ratio'] = df.loc[i, 'Anesthetist_actual'] / df.loc[i, 'Anesthetist_needed']
+
             # calculate number of sensors and sensor ratio
             sensors = fetal_sensor_calculator(track, param, i, flags, rng)
             dopplers_ratio = np.array([sensors['dopplers_l23_ratio'], sensors['dopplers_l4_ratio'], sensors['dopplers_l5_ratio']])
