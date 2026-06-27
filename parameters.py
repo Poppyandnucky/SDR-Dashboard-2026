@@ -269,7 +269,7 @@ def get_parameters(rng = None):
         'intervention_fidelity': 0.87,
         'OR_anc4p': 1.38,  # default; dashboard PROMPTS slider overrides when PROMPTS is enabled
         'fqa_knowledge_improve': 0.043,  # direct FQA increase in healthcare worker knowledge
-        'pulse_influence_strength': 0.05,  # fraction of selected PULSE indicator gap closed each model step
+        'pulse_influence_strength': 0.17,  # fraction of selected PULSE indicator gap closed each model step
         # FQA-PULSE interaction:
         # FQA is modeled as a separate intervention with a direct effect on P["knowledge"].
         # In addition, when both FQA and PULSE are active, FQA amplifies the PULSE effect.
