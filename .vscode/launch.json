@@ -8,7 +8,7 @@
         "module": "streamlit",
         "args": [
           "run",
-          "SDR_Dash.py"
+          "sim/SDR_Dash.py"
         ],
         "console": "integratedTerminal",
         "justMyCode": false,

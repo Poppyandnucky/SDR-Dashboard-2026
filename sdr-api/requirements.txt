@@ -1,0 +1,14 @@
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.5.0
+python-multipart>=0.0.6
+pytest>=7.4.0
+httpx>=0.26.0
+
+# sim dependencies (pinned to match sim/requirements.txt)
+setuptools
+streamlit==1.42.2
+numpy==1.23.5
+scipy>=1.11.0
+mpmath==1.3.0
+pandas==1.5.3

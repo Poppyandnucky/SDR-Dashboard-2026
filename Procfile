@@ -1,1 +1,1 @@
-web: streamlit run SDR_Dash.py --server.port $PORT --server.address 0.0.0.0
+web: streamlit run sim/SDR_Dash.py --server.port $PORT --server.address 0.0.0.0

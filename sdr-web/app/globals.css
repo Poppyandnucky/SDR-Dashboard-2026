@@ -1,0 +1,100 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background: #f6f3ed;
+  color: #1c1a15;
+  font-feature-settings: "ss01";
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+.editorial-underline {
+  background-image: linear-gradient(
+    transparent 62%,
+    rgba(181, 71, 31, 0.22) 62%,
+    rgba(181, 71, 31, 0.22) 92%,
+    transparent 92%
+  );
+}
+
+.hover-lift {
+  transition: all 0.2s ease;
+}
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px rgba(28, 26, 21, 0.07);
+}
+
+.preset-card {
+  transition:
+    transform 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.2s ease,
+    background-color 0.2s ease;
+}
+.preset-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 16px 40px rgba(28, 26, 21, 0.1);
+  border-color: rgba(181, 71, 31, 0.35);
+  background-color: #fdfbf7;
+}
+.preset-card:active {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(28, 26, 21, 0.08);
+}
+.preset-card-arrow {
+  transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.2s ease;
+  opacity: 0.35;
+}
+.preset-card:hover .preset-card-arrow {
+  transform: translateX(3px);
+  opacity: 1;
+}
+
+.pill {
+  transition: all 0.15s ease;
+  cursor: pointer;
+  user-select: none;
+}
+.pill.active {
+  background: #1c1a15;
+  color: #f6f3ed;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.5;
+  background-image:
+    radial-gradient(circle at 18% 25%, rgba(181, 71, 31, 0.03) 0%, transparent 50%),
+    radial-gradient(circle at 82% 70%, rgba(46, 95, 92, 0.025) 0%, transparent 50%);
+}
+
+main {
+  position: relative;
+  z-index: 1;
+}
+
+/* Landing: fit hero + presets in one viewport on desktop */
+@media (min-width: 1024px) and (min-height: 680px) {
+  .landing-page {
+    height: calc(100dvh - 3.25rem);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    padding-top: 1rem;
+    padding-bottom: 0.75rem;
+  }
+
+  .landing-page .preset-card:hover {
+    transform: translateY(-2px);
+  }
+}

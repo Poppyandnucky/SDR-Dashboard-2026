@@ -2,3 +2,11 @@ Calibration/
 .venv/
 __pycache__/
 .DS_Store
+node_modules/
+.next/
+sdr-web/node_modules/
+sdr-web/.next/
+.pytest_cache/
+*.pyc
+.env
+.env.local

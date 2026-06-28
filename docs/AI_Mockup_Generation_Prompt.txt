@@ -1,0 +1,103 @@
+================================================================================
+MASTER PROMPT — Generate stakeholder UI mockups (SDR Dashboard, Approach B)
+================================================================================
+Use this prompt with an image/wireframe AI (Midjourney, DALL·E, Figma AI, etc.)
+or a slide-design AI. Repeat per screen, or ask for a "8-screen user flow"
+wireframe set in one style.
+
+--------------------------------------------------------------------------------
+CONTEXT (paste verbatim)
+--------------------------------------------------------------------------------
+We are replacing a Streamlit-based policy dashboard with a new web experience.
+Backend stays Python (simulation API). Users are NON-TECHNICAL: program managers,
+policymakers, funders. They must configure scenarios without percentages in the
+main flow — only Low / Medium / High intensity per domain (Demand, Supply,
+Quality, Transport), mapped to numbers server-side. Navigation is a LINEAR WIZARD
+(4 steps) with a visible progress indicator, not nested expanders. Results show a
+KPI strip, one primary "baseline vs scenario" time chart, then accordions for
+maternal, neonatal, facility outcomes. Aesthetic: calm, trustworthy healthcare
+analytics — plenty of white space, large type, WCAG-friendly contrast, no
+cluttered dashboards. Optional collapsed "Advanced — for analysts" section.
+
+--------------------------------------------------------------------------------
+GLOBAL STYLE (all screens)
+--------------------------------------------------------------------------------
+- Device: desktop web app, 1440px wide, generous margins.
+- Typography: modern sans (Inter or similar); H1 32–40px, body 16–18px.
+- Color: white/off-white background; primary blue #2c529e; accent teal or soft
+  green for "positive change"; muted red only for "worse than baseline" deltas.
+- Components: rounded cards (12–16px radius), subtle shadow, clear primary button
+  (filled blue), secondary outline button.
+- Accessibility: visible focus rings, labels on all controls, no color-only meaning.
+
+--------------------------------------------------------------------------------
+SCREEN-BY-SCREEN (ask the AI to produce one image or one slide each)
+--------------------------------------------------------------------------------
+
+1) WELCOME / LANDING
+   - Hero: "SDR Outcomes Explorer" (or similar) + one-line subtitle about
+     comparing maternal and neonatal intervention scenarios for planning.
+   - Illustration: abstract map or gentle medical line-art (not charts).
+   - CTA: large "Start scenario" button. Secondary text link "How this works".
+
+2) CHOOSE FOCUS (step 1 of 4)
+   - Progress: "Step 1 of 4 — Your focus".
+   - Four equal-width CARDS in a row (or 2x2 on smaller width), each with icon,
+     bold title, two lines of plain language. Titles example: "Health system
+     strengthening", "Clinical & diagnosis packages", "Combined program",
+     "Community & digital programs". One card has a selected state (blue border).
+
+3) INTENSITY — LOW / MEDIUM / HIGH (step 2 of 4)
+   - Progress: "Step 2 of 4 — How strong is the program?"
+   - For 3–4 rows, each row has a domain label (Demand, Supply, Quality,
+     Referral & transport) and a SEGMENTED CONTROL with three pills: Low |
+     Medium | High. No percentage sliders visible.
+   - Small helper text under one row as example: "Higher demand means more women
+     aim for ANC and facility delivery — exact numbers are set by the model."
+   - Footer: Back | Continue.
+
+4) PATH-SPECIFIC OPTIONS (step 3 of 4) — optional screen
+   - Show only if "Combined" or "Community" was chosen: simple toggles with
+     labels "PROMPTS", "Mentors", "PULSE" with short descriptions; each optional
+     sub-area uses Low/Med/High for "reach" not percentages.
+   - Progress bar at top. Back | Continue.
+
+5) RUN MODEL (step 4 of 4)
+   - Time horizon: three large radio tiles "Short (~1 year)", "Medium (~3 years)",
+     "Long (~5 years)".
+   - Toggle: "Show uncertainty band (multiple model runs)" — off by default.
+   - Optional second scenario: collapsed "Compare two programs" with short explainer.
+   - Primary button full width: "Run model" with rocket or play icon.
+
+6) RESULTS — HEADLINE
+   - Top: row of 4 KPI tiles — large number, small label, delta vs baseline
+     (e.g. "−12% vs baseline") with micro-copy "lower is better" where relevant.
+   - Below: ONE wide chart — two lines (Baseline vs Your scenario) over months,
+     clean legend, grid subtle.
+   - Sticky subnav or tabs: "Overview" (selected) | "Explore outcomes".
+
+7) EXPLORE OUTCOMES
+   - Left sidebar or accordion: Maternal | Neonatal | Facility & capacity.
+   - Main area: one chart with shaded confidence band (median line), title clear.
+   - Breadcrumb or "Back to overview".
+
+8) ADVANCED (collapsed)
+   - Show a screen mock where an accordion is CLOSED, labeled "Advanced — for
+     analysts" with a small warning icon and one line of text. Suggests sliders
+     inside without drawing all sliders.
+
+--------------------------------------------------------------------------------
+NEGATIVE PROMPT / AVOID
+--------------------------------------------------------------------------------
+No dense Excel-like grids, no tiny Streamlit widgets, no walls of acronyms
+without expansion, no dark hacker terminal aesthetic, no 3D glossy charts,
+no cluttered "enterprise dashboard" with 20 charts on one page.
+
+--------------------------------------------------------------------------------
+OUTPUT REQUEST
+--------------------------------------------------------------------------------
+Produce [wireframe | high-fidelity mockup | slide deck layout] in [style name].
+Consistent component library across all screens. Include empty states where
+relevant (before run: "Run the model to see results" in the results layout).
+
+================================================================================

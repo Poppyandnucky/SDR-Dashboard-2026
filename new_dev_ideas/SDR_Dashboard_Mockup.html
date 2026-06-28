@@ -1,0 +1,2471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SDR Decision Tool — UI Mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600;9..144,700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          paper:           '#F6F3ED',
+          'paper-deep':    '#EDE7DA',
+          card:            '#FFFFFF',
+          ink:             '#1C1A15',
+          'ink-soft':      '#4A4339',
+          'ink-muted':     '#7E7464',
+          border:          '#E2DAC8',
+          'border-soft':   '#EDE7DA',
+          accent:          '#B5471F',
+          'accent-soft':   '#F4E5DC',
+          baseline:        '#9C9082',
+          intervention:    '#2E5F5C',
+          'intervention-soft': '#DCE9E8',
+          positive:        '#2E5F5C',
+          negative:        '#A03A2A',
+          warning:         '#B68B3E',
+        },
+        fontFamily: {
+          display: ['Fraunces', 'serif'],
+          sans:    ['Instrument Sans', 'system-ui', 'sans-serif'],
+          mono:    ['JetBrains Mono', 'monospace'],
+        },
+      }
+    }
+  }
+</script>
+<style>
+  body { background: #F6F3ED; color: #1C1A15; font-family: 'Instrument Sans', system-ui, sans-serif; font-feature-settings: 'ss01'; }
+  .font-display { font-family: 'Fraunces', serif; font-optical-sizing: auto; }
+  .num { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum'; }
+  .screen { display: none; }
+  .screen.active { display: block; animation: fade 0.35s ease; }
+  @keyframes fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  body::before {
+    content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: 0.5;
+    background-image:
+      radial-gradient(circle at 18% 25%, rgba(181,71,31,0.03) 0%, transparent 50%),
+      radial-gradient(circle at 82% 70%, rgba(46,95,92,0.025) 0%, transparent 50%);
+  }
+  main { position: relative; z-index: 1; }
+  .hover-lift { transition: all 0.2s ease; }
+  .hover-lift:hover { transform: translateY(-2px); box-shadow: 0 12px 32px rgba(28,26,21,0.07); }
+  .pill { transition: all 0.15s ease; cursor: pointer; user-select: none; }
+  .pill.active { background: #1C1A15; color: #F6F3ED; }
+  .toggle-track { background: #D6CCBA; transition: background 0.2s; cursor: pointer; }
+  .toggle-track.on { background: #2E5F5C; }
+  .toggle-knob { transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1); }
+  .toggle-track.on .toggle-knob { transform: translateX(20px); }
+  .has-tip { border-bottom: 1px dotted #7E7464; cursor: help; position: relative; }
+  .has-tip:hover::after {
+    content: attr(data-tip); position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+    background: #1C1A15; color: #F6F3ED; padding: 8px 12px; border-radius: 4px; font-size: 12px;
+    white-space: nowrap; max-width: 280px; white-space: normal; width: max-content; max-width: 240px;
+    z-index: 50; line-height: 1.4; box-shadow: 0 4px 12px rgba(28,26,21,0.2);
+  }
+  .stepper-line { background: linear-gradient(to right, #1C1A15 var(--progress, 0%), #E2DAC8 var(--progress, 0%)); }
+  .editorial-underline { background-image: linear-gradient(transparent 62%, rgba(181,71,31,0.22) 62%, rgba(181,71,31,0.22) 92%, transparent 92%); }
+  .grain { background-image:
+    radial-gradient(circle at 1px 1px, rgba(28,26,21,0.05) 1px, transparent 0); background-size: 20px 20px; }
+  .ribbon-fill { opacity: 0.13; }
+  .chart-grid { stroke: #E2DAC8; stroke-width: 0.5; stroke-dasharray: 2 3; }
+  .ascii-divider { font-family: 'JetBrains Mono', monospace; color: #B5A689; letter-spacing: 0.3em; }
+  /* expanded panel */
+  .expand-panel { display: none; }
+  .expand-panel.open { display: block; animation: slidein 0.25s ease; }
+  @keyframes slidein { from { opacity: 0; max-height: 0; } to { opacity: 1; max-height: 800px; } }
+</style>
+</head>
+<body class="text-ink antialiased">
+
+<!-- ============== TOP NAV / PROGRESS STEPPER ============== -->
+<header class="border-b border-border bg-paper/95 backdrop-blur sticky top-0 z-40">
+  <div class="max-w-7xl mx-auto px-8 py-4 flex items-center justify-between gap-6">
+    <!-- Brand -->
+    <div class="flex items-center gap-3 shrink-0">
+      <!-- Placeholder logo: stylized chevron mark in terracotta on cream square -->
+      <div class="w-9 h-9 rounded-md bg-paper-deep border border-border flex items-center justify-center relative overflow-hidden">
+        <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--ink)">
+          <!-- Heart-with-pulse mark (placeholder for maternal health) -->
+          <path d="M3 12h3l2-4 4 8 2-6 2 3h5" stroke="#B5471F" stroke-width="2.2"/>
+        </svg>
+      </div>
+      <div class="leading-tight">
+        <div class="text-[11px] tracking-[0.18em] text-ink-muted uppercase">Service Delivery Redesign</div>
+        <div class="flex items-baseline gap-2">
+          <div class="font-display text-[15px] font-medium">Kenya Maternal Health Decision Tool</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stepper (3 steps — Run is now inline on Design) -->
+    <nav class="flex items-center gap-1">
+      <button data-goto="start" class="step-btn group flex items-center gap-2 px-3 py-2 rounded-md hover:bg-paper-deep transition">
+        <span class="step-num w-6 h-6 rounded-full border border-ink flex items-center justify-center text-[11px] num">1</span>
+        <span class="text-sm">Start</span>
+      </button>
+      <span class="text-ink-muted text-xs">———</span>
+      <button data-goto="design" class="step-btn group flex items-center gap-2 px-3 py-2 rounded-md hover:bg-paper-deep transition">
+        <span class="step-num w-6 h-6 rounded-full border border-border flex items-center justify-center text-[11px] num">2</span>
+        <span class="text-sm">Design &amp; Run</span>
+      </button>
+      <span class="text-ink-muted text-xs">———</span>
+      <button data-goto="results" class="step-btn group flex items-center gap-2 px-3 py-2 rounded-md hover:bg-paper-deep transition">
+        <span class="step-num w-6 h-6 rounded-full border border-border flex items-center justify-center text-[11px] num">3</span>
+        <span class="text-sm">Results</span>
+      </button>
+    </nav>
+
+    <!-- Right utility -->
+    <div class="flex items-center gap-3 text-xs text-ink-muted shrink-0">
+      <!-- County switcher -->
+      <div class="relative">
+        <button id="countyBtn" onclick="document.getElementById('countyMenu').classList.toggle('hidden')" class="flex items-center gap-2 px-3 py-1.5 border border-border rounded-md hover:bg-paper-deep transition text-ink">
+          <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+          <span class="text-sm font-medium">Kakamega</span>
+          <svg viewBox="0 0 24 24" class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div id="countyMenu" class="hidden absolute right-0 top-full mt-1 w-56 bg-card border border-border rounded-md shadow-lg z-50 py-2">
+          <div class="px-3 py-1.5 text-[10px] uppercase tracking-[0.15em] text-ink-muted">Select county</div>
+          <button class="w-full text-left px-3 py-2 text-sm bg-paper-deep/60 text-ink flex items-center justify-between">
+            <span>Kakamega</span><span class="text-[10px] text-positive">● current</span>
+          </button>
+          <button class="w-full text-left px-3 py-2 text-sm text-ink-muted hover:bg-paper-deep/40 flex items-center justify-between">
+            <span>Kisumu</span><span class="text-[9px] italic">coming soon</span>
+          </button>
+          <button class="w-full text-left px-3 py-2 text-sm text-ink-muted hover:bg-paper-deep/40 flex items-center justify-between">
+            <span>Nairobi</span><span class="text-[9px] italic">coming soon</span>
+          </button>
+          <button class="w-full text-left px-3 py-2 text-sm text-ink-muted hover:bg-paper-deep/40 flex items-center justify-between">
+            <span>Bungoma</span><span class="text-[9px] italic">coming soon</span>
+          </button>
+          <div class="border-t border-border-soft mt-1 pt-1.5 px-3 text-[10px] text-ink-muted leading-relaxed">More counties will be added as data becomes available.</div>
+        </div>
+      </div>
+      <button onclick="goto('about')" class="px-3 py-1.5 border border-border rounded-md hover:bg-paper-deep transition text-ink">About the Model</button>
+      <button class="px-3 py-1.5 border border-border rounded-md hover:bg-paper-deep transition text-ink">Help</button>
+    </div>
+  </div>
+  <div class="max-w-7xl mx-auto px-8 pb-2 text-[10px] text-ink-muted text-right">Mockup · v0.7.1</div>
+</header>
+
+<main class="max-w-7xl mx-auto px-8 py-12">
+
+<!-- =================================================== -->
+<!-- ============== SCREEN 1: START ==================== -->
+<!-- =================================================== -->
+<section id="screen-start" class="screen active">
+
+  <!-- Hero -->
+  <div class="grid grid-cols-12 gap-8 mb-20">
+    <div class="col-span-12 lg:col-span-8">
+      <div class="text-[11px] tracking-[0.2em] text-accent uppercase mb-6">A simulation for maternal health policy</div>
+      <h1 class="font-display text-[64px] leading-[1.04] font-light tracking-tight mb-8">
+        Designing better<br>maternal care<br>across <span class="editorial-underline">Kenya.</span>
+      </h1>
+      <p class="text-lg leading-relaxed text-ink-soft max-w-2xl">
+        Compare policy decisions side by side. Explore how community health volunteers, facility upgrades, and clinical interventions change maternal outcomes — before committing real resources. Currently calibrated to <span class="num">Kakamega County</span> (population <span class="num">1.87 million</span>); more counties coming as data becomes available.
+      </p>
+    </div>
+    <div class="col-span-12 lg:col-span-4 flex items-end justify-end">
+      <!-- Editorial pull-quote in place of donut chart -->
+      <div class="w-full max-w-[320px] border-l-2 border-accent pl-5 py-2">
+        <div class="text-[10px] tracking-[0.18em] text-accent uppercase mb-3">Why this matters</div>
+        <p class="font-display text-xl leading-snug text-ink mb-3">
+          Around <span class="num">355</span> mothers die per <span class="num">100,000</span> live births in Kenya.
+        </p>
+        <p class="text-xs text-ink-muted leading-relaxed">
+          Most of those deaths are preventable with the right mix of community outreach, facility readiness, and timely intervention. This tool helps you find that mix.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="ascii-divider text-center text-xs mb-16">— · — · — · — · — · — · — · —</div>
+
+  <!-- Two paths -->
+  <div class="grid grid-cols-12 gap-12 mb-16">
+    <div class="col-span-12 lg:col-span-3">
+      <div class="text-[11px] tracking-[0.2em] text-ink-muted uppercase mb-3">01 — Quick start</div>
+      <h2 class="font-display text-3xl leading-tight mb-4">Run a preset scenario</h2>
+      <p class="text-sm text-ink-soft leading-relaxed">
+        Common policy bundles, pre-configured. Click one and skip straight to results.
+      </p>
+    </div>
+
+    <div class="col-span-12 lg:col-span-9 grid grid-cols-1 md:grid-cols-2 gap-4">
+      <!-- Preset card 1 -->
+      <button class="preset-card hover-lift text-left p-6 bg-card border border-border rounded-lg" data-preset="baseline">
+        <div class="flex items-start justify-between mb-4">
+          <span class="text-[10px] tracking-[0.18em] text-ink-muted uppercase">Reference</span>
+          <span class="num text-sm text-ink-muted">~1 min</span>
+        </div>
+        <h3 class="font-display text-xl mb-2">Status quo</h3>
+        <p class="text-sm text-ink-soft leading-relaxed mb-4">Today's conditions projected forward: <span class="num">56%</span> ANC · <span class="num">38%</span> L4/5 deliveries · current drug supply. The reference for every other scenario.</p>
+        <div class="flex flex-wrap gap-1.5">
+          <span class="text-[11px] px-2 py-1 bg-paper-deep rounded">Baseline only</span>
+        </div>
+      </button>
+
+      <!-- Preset card 2 -->
+      <button class="preset-card hover-lift text-left p-6 bg-card border border-border rounded-lg" data-preset="hss">
+        <div class="flex items-start justify-between mb-4">
+          <span class="text-[10px] tracking-[0.18em] text-accent uppercase">Preset · A</span>
+          <span class="num text-sm text-ink-muted">~3 min</span>
+        </div>
+        <h3 class="font-display text-xl mb-2">Health system strengthening</h3>
+        <p class="text-sm text-ink-soft leading-relaxed mb-4">Aggressive demand + matched supply: <span class="num">90%</span> ANC target, <span class="num">+85%</span> facility capacity, full staffing &amp; transport upgrades.</p>
+        <div class="flex flex-wrap gap-1.5">
+          <span class="text-[11px] px-2 py-1 bg-intervention-soft text-intervention rounded">HSS · Intensive</span>
+          <span class="text-[11px] px-2 py-1 bg-paper-deep rounded">CHVs deployed</span>
+        </div>
+      </button>
+
+      <!-- Preset card 3 -->
+      <button class="preset-card hover-lift text-left p-6 bg-card border border-border rounded-lg" data-preset="momish">
+        <div class="flex items-start justify-between mb-4">
+          <span class="text-[10px] tracking-[0.18em] text-accent uppercase">Preset · B</span>
+          <span class="num text-sm text-ink-muted">~3 min</span>
+        </div>
+        <h3 class="font-display text-xl mb-2">Community engagement (MOMISH)</h3>
+        <p class="text-sm text-ink-soft leading-relaxed mb-4">PROMPTS at full rollout, CHVs strongly engaged, default fidelity. No facility or drug changes.</p>
+        <div class="flex flex-wrap gap-1.5">
+          <span class="text-[11px] px-2 py-1 bg-intervention-soft text-intervention rounded">PROMPTS · Full</span>
+          <span class="text-[11px] px-2 py-1 bg-paper-deep rounded">MENTORS</span>
+        </div>
+      </button>
+
+      <!-- Preset card 4 -->
+      <button class="preset-card hover-lift text-left p-6 bg-card border-2 border-accent rounded-lg relative" data-preset="combined">
+        <span class="absolute -top-2.5 left-6 px-2 py-0.5 bg-accent text-paper text-[10px] tracking-[0.15em] uppercase rounded">Recommended starter</span>
+        <div class="flex items-start justify-between mb-4">
+          <span class="text-[10px] tracking-[0.18em] text-accent uppercase">Preset · C</span>
+          <span class="num text-sm text-ink-muted">~5 min</span>
+        </div>
+        <h3 class="font-display text-xl mb-2">Combined strategy</h3>
+        <p class="text-sm text-ink-soft leading-relaxed mb-4">HSS Moderate (<span class="num">80%</span> ANC, <span class="num">+50%</span> capacity) + PPH bundle + MgSO4 + MOMISH partial rollout.</p>
+        <div class="flex flex-wrap gap-1.5">
+          <span class="text-[11px] px-2 py-1 bg-intervention-soft text-intervention rounded">HSS · Moderate</span>
+          <span class="text-[11px] px-2 py-1 bg-intervention-soft text-intervention rounded">Treatments</span>
+          <span class="text-[11px] px-2 py-1 bg-intervention-soft text-intervention rounded">MOMISH</span>
+        </div>
+      </button>
+    </div>
+  </div>
+
+  <div class="ascii-divider text-center text-xs mb-16">— · — · — · — · — · — · — · —</div>
+
+  <!-- Build your own -->
+  <div class="grid grid-cols-12 gap-12 mb-12">
+    <div class="col-span-12 lg:col-span-3">
+      <div class="text-[11px] tracking-[0.2em] text-ink-muted uppercase mb-3">02 — Build your own</div>
+      <h2 class="font-display text-3xl leading-tight mb-4">Or design a custom scenario</h2>
+      <p class="text-sm text-ink-soft leading-relaxed">
+        Pick which interventions, how intensely, over how long. Compare two designs side-by-side.
+      </p>
+    </div>
+    <div class="col-span-12 lg:col-span-9">
+      <div class="p-10 bg-ink text-paper rounded-lg flex items-center justify-between">
+        <div>
+          <h3 class="font-display text-3xl leading-tight mb-3">Start with a blank canvas.</h3>
+          <p class="text-paper/70 max-w-md">Three intervention pillars. Qualitative or detailed control. A/B comparison built in.</p>
+        </div>
+        <button onclick="goto('design')" class="px-7 py-4 bg-accent hover:bg-accent/90 transition rounded-md text-paper font-medium text-base flex items-center gap-2">
+          Build a scenario
+          <span class="text-xl">→</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+</section>
+
+
+<!-- =================================================== -->
+<!-- ============== SCREEN: ABOUT THE MODEL ============= -->
+<!-- =================================================== -->
+<section id="screen-about" class="screen">
+  <div class="grid grid-cols-12 gap-10">
+
+    <!-- Main content -->
+    <div class="col-span-12 lg:col-span-8">
+      <div class="text-[11px] tracking-[0.2em] text-accent uppercase mb-4">A simulation for maternal health policy</div>
+      <h1 class="font-display text-[52px] leading-[1.05] font-light tracking-tight mb-12">
+        The Kenya Maternal Health<br>Decision Tool
+      </h1>
+
+      <!-- Model Structure -->
+      <div id="about-structure" class="mb-14">
+        <div class="flex items-center gap-3 mb-5">
+          <div class="w-1 h-7 bg-accent"></div>
+          <h2 class="font-display text-3xl">Model Structure</h2>
+        </div>
+        <p class="text-ink-soft leading-relaxed mb-4 max-w-2xl">
+          The model represents maternal care as a dynamic system connecting care-seeking behaviour, facility capacity, referral networks, clinical outcomes, and health system investments. It was developed to evaluate Service Delivery Redesign (SDR) strategies in Kakamega County and explore how interventions may affect maternal health over time.
+        </p>
+        <p class="text-ink-soft leading-relaxed max-w-2xl">
+          The simulation tracks pregnant women from the point of labour through delivery and postpartum care. Women make decisions about where to deliver based on distance, facility characteristics, and exposure to community-level interventions. Health facilities have finite capacity and varying levels of readiness to manage complications.
+        </p>
+      </div>
+
+      <!-- Key Assumptions -->
+      <div id="about-assumptions" class="mb-14">
+        <div class="flex items-center gap-3 mb-5">
+          <div class="w-1 h-7 bg-accent"></div>
+          <h2 class="font-display text-3xl">Key Assumptions</h2>
+        </div>
+        <div class="space-y-5 max-w-2xl">
+          <div>
+            <h3 class="font-display text-lg mb-1.5">Mothers choose where to deliver</h3>
+            <p class="text-sm text-ink-soft leading-relaxed">Delivery decisions are influenced by distance, facility availability, referral pathways, intervention exposure, and facility characteristics.</p>
+          </div>
+          <div>
+            <h3 class="font-display text-lg mb-1.5">Capacity matters</h3>
+            <p class="text-sm text-ink-soft leading-relaxed">Facilities have finite capacity. As demand exceeds available resources, service quality and health outcomes may deteriorate.</p>
+          </div>
+          <div>
+            <h3 class="font-display text-lg mb-1.5">Outcomes depend on access and readiness</h3>
+            <p class="text-sm text-ink-soft leading-relaxed">Maternal outcomes are influenced by where care is received and whether facilities possess the staff, equipment, and resources needed to manage complications.</p>
+          </div>
+          <div>
+            <h3 class="font-display text-lg mb-1.5">Interventions interact</h3>
+            <p class="text-sm text-ink-soft leading-relaxed">The impact of individual interventions may depend on the presence of other interventions within the health system.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Data Used -->
+      <div id="about-data" class="mb-14">
+        <div class="flex items-center gap-3 mb-5">
+          <div class="w-1 h-7 bg-accent"></div>
+          <h2 class="font-display text-3xl">Data Used</h2>
+        </div>
+        <div class="space-y-5 max-w-2xl">
+          <div>
+            <h3 class="font-display text-lg mb-1.5">County administrative data</h3>
+            <p class="text-sm text-ink-soft leading-relaxed">Facility-level utilization records, birth volumes, and referral patterns from Kakamega County health facilities. These data inform baseline care-seeking patterns and facility capacity constraints.</p>
+          </div>
+          <div>
+            <h3 class="font-display text-lg mb-1.5">Stakeholder consultations</h3>
+            <p class="text-sm text-ink-soft leading-relaxed">Input from county health leadership and implementation partners helped validate model structure, intervention definitions, and plausible implementation scenarios.</p>
+          </div>
+          <div>
+            <h3 class="font-display text-lg mb-1.5">Model calibration</h3>
+            <p class="text-sm text-ink-soft leading-relaxed">Parameters were calibrated to match historical trends in facility delivery rates, maternal mortality ratios, and other observed outcomes from county surveillance systems.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Published Literature -->
+      <div id="about-literature" class="mb-14">
+        <div class="flex items-center gap-3 mb-5">
+          <div class="w-1 h-7 bg-accent"></div>
+          <h2 class="font-display text-3xl">Published Literature</h2>
+        </div>
+        <p class="text-ink-soft leading-relaxed mb-4 max-w-2xl">
+          Clinical effectiveness parameters are drawn from systematic reviews and meta-analyses of maternal health interventions. Key sources include:
+        </p>
+        <ul class="space-y-2 max-w-2xl pl-5 list-disc text-sm text-ink-soft marker:text-accent">
+          <li>Effect sizes for community mobilization, transport vouchers, and facility readiness improvements</li>
+          <li>Case fatality rates for obstetric complications by level of care and facility readiness</li>
+          <li>Care-seeking behaviour patterns from demographic and health surveys and qualitative studies in similar contexts</li>
+        </ul>
+      </div>
+
+      <div class="border-t border-border pt-6 flex items-center justify-between text-xs text-ink-muted">
+        <span>Documentation last reviewed June 2026</span>
+        <button onclick="goto('start')" class="text-ink-soft hover:text-ink underline">← Back to start</button>
+      </div>
+    </div>
+
+    <!-- ON THIS PAGE sidebar -->
+    <aside class="col-span-12 lg:col-span-4 lg:pl-8">
+      <div class="sticky top-32 border-l border-border pl-6">
+        <div class="text-[10px] tracking-[0.18em] text-ink-muted uppercase mb-4">On this page</div>
+        <ul class="space-y-3 text-sm">
+          <li><a href="#about-structure" class="text-ink-soft hover:text-accent transition">Model Structure</a></li>
+          <li><a href="#about-assumptions" class="text-ink-soft hover:text-accent transition">Key Assumptions</a></li>
+          <li><a href="#about-data" class="text-ink-soft hover:text-accent transition">Data Used</a></li>
+          <li><a href="#about-literature" class="text-ink-soft hover:text-accent transition">Published Literature</a></li>
+        </ul>
+      </div>
+    </aside>
+
+  </div>
+</section>
+
+
+<!-- =================================================== -->
+<!-- ============== SCREEN 2: DESIGN =================== -->
+<!-- =================================================== -->
+<section id="screen-design" class="screen">
+
+  <!-- Header -->
+  <div class="flex items-end justify-between mb-6 gap-6 flex-wrap">
+    <div class="flex-1 min-w-0">
+      <div class="text-[11px] tracking-[0.2em] text-ink-muted uppercase mb-3 flex items-center gap-2 flex-wrap">
+        <span>Step 2 of 3</span>
+        <span class="text-ink-muted">·</span>
+        <span class="text-accent normal-case tracking-normal text-[12px]">Started from <strong>Health system strengthening</strong> preset</span>
+        <button onclick="goto('start')" class="text-ink-muted hover:text-ink underline text-[10px] normal-case tracking-normal ml-1">change starting point</button>
+      </div>
+      <!-- Editable scenario name -->
+      <div class="flex items-center gap-3 mb-2 group">
+        <input type="text" value="HSS Intensive · Aggressive demand"
+               class="font-display text-4xl lg:text-5xl font-light leading-tight bg-transparent border-b-2 border-transparent hover:border-border focus:border-accent focus:outline-none transition px-1 -mx-1 max-w-[700px] w-full"
+               id="scenarioName">
+        <svg viewBox="0 0 24 24" class="w-4 h-4 text-ink-muted opacity-0 group-hover:opacity-100 transition shrink-0" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+      </div>
+      <div class="flex items-center gap-2 text-[11px] text-ink-muted">
+        <span>Click name to edit</span>
+        <span>·</span>
+        <span id="scenarioState">Unmodified preset</span>
+      </div>
+    </div>
+    <!-- Compare scenarios link -->
+    <button onclick="goto('compare')" class="flex items-center gap-3 bg-card border border-border px-4 py-3 rounded-lg hover:border-ink transition group">
+      <div class="text-left">
+        <div class="text-sm font-medium group-hover:text-accent transition">Compare two scenarios →</div>
+        <div class="text-xs text-ink-muted">Build side-by-side comparisons</div>
+      </div>
+    </button>
+  </div>
+
+  <!-- Scenario label bar (shown when compare on) -->
+  <div id="compareLabels" class="hidden mb-6 grid grid-cols-2 gap-6">
+    <div class="bg-intervention-soft border-l-4 border-intervention px-4 py-3 rounded">
+      <div class="text-[10px] tracking-[0.18em] text-intervention uppercase mb-1">Scenario A</div>
+      <input class="bg-transparent font-display text-xl w-full focus:outline-none" value="Moderate HSS only">
+    </div>
+    <div class="bg-accent-soft border-l-4 border-accent px-4 py-3 rounded">
+      <div class="text-[10px] tracking-[0.18em] text-accent uppercase mb-1">Scenario B</div>
+      <input class="bg-transparent font-display text-xl w-full focus:outline-none" value="HSS + community + drugs">
+    </div>
+  </div>
+
+  <!-- Progressive-disclosure note -->
+  <div class="flex items-start gap-3 mb-6 p-4 bg-paper-deep/60 border-l-2 border-ink-muted rounded-r">
+    <span class="font-display text-ink-muted text-xl leading-none">ℹ</span>
+    <div class="text-xs text-ink-soft leading-relaxed">
+      <strong class="text-ink">You're focused on HSS only.</strong> The other two pillars are shown as <em>add</em> cards on the right — click one to layer it on. To run a side-by-side comparison instead, click <strong>Compare two scenarios →</strong> above to open the comparison workspace.
+    </div>
+  </div>
+
+  <!-- Three intervention pillars (only Pillar 1 active; others as add affordances) -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-12">
+
+    <!-- ============ PILLAR 1: HSS ============ -->
+    <div class="pillar-card bg-card border border-border rounded-xl overflow-hidden">
+      <!-- Header -->
+      <div class="p-6 border-b border-border-soft">
+        <div class="flex items-start justify-between mb-3">
+          <div class="text-[10px] tracking-[0.2em] text-ink-muted uppercase">Pillar 01</div>
+          <div class="toggle-track w-10 h-6 rounded-full p-0.5 on">
+            <div class="toggle-knob w-5 h-5 bg-card rounded-full shadow"></div>
+          </div>
+        </div>
+        <h3 class="font-display text-2xl leading-tight mb-2">Strengthen the<br>health system</h3>
+        <p class="text-xs text-ink-muted leading-relaxed">Demand-side push (CHVs, ANC, facility delivery) and supply-side capacity (staffing, equipment, transport).</p>
+      </div>
+
+      <!-- Intensity selector — qualitative buckets with underlying ranges -->
+      <div class="px-6 py-5 bg-paper/40 border-b border-border-soft">
+        <div class="flex items-center justify-between mb-3">
+          <div class="text-[10px] tracking-[0.15em] text-ink-muted uppercase">Intensity</div>
+          <div class="modified-indicator hidden text-[10px] text-accent items-center gap-2">
+            <span>● Modified from preset</span>
+            <button class="underline hover:text-accent/80">↺ reset</button>
+          </div>
+        </div>
+        <div class="intensity-group grid grid-cols-4 gap-1 text-center" data-pillar="hss">
+          <div class="pill py-1.5 px-1 rounded border border-border flex flex-col items-center justify-center" data-level="Off">
+            <span class="text-[11px]">Off</span>
+            <span class="text-[8px] text-ink-muted num mt-0.5">baseline</span>
+          </div>
+          <div class="pill py-1.5 px-1 rounded border border-border flex flex-col items-center justify-center" data-level="Light">
+            <span class="text-[11px]">Light</span>
+            <span class="text-[8px] text-ink-muted num mt-0.5">60–69%</span>
+          </div>
+          <div class="pill py-1.5 px-1 rounded border border-border flex flex-col items-center justify-center" data-level="Moderate">
+            <span class="text-[11px]">Moderate</span>
+            <span class="text-[8px] text-ink-muted num mt-0.5">70–79%</span>
+          </div>
+          <div class="pill py-1.5 px-1 rounded border border-border active flex flex-col items-center justify-center" data-level="Intensive">
+            <span class="text-[11px]">Intensive</span>
+            <span class="text-[8px] num mt-0.5">80–95%</span>
+          </div>
+        </div>
+        <p class="text-[10px] text-ink-muted mt-2.5 leading-relaxed italic">Each level represents a plausible range. Use parameters below to fine-tune within the range.</p>
+      </div>
+
+      <!-- Preset parameters — always visible, editable -->
+      <div class="px-6 py-5">
+        <div class="flex items-center justify-between mb-4">
+          <div class="text-[10px] tracking-[0.15em] text-ink-muted uppercase">Preset parameters · editable</div>
+          <span class="text-[10px] text-ink-muted">from <em>Intensive</em></span>
+        </div>
+
+        <div class="space-y-4">
+          <div>
+            <div class="flex items-baseline justify-between mb-1.5">
+              <label class="text-sm"><span class="has-tip" data-tip="Four or more antenatal care visits during pregnancy">4+ ANC</span> coverage</label>
+              <span class="num text-[11px] text-ink-muted">≈ 90% of women</span>
+            </div>
+            <div class="param-group grid grid-cols-3 gap-1 text-[11px] text-center">
+              <div class="pill py-1.5 rounded border border-border">Modest · 70%</div>
+              <div class="pill py-1.5 rounded border border-border">Strong · 80%</div>
+              <div class="pill py-1.5 rounded border border-border active">Maximal · 90%</div>
+            </div>
+          </div>
+
+          <div>
+            <div class="flex items-baseline justify-between mb-1.5">
+              <label class="text-sm">Facility capacity</label>
+              <span class="num text-[11px] text-ink-muted">+ 85% L4/5 beds</span>
+            </div>
+            <div class="param-group grid grid-cols-3 gap-1 text-[11px] text-center">
+              <div class="pill py-1.5 rounded border border-border">Limited</div>
+              <div class="pill py-1.5 rounded border border-border">Match demand</div>
+              <div class="pill py-1.5 rounded border border-border active">Surplus</div>
+            </div>
+          </div>
+
+          <div>
+            <div class="flex items-baseline justify-between mb-1.5">
+              <label class="text-sm"><span class="has-tip" data-tip="Community Health Volunteers — frontline outreach workers">CHV</span> behaviour</label>
+              <span class="num text-[11px] text-ink-muted">realistic decay</span>
+            </div>
+            <div class="param-group grid grid-cols-3 gap-1 text-[11px] text-center">
+              <div class="pill py-1.5 rounded border border-border">Forget quickly</div>
+              <div class="pill py-1.5 rounded border border-border active">Logistic decay</div>
+              <div class="pill py-1.5 rounded border border-border">Remember all</div>
+            </div>
+          </div>
+        </div>
+
+        <details class="mt-5 pt-3 border-t border-border-soft">
+          <summary class="cursor-pointer text-ink-muted hover:text-ink text-[10px] tracking-[0.15em] uppercase">+ More parameters (referrals · equipment · transport)</summary>
+          <div class="mt-3 p-3 bg-paper-deep/40 rounded text-xs text-ink-soft space-y-2">
+            <div class="flex justify-between"><span>Normal referral rate</span><span class="num">100%</span></div>
+            <div class="flex justify-between"><span>Emergency transfer</span><span class="num">100%</span></div>
+            <div class="flex justify-between"><span>Equipment supply</span><span class="num">100%</span></div>
+            <div class="flex justify-between"><span>Surgical staffing</span><span class="num">100%</span></div>
+          </div>
+        </details>
+      </div>
+    </div>
+
+
+    <!-- ============ PILLAR 2: TREATMENTS — ADD AFFORDANCE ============ -->
+    <button class="add-pillar-card group bg-paper-deep/30 border-2 border-dashed border-border hover:border-ink hover:bg-card rounded-xl p-7 flex flex-col text-left transition cursor-pointer">
+      <div class="flex items-center gap-3 mb-5">
+        <div class="w-9 h-9 rounded-full border-2 border-border group-hover:border-ink flex items-center justify-center text-lg text-ink-muted group-hover:text-ink transition">+</div>
+        <div class="text-[10px] tracking-[0.2em] text-ink-muted uppercase">Pillar 02 · not active</div>
+      </div>
+
+      <h3 class="font-display text-2xl leading-tight mb-3 text-ink-muted group-hover:text-ink transition">Add treatments<br>&amp; diagnostics</h3>
+
+      <p class="text-xs text-ink-muted leading-relaxed mb-auto">
+        Drugs (PPH bundle, MgSO4, antibiotics) and diagnostic tools (AI ultrasound, fetal sensors) deployed at facilities.
+      </p>
+
+      <div class="mt-6 pt-4 border-t border-border-soft text-[11px] text-ink-muted leading-relaxed">
+        <strong class="text-ink-soft">Layer on top of HSS</strong> to isolate the drug-and-supply contribution. Adds new outcomes to the dashboard.
+      </div>
+    </button>
+
+
+    <!-- ============ PILLAR 3: COMMUNITY — ADD AFFORDANCE ============ -->
+    <button class="add-pillar-card group bg-paper-deep/30 border-2 border-dashed border-border hover:border-ink hover:bg-card rounded-xl p-7 flex flex-col text-left transition cursor-pointer">
+      <div class="flex items-center gap-3 mb-5">
+        <div class="w-9 h-9 rounded-full border-2 border-border group-hover:border-ink flex items-center justify-center text-lg text-ink-muted group-hover:text-ink transition">+</div>
+        <div class="text-[10px] tracking-[0.2em] text-ink-muted uppercase">Pillar 03 · not active</div>
+      </div>
+
+      <h3 class="font-display text-2xl leading-tight mb-3 text-ink-muted group-hover:text-ink transition">Add community<br>engagement</h3>
+
+      <p class="text-xs text-ink-muted leading-relaxed mb-auto">
+        MOMISH community-facing programs: <strong class="text-ink-soft">PROMPTS</strong> messaging, <strong class="text-ink-soft">MENTORS</strong> mentorship, <strong class="text-ink-soft">FQA</strong> quality assurance, <strong class="text-ink-soft">PULSE</strong> SMS engagement, and <strong class="text-ink-soft">Referral/EMT</strong> transport.
+      </p>
+
+      <div class="mt-6 pt-4 border-t border-border-soft text-[11px] text-ink-muted leading-relaxed">
+        <strong class="text-ink-soft">Pairs well with HSS</strong> — community programs amplify demand-side gains. Each sub-intervention can be turned on independently.
+      </div>
+    </button>
+  </div>
+
+  <!-- ============= RUN SETTINGS — INLINE (was a separate screen in v0.6) ============= -->
+  <div class="border-t border-border pt-10 mb-8">
+    <div class="grid grid-cols-12 gap-8">
+      <div class="col-span-12 lg:col-span-7 space-y-6">
+        <div>
+          <div class="text-[11px] tracking-[0.2em] text-ink-muted uppercase mb-3">Final step · Run settings</div>
+          <h2 class="font-display text-3xl leading-tight mb-2">Ready to run your scenario?</h2>
+          <p class="text-sm text-ink-soft">Defaults are fine for most explorations. Expand the panel below if you want to adjust the timeline or run mode.</p>
+        </div>
+
+        <!-- Collapsible advanced run settings -->
+        <details class="bg-card border border-border rounded-xl overflow-hidden">
+          <summary class="cursor-pointer px-5 py-4 hover:bg-paper-deep/40 flex items-center justify-between transition list-none">
+            <div class="flex items-center gap-3">
+              <span class="text-ink-muted text-sm">▾</span>
+              <div>
+                <div class="text-sm font-medium">Advanced run settings</div>
+                <div class="text-[11px] text-ink-muted">Currently: <span class="num">3 + 1</span> years · <strong>Quick</strong> mode</div>
+              </div>
+            </div>
+            <span class="text-[11px] text-ink-muted italic">click to expand</span>
+          </summary>
+          <div class="px-5 pb-5 pt-2 border-t border-border-soft space-y-5">
+
+            <!-- Timeline -->
+            <div>
+              <div class="flex items-center justify-between mb-3">
+                <div>
+                  <h3 class="text-sm font-medium mb-0.5">Simulation timeline</h3>
+                  <p class="text-[11px] text-ink-muted">Drag the handle to set implementation and maintenance phases.</p>
+                </div>
+                <div class="num text-xs">
+                  <span class="text-ink-muted">Total:</span> <strong>4 years</strong>
+                </div>
+              </div>
+              <div class="relative h-10 bg-paper-deep rounded-md overflow-hidden">
+                <div class="absolute left-0 top-0 h-full bg-intervention/85 flex items-center justify-center text-paper text-xs" style="width: 75%;">
+                  <div class="text-center leading-tight"><div class="text-[9px] tracking-[0.12em] uppercase opacity-80">Implementation</div><div class="font-display text-xs leading-tight num">3 yrs</div></div>
+                </div>
+                <div class="absolute right-0 top-0 h-full bg-warning/70 flex items-center justify-center text-ink text-xs" style="width: 25%;">
+                  <div class="text-center leading-tight"><div class="text-[9px] tracking-[0.12em] uppercase opacity-80">Maintain</div><div class="font-display text-xs leading-tight num">1 yr</div></div>
+                </div>
+                <div class="absolute top-0 h-full w-0.5 bg-ink cursor-ew-resize" style="left: 75%;">
+                  <div class="absolute -top-1 -left-1.5 w-3.5 h-3.5 bg-ink rounded-full"></div>
+                </div>
+              </div>
+              <div class="flex justify-between mt-1.5 num text-[9px] text-ink-muted">
+                <span>M0</span><span>Yr 1</span><span>Yr 2</span><span>Yr 3</span><span>Yr 4</span>
+              </div>
+            </div>
+
+            <!-- Run mode -->
+            <div>
+              <h3 class="text-sm font-medium mb-2">How thoroughly should the model run?</h3>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <label class="run-mode-mini block cursor-pointer">
+                  <input type="radio" name="runmode-inline" class="sr-only peer" checked>
+                  <div class="border-2 border-border peer-checked:border-ink peer-checked:bg-paper-deep/40 rounded-lg p-3 transition flex items-center justify-between">
+                    <div>
+                      <div class="font-display text-sm mb-0.5">Quick</div>
+                      <div class="text-[10px] text-ink-muted">Single run · no uncertainty</div>
+                    </div>
+                    <div class="num text-sm font-medium">≈ 1 min</div>
+                  </div>
+                </label>
+                <label class="run-mode-mini block cursor-pointer">
+                  <input type="radio" name="runmode-inline" class="sr-only peer">
+                  <div class="border-2 border-border peer-checked:border-ink peer-checked:bg-paper-deep/40 rounded-lg p-3 transition flex items-center justify-between">
+                    <div>
+                      <div class="font-display text-sm mb-0.5">Robust</div>
+                      <div class="text-[10px] text-ink-muted">50 runs · 95% bands</div>
+                    </div>
+                    <div class="num text-sm font-medium">≈ 10 min</div>
+                  </div>
+                </label>
+              </div>
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <!-- Scenario summary sidebar -->
+      <div class="col-span-12 lg:col-span-5">
+        <div class="bg-ink text-paper rounded-xl p-6">
+          <div class="text-[10px] tracking-[0.18em] uppercase opacity-60 mb-3">Scenario summary</div>
+          <div class="font-display text-xl mb-5" id="scenarioSummaryName">HSS Intensive · Aggressive demand</div>
+          <dl class="space-y-2.5 text-sm">
+            <div class="flex justify-between gap-4 pb-2 border-b border-paper/15">
+              <dt class="opacity-60">Health system</dt><dd>Intensive</dd>
+            </div>
+            <div class="flex justify-between gap-4 pb-2 border-b border-paper/15">
+              <dt class="opacity-60">Treatments</dt><dd class="opacity-50">— not active</dd>
+            </div>
+            <div class="flex justify-between gap-4 pb-2 border-b border-paper/15">
+              <dt class="opacity-60">Community</dt><dd class="opacity-50">— not active</dd>
+            </div>
+            <div class="flex justify-between gap-4 pb-2 border-b border-paper/15">
+              <dt class="opacity-60">Timeline</dt><dd class="num">3 + 1 yrs</dd>
+            </div>
+            <div class="flex justify-between gap-4">
+              <dt class="opacity-60">Run mode</dt><dd>Quick</dd>
+            </div>
+          </dl>
+          <button onclick="goto('results')" class="w-full mt-6 px-5 py-3.5 bg-accent hover:bg-accent/90 transition text-paper rounded-md font-medium text-sm flex items-center justify-center gap-2">
+            Run simulation <span>▸</span>
+          </button>
+          <button class="w-full mt-2 text-xs opacity-60 hover:opacity-100">Save scenario without running</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer nav -->
+  <div class="flex items-center justify-between border-t border-border pt-6">
+    <button onclick="goto('start')" class="text-sm text-ink-muted hover:text-ink flex items-center gap-2">
+      <span>←</span> Back to start
+    </button>
+    <span class="text-xs text-ink-muted">Or use the <strong>Run simulation</strong> button above ↑</span>
+  </div>
+
+</section>
+
+
+<!-- =================================================== -->
+<!-- ============== SCREEN: SCENARIO COMPARISON ========= -->
+<!-- =================================================== -->
+<section id="screen-compare" class="screen">
+
+  <div class="grid grid-cols-12 gap-6">
+
+    <!-- LEFT: Intervention Library -->
+    <aside class="col-span-12 lg:col-span-3">
+      <div class="sticky top-32">
+        <h2 class="font-display text-2xl leading-tight mb-1">Intervention Library</h2>
+        <p class="text-xs text-ink-muted mb-5">Click <span class="num">+ A</span> or <span class="num">+ B</span> to add to a scenario.</p>
+
+        <!-- Group: Supply (HSS) -->
+        <div class="mb-5">
+          <div class="flex items-center justify-between mb-2.5 cursor-pointer">
+            <div class="flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-intervention"></span>
+              <span class="text-sm font-medium">Supply (HSS)</span>
+            </div>
+            <span class="text-ink-muted text-xs">▾</span>
+          </div>
+          <div class="space-y-3 pl-4">
+            <div>
+              <div class="text-[12px] mb-1.5">Health System Strengthening</div>
+              <div class="grid grid-cols-2 gap-1.5">
+                <button class="lib-btn px-3 py-1 rounded text-[11px] bg-blue-50 text-blue-700 border border-blue-200 flex items-center justify-center gap-1" style="background:#E0EBF5; color:#2563A8; border-color:#C0D5E8"><span>✓</span> A</button>
+                <button class="lib-btn px-3 py-1 rounded text-[11px] border border-border text-ink-soft hover:bg-paper-deep">+ B</button>
+              </div>
+            </div>
+            <div>
+              <div class="text-[12px] mb-1.5">Facility Capacity</div>
+              <div class="grid grid-cols-2 gap-1.5">
+                <button class="lib-btn px-3 py-1 rounded text-[11px] flex items-center justify-center gap-1" style="background:#E0EBF5; color:#2563A8; border:1px solid #C0D5E8"><span>✓</span> A</button>
+                <button class="lib-btn px-3 py-1 rounded text-[11px] border border-border text-ink-soft hover:bg-paper-deep">+ B</button>
+              </div>
+            </div>
+            <div>
+              <div class="text-[12px] mb-1.5">EmOC Availability</div>
+              <div class="grid grid-cols-2 gap-1.5">
+                <button class="lib-btn px-3 py-1 rounded text-[11px] border border-border text-ink-soft hover:bg-paper-deep">+ A</button>
+                <button class="lib-btn px-3 py-1 rounded text-[11px] border border-border text-ink-soft hover:bg-paper-deep">+ B</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Group: Treatments -->
+        <div class="mb-5">
+          <div class="flex items-center justify-between mb-2.5 cursor-pointer">
+            <div class="flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-warning"></span>
+              <span class="text-sm font-medium">Treatments</span>
+            </div>
+            <span class="text-ink-muted text-xs">▾</span>
+          </div>
+          <div class="space-y-3 pl-4">
+            <div>
+              <div class="text-[12px] mb-1.5">PPH Treatments</div>
+              <div class="grid grid-cols-2 gap-1.5">
+                <button class="lib-btn px-3 py-1 rounded text-[11px] border border-border text-ink-soft hover:bg-paper-deep">+ A</button>
+                <button class="lib-btn px-3 py-1 rounded text-[11px] flex items-center justify-center gap-1" style="background:#DCEEE0; color:#2B7A3E; border:1px solid #BFDEC4"><span>✓</span> B</button>
+              </div>
+            </div>
+            <div>
+              <div class="text-[12px] mb-1.5">Eclampsia Treatments</div>
+              <div class="grid grid-cols-2 gap-1.5">
+                <button class="lib-btn px-3 py-1 rounded text-[11px] flex items-center justify-center gap-1" style="background:#E0EBF5; color:#2563A8; border:1px solid #C0D5E8"><span>✓</span> A</button>
+                <button class="lib-btn px-3 py-1 rounded text-[11px] border border-border text-ink-soft hover:bg-paper-deep">+ B</button>
+              </div>
+            </div>
+            <div>
+              <div class="text-[12px] mb-1.5">Antenatal Care</div>
+              <div class="grid grid-cols-2 gap-1.5">
+                <button class="lib-btn px-3 py-1 rounded text-[11px] border border-border text-ink-soft hover:bg-paper-deep">+ A</button>
+                <button class="lib-btn px-3 py-1 rounded text-[11px] border border-border text-ink-soft hover:bg-paper-deep">+ B</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Group: Community (MOMISH) -->
+        <div class="mb-5">
+          <div class="flex items-center justify-between mb-2.5 cursor-pointer">
+            <div class="flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-accent"></span>
+              <span class="text-sm font-medium">Community (MOMISH)</span>
+            </div>
+            <span class="text-ink-muted text-xs">▾</span>
+          </div>
+          <div class="space-y-3 pl-4">
+            <div>
+              <div class="text-[12px] mb-1.5">PROMPTS <span class="text-[9px] text-positive ml-1">●&nbsp;wired</span></div>
+              <div class="grid grid-cols-2 gap-1.5">
+                <button class="lib-btn px-3 py-1 rounded text-[11px] flex items-center justify-center gap-1" style="background:#E0EBF5; color:#2563A8; border:1px solid #C0D5E8"><span>✓</span> A</button>
+                <button class="lib-btn px-3 py-1 rounded text-[11px] flex items-center justify-center gap-1" style="background:#DCEEE0; color:#2B7A3E; border:1px solid #BFDEC4"><span>✓</span> B</button>
+              </div>
+            </div>
+            <div>
+              <div class="text-[12px] mb-1.5">MENTORS <span class="text-[9px] text-positive ml-1">●&nbsp;wired</span></div>
+              <div class="grid grid-cols-2 gap-1.5">
+                <button class="lib-btn px-3 py-1 rounded text-[11px] border border-border text-ink-soft hover:bg-paper-deep">+ A</button>
+                <button class="lib-btn px-3 py-1 rounded text-[11px] border border-border text-ink-soft hover:bg-paper-deep">+ B</button>
+              </div>
+            </div>
+            <div>
+              <div class="text-[12px] mb-1.5">FQA <span class="text-[9px] text-warning ml-1">●&nbsp;UI only</span></div>
+              <div class="grid grid-cols-2 gap-1.5">
+                <button class="lib-btn px-3 py-1 rounded text-[11px] border border-border text-ink-soft hover:bg-paper-deep">+ A</button>
+                <button class="lib-btn px-3 py-1 rounded text-[11px] flex items-center justify-center gap-1" style="background:#DCEEE0; color:#2B7A3E; border:1px solid #BFDEC4"><span>✓</span> B</button>
+              </div>
+            </div>
+            <div>
+              <div class="text-[12px] mb-1.5">PULSE <span class="text-[9px] text-warning ml-1">●&nbsp;UI only</span></div>
+              <div class="grid grid-cols-2 gap-1.5">
+                <button class="lib-btn px-3 py-1 rounded text-[11px] border border-border text-ink-soft hover:bg-paper-deep">+ A</button>
+                <button class="lib-btn px-3 py-1 rounded text-[11px] border border-border text-ink-soft hover:bg-paper-deep">+ B</button>
+              </div>
+            </div>
+            <div>
+              <div class="text-[12px] mb-1.5">Referral / EMT <span class="text-[9px] text-warning ml-1">●&nbsp;partial</span></div>
+              <div class="grid grid-cols-2 gap-1.5">
+                <button class="lib-btn px-3 py-1 rounded text-[11px] border border-border text-ink-soft hover:bg-paper-deep">+ A</button>
+                <button class="lib-btn px-3 py-1 rounded text-[11px] border border-border text-ink-soft hover:bg-paper-deep">+ B</button>
+              </div>
+            </div>
+          </div>
+          <!-- Status legend (in-context) -->
+          <div class="mt-3 pl-4 pt-2 border-t border-border-soft text-[9px] text-ink-muted leading-relaxed">
+            <span class="text-positive">●</span> drives simulation  ·  <span class="text-warning">●</span> UI controls only (model wiring pending)
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- RIGHT: Comparison workspace -->
+    <main class="col-span-12 lg:col-span-9">
+      <!-- Header -->
+      <div class="flex items-start justify-between mb-6">
+        <div>
+          <div class="text-[11px] tracking-[0.2em] text-accent uppercase mb-3">Design scenarios</div>
+          <h1 class="font-display text-5xl font-light leading-tight">Scenario Comparison</h1>
+          <p class="text-ink-soft mt-3 max-w-xl">Build intervention scenarios and compare outcomes.</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button class="px-4 py-2 border border-border rounded-md text-sm hover:bg-paper-deep">Download data</button>
+          <button class="px-4 py-2 bg-ink text-paper rounded-md text-sm hover:bg-accent transition">Export comparison</button>
+        </div>
+      </div>
+
+      <!-- Quick start preset comparisons -->
+      <div class="flex items-center gap-3 mb-7 flex-wrap">
+        <span class="text-xs text-ink-muted">Quick start:</span>
+        <button class="px-3 py-1.5 border border-border rounded text-xs hover:bg-paper-deep">PROMPTS: Current vs Intensive</button>
+        <button class="px-3 py-1.5 border border-border rounded text-xs hover:bg-paper-deep">HSS vs HSS + ANC</button>
+        <button class="px-3 py-1.5 border border-border rounded text-xs hover:bg-paper-deep">Baseline vs Full Package</button>
+      </div>
+
+      <!-- Two scenario columns -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-5 mb-8">
+
+        <!-- SCENARIO A -->
+        <div class="rounded-xl border-2" style="border-color:#C0D5E8; background:#F4F8FC">
+          <div class="px-5 py-4 border-b" style="border-color:#C0D5E8; background:#E0EBF5">
+            <div class="flex items-center justify-between">
+              <h3 class="font-display text-lg" style="color:#2563A8">Scenario A: Baseline</h3>
+              <span class="text-[10px] text-ink-muted italic">Click name to edit</span>
+            </div>
+          </div>
+          <div class="p-4 space-y-3">
+
+            <!-- Intervention card: HSS -->
+            <div class="bg-card border border-border rounded-lg p-4">
+              <div class="flex items-start justify-between mb-1">
+                <h4 class="text-sm font-medium">Health System Strengthening</h4>
+                <button class="text-ink-muted hover:text-ink text-sm">×</button>
+              </div>
+              <p class="text-[11px] text-ink-muted mb-3">Facility capacity, training, and supply chain</p>
+              <div class="grid grid-cols-3 gap-1 text-[11px] text-center">
+                <button class="pill py-1.5 rounded text-paper" style="background:#2563A8; border:1px solid #2563A8">Current</button>
+                <button class="pill py-1.5 rounded border border-border">Moderate</button>
+                <button class="pill py-1.5 rounded border border-border">Intensive</button>
+              </div>
+            </div>
+
+            <!-- Intervention card: Facility Capacity -->
+            <div class="bg-card border border-border rounded-lg p-4">
+              <div class="flex items-start justify-between mb-1">
+                <h4 class="text-sm font-medium">Facility Capacity</h4>
+                <button class="text-ink-muted hover:text-ink text-sm">×</button>
+              </div>
+              <p class="text-[11px] text-ink-muted mb-3">Increase staffing and infrastructure</p>
+              <div class="grid grid-cols-3 gap-1 text-[11px] text-center">
+                <button class="pill py-1.5 rounded text-paper" style="background:#2563A8; border:1px solid #2563A8">Current</button>
+                <button class="pill py-1.5 rounded border border-border">Moderate</button>
+                <button class="pill py-1.5 rounded border border-border">Intensive</button>
+              </div>
+            </div>
+
+            <!-- Intervention card: Eclampsia Treatments -->
+            <div class="bg-card border border-border rounded-lg p-4">
+              <div class="flex items-start justify-between mb-1">
+                <h4 class="text-sm font-medium">Eclampsia Treatments</h4>
+                <button class="text-ink-muted hover:text-ink text-sm">×</button>
+              </div>
+              <p class="text-[11px] text-ink-muted mb-3">Pre-eclampsia and eclampsia care</p>
+              <div class="grid grid-cols-3 gap-1 text-[11px] text-center">
+                <button class="pill py-1.5 rounded text-paper" style="background:#2563A8; border:1px solid #2563A8">Current</button>
+                <button class="pill py-1.5 rounded border border-border">Improved</button>
+                <button class="pill py-1.5 rounded border border-border">Maximal</button>
+              </div>
+            </div>
+
+            <!-- Intervention card: PROMPTS -->
+            <div class="bg-card border border-border rounded-lg p-4">
+              <div class="flex items-start justify-between mb-1">
+                <h4 class="text-sm font-medium">PROMPTS</h4>
+                <button class="text-ink-muted hover:text-ink text-sm">×</button>
+              </div>
+              <p class="text-[11px] text-ink-muted mb-3">Community health worker engagement</p>
+              <div class="grid grid-cols-4 gap-1 text-[11px] text-center">
+                <button class="pill py-1.5 rounded text-paper" style="background:#2563A8; border:1px solid #2563A8">Off</button>
+                <button class="pill py-1.5 rounded border border-border">Light</button>
+                <button class="pill py-1.5 rounded border border-border">Moderate</button>
+                <button class="pill py-1.5 rounded border border-border">Intensive</button>
+              </div>
+              <div class="mt-3 px-3 py-2 rounded text-[11px] bg-warning/10 border border-warning/30 flex items-start gap-2" style="background:#FDF6E3">
+                <span>💡</span>
+                <span class="text-ink-soft">Suggested: Add Antenatal Care to increase effectiveness</span>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- SCENARIO B -->
+        <div class="rounded-xl border-2" style="border-color:#BFDEC4; background:#F5FAF6">
+          <div class="px-5 py-4 border-b" style="border-color:#BFDEC4; background:#DCEEE0">
+            <div class="flex items-center justify-between">
+              <h3 class="font-display text-lg" style="color:#2B7A3E">Scenario B: Comparison</h3>
+              <span class="text-[10px] text-ink-muted italic">Click name to edit</span>
+            </div>
+          </div>
+          <div class="p-4 space-y-3">
+
+            <!-- Intervention card: PPH Treatments -->
+            <div class="bg-card border border-border rounded-lg p-4">
+              <div class="flex items-start justify-between mb-1">
+                <h4 class="text-sm font-medium">PPH Treatments</h4>
+                <button class="text-ink-muted hover:text-ink text-sm">×</button>
+              </div>
+              <p class="text-[11px] text-ink-muted mb-3">Postpartum haemorrhage interventions</p>
+              <div class="grid grid-cols-3 gap-1 text-[11px] text-center">
+                <button class="pill py-1.5 rounded text-paper" style="background:#2B7A3E; border:1px solid #2B7A3E">Current</button>
+                <button class="pill py-1.5 rounded border border-border">Improved</button>
+                <button class="pill py-1.5 rounded border border-border">Maximal</button>
+              </div>
+            </div>
+
+            <!-- Intervention card: Eclampsia Treatments (B side too) -->
+            <div class="bg-card border border-border rounded-lg p-4">
+              <div class="flex items-start justify-between mb-1">
+                <h4 class="text-sm font-medium">Eclampsia Treatments</h4>
+                <button class="text-ink-muted hover:text-ink text-sm">×</button>
+              </div>
+              <p class="text-[11px] text-ink-muted mb-3">Pre-eclampsia and eclampsia care</p>
+              <div class="grid grid-cols-3 gap-1 text-[11px] text-center">
+                <button class="pill py-1.5 rounded border border-border">Current</button>
+                <button class="pill py-1.5 rounded text-paper" style="background:#2B7A3E; border:1px solid #2B7A3E">Improved</button>
+                <button class="pill py-1.5 rounded border border-border">Maximal</button>
+              </div>
+            </div>
+
+            <!-- Intervention card: PROMPTS -->
+            <div class="bg-card border border-border rounded-lg p-4">
+              <div class="flex items-start justify-between mb-1">
+                <h4 class="text-sm font-medium">PROMPTS</h4>
+                <button class="text-ink-muted hover:text-ink text-sm">×</button>
+              </div>
+              <p class="text-[11px] text-ink-muted mb-3">Community health worker engagement</p>
+              <div class="grid grid-cols-4 gap-1 text-[11px] text-center">
+                <button class="pill py-1.5 rounded border border-border">Off</button>
+                <button class="pill py-1.5 rounded border border-border">Light</button>
+                <button class="pill py-1.5 rounded border border-border">Moderate</button>
+                <button class="pill py-1.5 rounded text-paper" style="background:#2B7A3E; border:1px solid #2B7A3E">Intensive</button>
+              </div>
+            </div>
+
+            <!-- Intervention card: FQA — demonstrates the dual-control pattern -->
+            <div class="bg-card border border-border rounded-lg p-4">
+              <div class="flex items-start justify-between mb-1">
+                <h4 class="text-sm font-medium flex items-center gap-1.5">
+                  FQA
+                  <span class="text-[9px] text-warning font-normal">●&nbsp;UI only</span>
+                </h4>
+                <button class="text-ink-muted hover:text-ink text-sm">×</button>
+              </div>
+              <p class="text-[11px] text-ink-muted mb-3">Facility Quality Assurance</p>
+
+              <!-- Control 1: Implementation -->
+              <div class="mb-2.5">
+                <div class="text-[10px] tracking-[0.1em] text-ink-muted uppercase mb-1">Implementation</div>
+                <div class="grid grid-cols-2 gap-1 text-[11px] text-center">
+                  <button class="pill py-1.5 rounded border border-border">Low</button>
+                  <button class="pill py-1.5 rounded text-paper" style="background:#2B7A3E; border:1px solid #2B7A3E">High</button>
+                </div>
+              </div>
+
+              <!-- Control 2: Influence on PULSE -->
+              <div>
+                <div class="text-[10px] tracking-[0.1em] text-ink-muted uppercase mb-1 flex items-center gap-1">
+                  Influence on PULSE
+                  <span class="text-[9px] normal-case tracking-normal italic opacity-70">→ affects PULSE</span>
+                </div>
+                <div class="grid grid-cols-2 gap-1 text-[11px] text-center">
+                  <button class="pill py-1.5 rounded text-paper" style="background:#2B7A3E; border:1px solid #2B7A3E">Low</button>
+                  <button class="pill py-1.5 rounded border border-border">High</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Placeholder add-more affordance -->
+            <button class="w-full bg-card/50 border border-dashed border-border rounded-lg p-4 text-center text-xs text-ink-muted hover:border-ink hover:text-ink transition">
+              + Add another intervention from the library
+            </button>
+
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Run comparison -->
+      <div class="flex items-center justify-center gap-4 mt-2">
+        <button onclick="goto('design')" class="text-sm text-ink-muted hover:text-ink underline">← Back to single-scenario design</button>
+        <button onclick="goto('compare-results')" class="px-6 py-3 bg-accent text-paper rounded-md font-medium hover:bg-accent/90 transition">
+          Run Comparison  ▸
+        </button>
+      </div>
+
+    </main>
+  </div>
+</section>
+
+
+<!-- =================================================== -->
+<!-- ============== SCREEN: COMPARE RESULTS ============= -->
+<!-- =================================================== -->
+<section id="screen-compare-results" class="screen">
+
+  <!-- Header -->
+  <div class="flex items-start justify-between mb-6 gap-6 flex-wrap">
+    <div>
+      <div class="text-[11px] tracking-[0.2em] text-positive uppercase mb-3 flex items-center gap-2">
+        <span class="w-1.5 h-1.5 rounded-full bg-positive inline-block"></span>
+        Comparison complete · 47s
+      </div>
+      <h1 class="font-display text-5xl font-light leading-tight">Scenario A vs Scenario B</h1>
+      <p class="text-ink-soft mt-3 max-w-2xl">
+        Both scenarios run over <span class="num">4 years</span>. The deltas below show how Scenario B differs from Scenario A.
+      </p>
+    </div>
+    <div class="flex items-center gap-2">
+      <button class="px-3 py-2 border border-border rounded-md text-sm hover:bg-paper-deep">↓ Download both</button>
+      <button onclick="document.getElementById('shareModal').classList.remove('hidden')" class="px-3 py-2 border border-border rounded-md text-sm hover:bg-paper-deep">Share</button>
+      <button onclick="goto('compare')" class="px-3 py-2 bg-ink text-paper rounded-md text-sm">Adjust scenarios</button>
+    </div>
+  </div>
+
+  <!-- Side-by-side assumptions -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-10">
+    <div class="rounded-lg px-5 py-4 border-l-4" style="background:#F4F8FC; border-color:#2563A8">
+      <div class="text-[10px] tracking-[0.18em] uppercase font-medium mb-1" style="color:#2563A8">Scenario A · Baseline</div>
+      <div class="text-sm text-ink-soft leading-relaxed">
+        <span class="px-1.5 py-0.5 mx-0.5 rounded text-[11px]" style="background:#E0EBF5; color:#2563A8">HSS · Current</span>
+        <span class="px-1.5 py-0.5 mx-0.5 rounded text-[11px]" style="background:#E0EBF5; color:#2563A8">Facility · Current</span>
+        <span class="px-1.5 py-0.5 mx-0.5 rounded text-[11px]" style="background:#E0EBF5; color:#2563A8">Eclampsia · Current</span>
+        <span class="px-1.5 py-0.5 mx-0.5 rounded text-[11px]" style="background:#E0EBF5; color:#2563A8">PROMPTS · Off</span>
+      </div>
+    </div>
+    <div class="rounded-lg px-5 py-4 border-l-4" style="background:#F5FAF6; border-color:#2B7A3E">
+      <div class="text-[10px] tracking-[0.18em] uppercase font-medium mb-1" style="color:#2B7A3E">Scenario B · Comparison</div>
+      <div class="text-sm text-ink-soft leading-relaxed">
+        <span class="px-1.5 py-0.5 mx-0.5 rounded text-[11px]" style="background:#DCEEE0; color:#2B7A3E">PPH · Current</span>
+        <span class="px-1.5 py-0.5 mx-0.5 rounded text-[11px]" style="background:#DCEEE0; color:#2B7A3E">Eclampsia · Improved</span>
+        <span class="px-1.5 py-0.5 mx-0.5 rounded text-[11px]" style="background:#DCEEE0; color:#2B7A3E">PROMPTS · Intensive</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Combined narrative -->
+  <div class="mb-12 grid grid-cols-12 gap-8 bg-card border border-border rounded-xl p-8">
+    <div class="col-span-12 lg:col-span-3">
+      <div class="text-[10px] tracking-[0.2em] text-accent uppercase mb-2">In plain English</div>
+      <h2 class="font-display text-2xl leading-tight">How they compare.</h2>
+    </div>
+    <div class="col-span-12 lg:col-span-9 text-[17px] leading-relaxed font-display font-light text-ink-soft">
+      <strong style="color:#2B7A3E" class="font-medium">Scenario B</strong> averts an estimated
+      <span class="text-ink font-medium num">+ 89 additional maternal deaths</span> compared to
+      <strong style="color:#2563A8" class="font-medium">Scenario A</strong> — a further
+      <span class="editorial-underline">17% reduction in maternal mortality</span>. The community-focused interventions in B drive demand for facility-level care; the eclampsia-treatment upgrade reduces case-fatality once mothers arrive. Scenario B costs <span class="num">USD 1.2M more</span> over four years, but at
+      <span class="text-ink font-medium num">USD 514 per DALY averted</span>, it remains well within cost-effective thresholds for Kenya.
+    </div>
+  </div>
+
+  <!-- KPI tiles — pair-wise A | B with delta -->
+  <div class="grid grid-cols-1 lg:grid-cols-4 gap-4 mb-16">
+    <div class="bg-card border border-border rounded-lg p-5">
+      <div class="text-[10px] tracking-[0.18em] text-ink-muted uppercase mb-3">Maternal deaths averted</div>
+      <div class="grid grid-cols-2 gap-3 mb-3">
+        <div>
+          <div class="text-[9px] tracking-[0.15em] uppercase mb-1" style="color:#2563A8">A</div>
+          <div class="font-display text-2xl num">142</div>
+        </div>
+        <div>
+          <div class="text-[9px] tracking-[0.15em] uppercase mb-1" style="color:#2B7A3E">B</div>
+          <div class="font-display text-2xl num">231</div>
+        </div>
+      </div>
+      <div class="text-xs text-positive border-t border-border-soft pt-2 num"><strong>+89 (+63%)</strong> in B vs A</div>
+    </div>
+
+    <div class="bg-card border border-border rounded-lg p-5">
+      <div class="text-[10px] tracking-[0.18em] text-ink-muted uppercase mb-3">Severe maternal outcomes averted</div>
+      <div class="grid grid-cols-2 gap-3 mb-3">
+        <div><div class="text-[9px] tracking-[0.15em] uppercase mb-1" style="color:#2563A8">A</div><div class="font-display text-2xl num">418</div></div>
+        <div><div class="text-[9px] tracking-[0.15em] uppercase mb-1" style="color:#2B7A3E">B</div><div class="font-display text-2xl num">582</div></div>
+      </div>
+      <div class="text-xs text-positive border-t border-border-soft pt-2 num"><strong>+164 (+39%)</strong> in B vs A</div>
+    </div>
+
+    <div class="bg-card border border-border rounded-lg p-5">
+      <div class="text-[10px] tracking-[0.18em] text-ink-muted uppercase mb-3">DALYs averted</div>
+      <div class="grid grid-cols-2 gap-3 mb-3">
+        <div><div class="text-[9px] tracking-[0.15em] uppercase mb-1" style="color:#2563A8">A</div><div class="font-display text-2xl num">8,420</div></div>
+        <div><div class="text-[9px] tracking-[0.15em] uppercase mb-1" style="color:#2B7A3E">B</div><div class="font-display text-2xl num">12,940</div></div>
+      </div>
+      <div class="text-xs text-positive border-t border-border-soft pt-2 num"><strong>+4,520 (+54%)</strong> in B vs A</div>
+    </div>
+
+    <div class="bg-card border-2 border-accent rounded-lg p-5">
+      <div class="text-[10px] tracking-[0.18em] text-accent uppercase mb-3">Cost per DALY averted</div>
+      <div class="grid grid-cols-2 gap-3 mb-3">
+        <div><div class="text-[9px] tracking-[0.15em] uppercase mb-1" style="color:#2563A8">A</div><div class="font-display text-2xl num">$487</div></div>
+        <div><div class="text-[9px] tracking-[0.15em] uppercase mb-1" style="color:#2B7A3E">B</div><div class="font-display text-2xl num">$514</div></div>
+      </div>
+      <div class="text-xs text-ink-muted border-t border-border-soft pt-2"><strong class="text-ink num">+$27 in B</strong> — both well under threshold</div>
+    </div>
+  </div>
+
+  <!-- Comparison stories — fewer than full Results, focused on contrasts -->
+  <section class="mb-16">
+    <div class="grid grid-cols-12 gap-8 mb-8">
+      <div class="col-span-12 lg:col-span-3">
+        <div class="text-[10px] tracking-[0.2em] text-accent uppercase mb-3">Story 01</div>
+        <h2 class="font-display text-3xl leading-tight mb-3">Maternal mortality over time</h2>
+        <p class="text-sm text-ink-soft leading-relaxed">
+          Both scenarios reduce mortality from the <span class="num">530</span>-per-100k baseline. Scenario B drops further because community engagement increases the count of women who reach a facility in time.
+        </p>
+      </div>
+      <div class="col-span-12 lg:col-span-9 bg-card border border-border rounded-xl p-7">
+        <!-- Overlay chart: baseline + A + B -->
+        <svg viewBox="0 0 700 280" class="w-full h-auto">
+          <!-- Grid -->
+          <g stroke="#E2DAC8" stroke-width="0.5">
+            <line x1="50" y1="40" x2="680" y2="40"/>
+            <line x1="50" y1="100" x2="680" y2="100"/>
+            <line x1="50" y1="160" x2="680" y2="160"/>
+            <line x1="50" y1="220" x2="680" y2="220"/>
+          </g>
+          <!-- Y labels -->
+          <g font-family="Instrument Sans" font-size="9" fill="#7E7464">
+            <text x="42" y="44" text-anchor="end">600</text>
+            <text x="42" y="104" text-anchor="end">500</text>
+            <text x="42" y="164" text-anchor="end">400</text>
+            <text x="42" y="224" text-anchor="end">300</text>
+          </g>
+          <!-- Baseline -->
+          <path d="M 50 80 Q 200 82 350 81 T 680 83" fill="none" stroke="#9C9082" stroke-width="2"/>
+          <text x="685" y="86" font-family="Fraunces" font-style="italic" font-size="10" fill="#9C9082">baseline · 530</text>
+          <!-- Scenario A -->
+          <path d="M 50 80 Q 200 110 350 145 T 680 168" fill="none" stroke="#2563A8" stroke-width="2.5"/>
+          <text x="685" y="171" font-family="Fraunces" font-style="italic" font-size="10" fill="#2563A8">A · 405</text>
+          <!-- Scenario B -->
+          <path d="M 50 80 Q 200 130 350 195 T 680 218" fill="none" stroke="#2B7A3E" stroke-width="2.5"/>
+          <text x="685" y="221" font-family="Fraunces" font-style="italic" font-size="10" fill="#2B7A3E" font-weight="600">B · 316</text>
+          <!-- X axis -->
+          <line x1="50" y1="250" x2="680" y2="250" stroke="#1C1A15" stroke-width="0.5"/>
+          <g font-family="Instrument Sans" font-size="9" fill="#7E7464">
+            <text x="50" y="265">M0</text>
+            <text x="208" y="265">M12</text>
+            <text x="365" y="265">M24</text>
+            <text x="523" y="265">M36</text>
+            <text x="680" y="265" text-anchor="end">M48</text>
+          </g>
+        </svg>
+        <div class="text-xs text-ink-muted mt-2 italic">Deaths per 100,000 live births · monthly</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Story 02: KPI deltas in a small-multiples row -->
+  <section class="mb-16">
+    <div class="grid grid-cols-12 gap-8 mb-6">
+      <div class="col-span-12 lg:col-span-3">
+        <div class="text-[10px] tracking-[0.2em] text-accent uppercase mb-3">Story 02</div>
+        <h2 class="font-display text-3xl leading-tight mb-3">Where each scenario wins</h2>
+        <p class="text-sm text-ink-soft leading-relaxed">
+          Across all four core outcomes, Scenario B outperforms Scenario A. The biggest gap is in DALYs averted, where the community engagement bundle compounds the gains.
+        </p>
+      </div>
+      <div class="col-span-12 lg:col-span-9 grid grid-cols-1 md:grid-cols-2 gap-4">
+        <!-- Pair card 1 -->
+        <div class="bg-card border border-border rounded-lg p-5">
+          <h4 class="text-sm font-medium mb-3">Maternal deaths averted</h4>
+          <div class="space-y-2">
+            <div>
+              <div class="flex justify-between text-[11px] mb-1"><span style="color:#2563A8">A</span><span class="num">142</span></div>
+              <div class="h-2 rounded-full bg-paper-deep overflow-hidden"><div class="h-full" style="width:61%; background:#2563A8"></div></div>
+            </div>
+            <div>
+              <div class="flex justify-between text-[11px] mb-1"><span style="color:#2B7A3E">B</span><span class="num font-medium">231</span></div>
+              <div class="h-2 rounded-full bg-paper-deep overflow-hidden"><div class="h-full" style="width:100%; background:#2B7A3E"></div></div>
+            </div>
+          </div>
+        </div>
+        <div class="bg-card border border-border rounded-lg p-5">
+          <h4 class="text-sm font-medium mb-3">DALYs averted</h4>
+          <div class="space-y-2">
+            <div>
+              <div class="flex justify-between text-[11px] mb-1"><span style="color:#2563A8">A</span><span class="num">8,420</span></div>
+              <div class="h-2 rounded-full bg-paper-deep overflow-hidden"><div class="h-full" style="width:65%; background:#2563A8"></div></div>
+            </div>
+            <div>
+              <div class="flex justify-between text-[11px] mb-1"><span style="color:#2B7A3E">B</span><span class="num font-medium">12,940</span></div>
+              <div class="h-2 rounded-full bg-paper-deep overflow-hidden"><div class="h-full" style="width:100%; background:#2B7A3E"></div></div>
+            </div>
+          </div>
+        </div>
+        <div class="bg-card border border-border rounded-lg p-5">
+          <h4 class="text-sm font-medium mb-3">Severe maternal outcomes averted</h4>
+          <div class="space-y-2">
+            <div>
+              <div class="flex justify-between text-[11px] mb-1"><span style="color:#2563A8">A</span><span class="num">418</span></div>
+              <div class="h-2 rounded-full bg-paper-deep overflow-hidden"><div class="h-full" style="width:72%; background:#2563A8"></div></div>
+            </div>
+            <div>
+              <div class="flex justify-between text-[11px] mb-1"><span style="color:#2B7A3E">B</span><span class="num font-medium">582</span></div>
+              <div class="h-2 rounded-full bg-paper-deep overflow-hidden"><div class="h-full" style="width:100%; background:#2B7A3E"></div></div>
+            </div>
+          </div>
+        </div>
+        <div class="bg-card border border-border rounded-lg p-5">
+          <h4 class="text-sm font-medium mb-3">Cumulative cost</h4>
+          <div class="space-y-2">
+            <div>
+              <div class="flex justify-between text-[11px] mb-1"><span style="color:#2563A8">A</span><span class="num">$4.1M</span></div>
+              <div class="h-2 rounded-full bg-paper-deep overflow-hidden"><div class="h-full" style="width:77%; background:#2563A8"></div></div>
+            </div>
+            <div>
+              <div class="flex justify-between text-[11px] mb-1"><span style="color:#2B7A3E">B</span><span class="num">$5.3M</span></div>
+              <div class="h-2 rounded-full bg-paper-deep overflow-hidden"><div class="h-full" style="width:100%; background:#2B7A3E"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Bottom action bar -->
+  <div class="border-t border-border pt-6 flex items-center justify-between text-sm">
+    <button onclick="goto('compare')" class="text-ink-muted hover:text-ink">← Adjust scenarios</button>
+    <div class="flex items-center gap-3">
+      <button onclick="goto('start')" class="text-ink-muted hover:text-ink underline text-xs">Try a different starting point</button>
+      <button class="px-4 py-2 border border-border rounded-md hover:bg-paper-deep">Export comparison report</button>
+    </div>
+  </div>
+
+</section>
+
+
+<!-- =================================================== -->
+<!-- ============== SCREEN 3: RUN (orphaned in v0.7) ===== -->
+<!-- =================================================== -->
+<section id="screen-run" class="screen">
+
+  <div class="mb-12">
+    <div class="text-[11px] tracking-[0.2em] text-ink-muted uppercase mb-3">Step 3 of 4</div>
+    <h1 class="font-display text-5xl font-light leading-tight">Run settings</h1>
+    <p class="text-ink-soft mt-3 max-w-xl">A few choices about how the simulation runs. None of these change the policy — they shape the simulation itself.</p>
+  </div>
+
+  <div class="grid grid-cols-12 gap-8">
+    <!-- LEFT: settings -->
+    <div class="col-span-12 lg:col-span-8 space-y-6">
+
+      <!-- Timeline -->
+      <div class="bg-card border border-border rounded-xl p-8">
+        <div class="flex items-center justify-between mb-6">
+          <div>
+            <h3 class="font-display text-xl mb-1">Simulation timeline</h3>
+            <p class="text-sm text-ink-muted">Drag the handles to set implementation and maintenance phases.</p>
+          </div>
+          <div class="num text-sm">
+            <span class="text-ink-muted">Total:</span> <strong>4 years</strong>
+          </div>
+        </div>
+
+        <!-- Timeline visual -->
+        <div class="mb-3">
+          <div class="relative h-14 bg-paper-deep rounded-md overflow-hidden">
+            <!-- Implementation phase -->
+            <div class="absolute left-0 top-0 h-full bg-intervention/85 flex items-center justify-center text-paper text-xs" style="width: 75%;">
+              <div class="text-center leading-tight">
+                <div class="text-[10px] tracking-[0.15em] uppercase opacity-80">Implementation</div>
+                <div class="font-display text-lg leading-tight num">3 years</div>
+              </div>
+            </div>
+            <!-- Maintenance phase -->
+            <div class="absolute right-0 top-0 h-full bg-warning/70 flex items-center justify-center text-ink text-xs" style="width: 25%;">
+              <div class="text-center leading-tight">
+                <div class="text-[10px] tracking-[0.15em] uppercase opacity-80">Maintenance</div>
+                <div class="font-display text-lg leading-tight num">1 year</div>
+              </div>
+            </div>
+            <!-- Handle -->
+            <div class="absolute top-0 h-full w-1 bg-ink cursor-ew-resize" style="left: 75%;">
+              <div class="absolute -top-1 -left-2 w-5 h-5 bg-ink rounded-full"></div>
+            </div>
+          </div>
+          <!-- Tick marks -->
+          <div class="flex justify-between mt-2 num text-[10px] text-ink-muted">
+            <span>Month 0</span>
+            <span>Yr 1</span>
+            <span>Yr 2</span>
+            <span>Yr 3</span>
+            <span>Yr 4</span>
+          </div>
+        </div>
+
+        <div class="text-xs text-ink-muted leading-relaxed mt-4 pt-4 border-t border-border-soft">
+          During <strong>implementation</strong>, intervention coverage scales up linearly from baseline to target. During <strong>maintenance</strong>, coverage stays at target while the system finds its new equilibrium.
+        </div>
+      </div>
+
+      <!-- Run mode -->
+      <div class="bg-card border border-border rounded-xl p-8">
+        <h3 class="font-display text-xl mb-2">How thoroughly should the model run?</h3>
+        <p class="text-sm text-ink-muted mb-6">More simulation runs give you uncertainty bands and tighter estimates.</p>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- Quick -->
+          <label class="run-mode block cursor-pointer">
+            <input type="radio" name="runmode" class="sr-only peer" checked>
+            <div class="border-2 border-border peer-checked:border-ink peer-checked:bg-paper-deep/40 rounded-lg p-5 transition">
+              <div class="flex items-start justify-between mb-3">
+                <div class="font-display text-lg">Quick</div>
+                <div class="w-5 h-5 rounded-full border-2 border-ink relative">
+                  <div class="absolute inset-1 bg-ink rounded-full"></div>
+                </div>
+              </div>
+              <div class="text-2xl num mb-1">≈ 1 min</div>
+              <div class="text-xs text-ink-muted leading-relaxed">Single simulation. Good for exploring. No uncertainty bands.</div>
+            </div>
+          </label>
+          <!-- Robust -->
+          <label class="run-mode block cursor-pointer">
+            <input type="radio" name="runmode" class="sr-only peer">
+            <div class="border-2 border-border peer-checked:border-ink peer-checked:bg-paper-deep/40 rounded-lg p-5 transition">
+              <div class="flex items-start justify-between mb-3">
+                <div class="font-display text-lg">Robust</div>
+                <div class="w-5 h-5 rounded-full border-2 border-ink"></div>
+              </div>
+              <div class="text-2xl num mb-1">≈ 10 min</div>
+              <div class="text-xs text-ink-muted leading-relaxed">50 simulations with 95% uncertainty bands. Use before sharing findings.</div>
+            </div>
+          </label>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT: scenario recap + run button -->
+    <aside class="col-span-12 lg:col-span-4">
+      <div class="sticky top-24 bg-ink text-paper rounded-xl p-7">
+        <div class="text-[10px] tracking-[0.2em] text-paper/50 uppercase mb-3">Ready to run</div>
+        <h3 class="font-display text-2xl leading-tight mb-5">Scenario summary</h3>
+
+        <dl class="space-y-3.5 text-sm mb-6">
+          <div class="flex justify-between gap-4 pb-2 border-b border-paper/15">
+            <dt class="text-paper/60">Health system</dt>
+            <dd class="text-right">Intensive</dd>
+          </div>
+          <div class="flex justify-between gap-4 pb-2 border-b border-paper/15">
+            <dt class="text-paper/60">Treatments</dt>
+            <dd class="text-right text-paper/40">— not active</dd>
+          </div>
+          <div class="flex justify-between gap-4 pb-2 border-b border-paper/15">
+            <dt class="text-paper/60">Community</dt>
+            <dd class="text-right text-paper/40">— not active</dd>
+          </div>
+          <div class="flex justify-between gap-4 pb-2 border-b border-paper/15">
+            <dt class="text-paper/60">Timeline</dt>
+            <dd class="text-right num">3 + 1 yrs</dd>
+          </div>
+          <div class="flex justify-between gap-4">
+            <dt class="text-paper/60">Mode</dt>
+            <dd class="text-right">Quick</dd>
+          </div>
+        </dl>
+
+        <button onclick="goto('results')" class="w-full py-4 bg-accent hover:bg-accent/90 transition text-paper rounded-md font-medium flex items-center justify-center gap-2 mb-3">
+          Run simulation
+          <span class="text-lg">▸</span>
+        </button>
+        <button onclick="goto('design')" class="w-full py-2 text-paper/60 hover:text-paper text-xs">
+          ← Adjust scenario
+        </button>
+      </div>
+    </aside>
+  </div>
+
+</section>
+
+
+<!-- =================================================== -->
+<!-- ============== SCREEN 4: RESULTS ================== -->
+<!-- =================================================== -->
+<section id="screen-results" class="screen">
+
+  <!-- Header -->
+  <div class="flex items-end justify-between mb-10 pb-8 border-b border-border gap-6 flex-wrap">
+    <div>
+      <div class="text-[11px] tracking-[0.2em] text-ink-muted uppercase mb-3 flex items-center gap-3 flex-wrap">
+        <span>Step 3 of 3</span>
+        <span class="text-ink-muted">·</span>
+        <span class="text-positive flex items-center gap-1">
+          <span class="w-1.5 h-1.5 rounded-full bg-positive inline-block"></span>
+          Run complete · 47s
+        </span>
+      </div>
+      <h1 class="font-display text-5xl font-light leading-tight">Results</h1>
+      <p class="text-ink-soft mt-3 max-w-2xl">
+        <em>HSS Intensive</em> compared to baseline (no intervention), over <span class="num">4 years</span>.
+      </p>
+    </div>
+    <div class="flex items-center gap-2 flex-wrap justify-end">
+      <button onclick="goto('start')" class="text-xs text-ink-muted hover:text-ink underline mr-2">← Try a different starting point</button>
+      <button class="px-3 py-2 border border-border rounded-md text-sm hover:bg-paper-deep">↓ Download data</button>
+      <button onclick="document.getElementById('shareModal').classList.remove('hidden')" class="px-3 py-2 border border-border rounded-md text-sm hover:bg-paper-deep">Share</button>
+      <button onclick="goto('design')" class="px-3 py-2 bg-ink text-paper rounded-md text-sm">Adjust scenario</button>
+    </div>
+  </div>
+
+  <!-- Assumptions & choices callout -->
+  <div class="mb-8 bg-paper-deep/40 border-l-4 border-accent rounded-r-lg px-6 py-4 flex items-start gap-4">
+    <div class="text-[10px] tracking-[0.18em] text-accent uppercase shrink-0 mt-1">Your choices</div>
+    <div class="flex-1 text-sm leading-relaxed text-ink-soft">
+      <span class="text-ink font-medium">You ran:</span>
+      <span class="px-2 py-0.5 mx-0.5 bg-intervention-soft text-intervention rounded text-[12px]">HSS · Intensive</span>
+      with these treatments selected:
+      <span class="px-2 py-0.5 mx-0.5 bg-intervention-soft text-intervention rounded text-[12px]">Iron folate</span>
+      <span class="px-2 py-0.5 mx-0.5 bg-intervention-soft text-intervention rounded text-[12px]">PPH bundle</span>
+      <span class="px-2 py-0.5 mx-0.5 bg-intervention-soft text-intervention rounded text-[12px]">MgSO4</span>
+      · Community pillar
+      <span class="px-2 py-0.5 mx-0.5 bg-paper-deep text-ink-muted rounded text-[12px]">not active</span>
+      <button onclick="goto('design')" class="ml-2 text-accent hover:text-accent/80 underline text-xs">Change →</button>
+    </div>
+  </div>
+
+  <!-- Narrative summary -->
+  <div class="mb-12 grid grid-cols-12 gap-8 bg-card border border-border rounded-xl p-8">
+    <div class="col-span-12 lg:col-span-3">
+      <div class="text-[10px] tracking-[0.2em] text-accent uppercase mb-2">In plain English</div>
+      <h2 class="font-display text-2xl leading-tight">What this run is saying.</h2>
+    </div>
+    <div class="col-span-12 lg:col-span-9 text-[17px] leading-relaxed font-display font-light text-ink-soft">
+      Over four years, this scenario averts an estimated
+      <span class="text-ink font-medium num">142 maternal deaths</span> — about
+      <span class="editorial-underline">a 28% reduction in maternal mortality</span> compared to the status quo.
+      Coverage of <em>4+ ANC visits</em> rises from <span class="num">56%</span> to <span class="num">82%</span>; deliveries at L4/5 facilities climb from <span class="num">39%</span> to <span class="num">68%</span>. Facility capacity is moderately strained around month 18. Cumulative cost reaches <span class="num">USD 4.1M</span>, or about
+      <span class="text-ink font-medium num">USD 487 per DALY averted</span> — well below WHO cost-effective thresholds for Kenya.
+    </div>
+  </div>
+
+  <!-- ====== KPI tiles ====== -->
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-16">
+    <div class="bg-card border border-border rounded-lg p-6">
+      <div class="text-[10px] tracking-[0.18em] text-ink-muted uppercase mb-3">Maternal deaths averted</div>
+      <div class="flex items-baseline justify-between">
+        <div class="font-display text-5xl font-light num">142</div>
+        <div class="text-sm text-positive flex items-center gap-1">
+          <span>▼</span><span class="num">28%</span>
+        </div>
+      </div>
+      <div class="text-xs text-ink-muted mt-2 num">vs baseline · over 4 yrs</div>
+    </div>
+
+    <div class="bg-card border border-border rounded-lg p-6">
+      <div class="text-[10px] tracking-[0.18em] text-ink-muted uppercase mb-3">Severe maternal outcomes averted</div>
+      <div class="flex items-baseline justify-between">
+        <div class="font-display text-5xl font-light num">418</div>
+        <div class="text-sm text-positive flex items-center gap-1">
+          <span>▼</span><span class="num">22%</span>
+        </div>
+      </div>
+      <div class="text-xs text-ink-muted mt-2 num">vs baseline · over 4 yrs</div>
+    </div>
+
+    <div class="bg-card border border-border rounded-lg p-6">
+      <div class="text-[10px] tracking-[0.18em] text-ink-muted uppercase mb-3">DALYs averted</div>
+      <div class="flex items-baseline justify-between">
+        <div class="font-display text-5xl font-light num">8,420</div>
+        <div class="text-sm text-positive flex items-center gap-1">
+          <span>▲</span><span>strong</span>
+        </div>
+      </div>
+      <div class="text-xs text-ink-muted mt-2"><span class="has-tip num" data-tip="Disability-Adjusted Life Years — measures both mortality and disability burden">DALYs</span> · cumulative</div>
+    </div>
+
+    <div class="bg-card border-2 border-accent rounded-lg p-6">
+      <div class="text-[10px] tracking-[0.18em] text-accent uppercase mb-3">Cost per DALY averted</div>
+      <div class="flex items-baseline justify-between">
+        <div class="font-display text-5xl font-light num">$487</div>
+        <div class="text-sm text-positive">very cost-effective</div>
+      </div>
+      <div class="text-xs text-ink-muted mt-2 num">WHO threshold (Kenya): ≈ $2,150</div>
+    </div>
+  </div>
+
+
+  <!-- =================================================== -->
+  <!--  INDICATORS DRAWER — collapsible, default closed    -->
+  <!-- =================================================== -->
+  <details class="mb-16 bg-card border border-border rounded-xl overflow-hidden group">
+    <summary class="px-7 py-4 cursor-pointer hover:bg-paper-deep/40 flex items-center justify-between transition list-none">
+      <div class="flex items-center gap-4">
+        <span class="text-ink-muted text-sm transition group-open:rotate-180">▾</span>
+        <div>
+          <div class="flex items-center gap-3">
+            <span class="text-[10px] tracking-[0.18em] text-ink-muted uppercase font-medium">Customize</span>
+            <span class="font-display text-lg">Indicators shown</span>
+            <span class="num text-[11px] px-2 py-0.5 bg-ink text-paper rounded-md">9 of 14 selected</span>
+          </div>
+          <div class="text-[11px] text-ink-muted mt-0.5">Grouped into supply, demand, process, and outcome domains. Click to expand and customize.</div>
+        </div>
+      </div>
+      <span class="text-[11px] text-ink-muted italic">click to {open ? 'collapse' : 'expand'}</span>
+    </summary>
+
+    <div class="border-t border-border-soft">
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-border-soft">
+
+        <!-- Supply Side -->
+        <div class="p-5">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="w-2 h-2 bg-intervention rounded-full"></span>
+            <h4 class="text-[10px] tracking-[0.2em] text-intervention uppercase font-medium">Supply Side</h4>
+          </div>
+          <p class="text-[10px] text-ink-muted mb-4">HSS Intensive</p>
+          <ul class="space-y-2 text-sm">
+            <li><label class="flex items-center gap-2 cursor-pointer group"><input type="checkbox" checked class="accent-intervention w-3.5 h-3.5"><span class="group-hover:text-ink">Facility capacity</span></label></li>
+            <li><label class="flex items-center gap-2 cursor-pointer group"><input type="checkbox" checked class="accent-intervention w-3.5 h-3.5"><span class="group-hover:text-ink">Equipment capacity</span></label></li>
+            <li><label class="flex items-center gap-2 cursor-pointer group"><input type="checkbox" checked class="accent-intervention w-3.5 h-3.5"><span class="group-hover:text-ink">Supply capacity</span></label></li>
+          </ul>
+        </div>
+
+        <!-- Demand Side -->
+        <div class="p-5">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="w-2 h-2 bg-warning rounded-full"></span>
+            <h4 class="text-[10px] tracking-[0.2em] text-warning uppercase font-medium">Demand Side</h4>
+          </div>
+          <p class="text-[10px] text-ink-muted mb-4">Treatments Light</p>
+          <ul class="space-y-2 text-sm">
+            <li><label class="flex items-center gap-2 cursor-pointer group"><input type="checkbox" checked class="w-3.5 h-3.5" style="accent-color:#B68B3E"><span class="group-hover:text-ink">Delivery location</span></label></li>
+            <li><label class="flex items-center gap-2 cursor-pointer group"><input type="checkbox" checked class="w-3.5 h-3.5" style="accent-color:#B68B3E"><span class="group-hover:text-ink">4+ ANC rate</span></label></li>
+          </ul>
+        </div>
+
+        <!-- Process -->
+        <div class="p-5">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="w-2 h-2 bg-accent rounded-full"></span>
+            <h4 class="text-[10px] tracking-[0.2em] text-accent uppercase font-medium">Process</h4>
+          </div>
+          <p class="text-[10px] text-ink-muted mb-4">MOMISH off (not in this scenario)</p>
+          <ul class="space-y-2 text-sm">
+            <li><label class="flex items-center gap-2 cursor-pointer group"><input type="checkbox" checked class="w-3.5 h-3.5" style="accent-color:#B5471F"><span class="group-hover:text-ink">ANC rate</span></label></li>
+            <li><label class="flex items-center gap-2 cursor-pointer group"><input type="checkbox" class="w-3.5 h-3.5" style="accent-color:#B5471F"><span class="group-hover:text-ink text-ink-soft">C-section rate</span></label></li>
+            <li><label class="flex items-center gap-2 cursor-pointer group"><input type="checkbox" class="w-3.5 h-3.5" style="accent-color:#B5471F"><span class="group-hover:text-ink text-ink-soft">Normal referral</span></label></li>
+            <li><label class="flex items-center gap-2 cursor-pointer group"><input type="checkbox" class="w-3.5 h-3.5" style="accent-color:#B5471F"><span class="group-hover:text-ink text-ink-soft">Emergency transfer</span></label></li>
+            <li><label class="flex items-center gap-2 cursor-pointer group"><input type="checkbox" class="w-3.5 h-3.5" style="accent-color:#B5471F"><span class="group-hover:text-ink text-ink-soft">High-risk pregnancy</span></label></li>
+          </ul>
+        </div>
+
+        <!-- Key Outcomes -->
+        <div class="p-5 bg-paper/30">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="w-2 h-2 bg-ink rounded-full"></span>
+            <h4 class="text-[10px] tracking-[0.2em] text-ink uppercase font-medium">Key Outcomes</h4>
+          </div>
+          <p class="text-[10px] text-ink-muted mb-4">always available</p>
+          <ul class="space-y-2 text-sm">
+            <li><label class="flex items-center gap-2 cursor-pointer group"><input type="checkbox" checked class="accent-ink w-3.5 h-3.5"><span class="group-hover:text-ink">Maternal mortality</span></label></li>
+            <li><label class="flex items-center gap-2 cursor-pointer group"><input type="checkbox" checked class="accent-ink w-3.5 h-3.5"><span class="group-hover:text-ink">Cost-effectiveness</span></label></li>
+            <li><label class="flex items-center gap-2 cursor-pointer group"><input type="checkbox" checked class="accent-ink w-3.5 h-3.5"><span class="group-hover:text-ink">DALYs averted</span></label></li>
+            <li><label class="flex items-center gap-2 cursor-pointer group"><input type="checkbox" class="accent-ink w-3.5 h-3.5"><span class="group-hover:text-ink text-ink-soft">Maternal complication rate</span></label></li>
+            <li><label class="flex items-center gap-2 cursor-pointer group"><input type="checkbox" class="accent-ink w-3.5 h-3.5"><span class="group-hover:text-ink text-ink-soft">Severe maternal outcomes</span></label></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="px-7 py-3 bg-paper/40 border-t border-border-soft flex items-center justify-between flex-wrap gap-3">
+        <div class="flex items-center gap-2">
+          <button class="text-[12px] text-ink-soft hover:text-ink px-2 py-1">Select essentials</button>
+          <span class="text-ink-muted">·</span>
+          <button class="text-[12px] text-ink-soft hover:text-ink px-2 py-1">Select all available</button>
+          <span class="text-ink-muted">·</span>
+          <button class="text-[12px] text-accent hover:underline px-2 py-1 font-medium">defaults</button>
+        </div>
+        <div class="text-[11px] text-ink-muted flex items-center gap-4">
+          <span class="flex items-center gap-1.5"><input type="checkbox" checked class="w-3 h-3" disabled> selected</span>
+          <span class="flex items-center gap-1.5"><input type="checkbox" class="w-3 h-3" disabled> not shown</span>
+        </div>
+      </div>
+    </div>
+  </details>
+
+
+  <!-- =================================================== -->
+  <!--  Story 5: Is it worth it?  (Story 01 — hero layout) -->
+  <!-- =================================================== -->
+  <section class="mb-20">
+    <div class="flex items-center gap-2 mb-3 flex-wrap">
+      <span class="text-[10px] tracking-[0.2em] text-accent uppercase">Story 01</span>
+      <span class="text-[10px] px-2 py-0.5 bg-ink text-paper rounded font-medium">Cross-cutting</span>
+    </div>
+    <h2 class="font-display text-4xl lg:text-5xl leading-tight mb-4 font-light">Is it worth it?</h2>
+
+    <!-- Hero stat callout -->
+    <div class="bg-ink text-paper rounded-2xl p-10 mb-8">
+      <div class="grid grid-cols-12 gap-8 items-end">
+        <div class="col-span-12 lg:col-span-7">
+          <div class="text-[11px] tracking-[0.2em] uppercase opacity-60 mb-4">The bottom line</div>
+          <div class="font-display text-[80px] lg:text-[112px] leading-none font-light mb-3 num">$487</div>
+          <div class="font-display text-xl opacity-80 leading-relaxed max-w-md">
+            <em>per DALY averted</em> — about <span class="num">¼</span> of Kenya's WHO cost-effective threshold.
+          </div>
+        </div>
+        <div class="col-span-12 lg:col-span-5">
+          <!-- Threshold gauge -->
+          <div class="space-y-3">
+            <div class="text-[10px] tracking-[0.18em] uppercase opacity-60">Cost-effectiveness benchmark</div>
+            <div class="relative h-3 rounded-full overflow-hidden bg-paper/15">
+              <div class="absolute left-0 top-0 h-full bg-positive" style="width: 22.6%"></div>
+              <!-- WHO threshold marker -->
+              <div class="absolute top-0 h-full w-0.5 bg-warning" style="left: 100%"></div>
+            </div>
+            <div class="flex justify-between text-[10px] num opacity-70">
+              <span>$0</span>
+              <span class="text-positive">$487 · this run</span>
+              <span class="text-warning">$2,150 WHO</span>
+            </div>
+            <div class="pt-4 mt-4 border-t border-paper/15 text-sm opacity-80 leading-relaxed">
+              Across 4 years, the scenario delivers <span class="font-medium">8,420 DALYs averted</span> at a cumulative cost of <span class="num font-medium">$4.1M</span>.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Supporting detail: trajectory + composition -->
+    <div class="grid grid-cols-12 gap-6">
+      <div class="col-span-12 lg:col-span-7 bg-card border border-border rounded-lg p-6">
+        <div class="flex items-center justify-between mb-4">
+          <h4 class="font-display text-base">Cost per DALY · over time</h4>
+          <span class="text-[10px] text-ink-muted italic">descending, plateaus at month 24</span>
+        </div>
+        <svg viewBox="0 0 480 180" class="w-full h-auto">
+          <g class="num" font-family="Instrument Sans" font-size="9" fill="#7E7464">
+            <line x1="40" y1="30" x2="470" y2="30" class="chart-grid"/>
+            <line x1="40" y1="60" x2="470" y2="60" stroke="#B5471F" stroke-width="0.5" stroke-dasharray="3 3"/>
+            <line x1="40" y1="100" x2="470" y2="100" class="chart-grid"/>
+            <line x1="40" y1="150" x2="470" y2="150" class="chart-grid"/>
+            <text x="35" y="33" text-anchor="end">$2,500</text>
+            <text x="35" y="63" text-anchor="end" fill="#B5471F">$2,150</text>
+            <text x="35" y="103" text-anchor="end">$1,000</text>
+            <text x="35" y="153" text-anchor="end">$500</text>
+          </g>
+          <text x="470" y="56" font-family="Instrument Sans" font-size="9" fill="#B5471F" text-anchor="end">WHO Kenya threshold</text>
+          <path d="M 40 40 Q 100 140 200 150 T 470 152" fill="none" stroke="#2E5F5C" stroke-width="2.2"/>
+          <circle cx="470" cy="152" r="3" fill="#2E5F5C"/>
+          <text x="465" y="148" text-anchor="end" font-family="Fraunces" font-style="italic" font-size="11" fill="#1C1A15">$487</text>
+        </svg>
+      </div>
+
+      <div class="col-span-12 lg:col-span-5 bg-card border border-border rounded-lg p-6">
+        <h4 class="font-display text-base mb-4">Cost composition · $4.1M total</h4>
+        <div class="space-y-2 mb-4">
+          <div class="flex h-7 rounded-md overflow-hidden text-[10px] text-paper">
+            <div style="width: 32%" class="bg-intervention flex items-center justify-center">CHV/ANC</div>
+            <div style="width: 25%" class="bg-intervention/85 flex items-center justify-center">Facility</div>
+            <div style="width: 18%" class="bg-intervention/70 flex items-center justify-center">Staff</div>
+            <div style="width: 14%" class="bg-warning flex items-center justify-center">Drugs</div>
+            <div style="width: 11%" class="bg-accent flex items-center justify-center">Other</div>
+          </div>
+        </div>
+        <ul class="space-y-1.5 text-xs">
+          <li class="flex justify-between"><span class="flex items-center gap-1.5"><span class="w-2 h-2 bg-intervention rounded-sm"></span>CHV / ANC</span><span class="num">$1.31M</span></li>
+          <li class="flex justify-between"><span class="flex items-center gap-1.5"><span class="w-2 h-2 bg-intervention/85 rounded-sm"></span>Facility upgrades</span><span class="num">$1.03M</span></li>
+          <li class="flex justify-between"><span class="flex items-center gap-1.5"><span class="w-2 h-2 bg-intervention/70 rounded-sm"></span>Staffing</span><span class="num">$0.74M</span></li>
+          <li class="flex justify-between"><span class="flex items-center gap-1.5"><span class="w-2 h-2 bg-warning rounded-sm"></span>Drugs</span><span class="num">$0.57M</span></li>
+          <li class="flex justify-between"><span class="flex items-center gap-1.5"><span class="w-2 h-2 bg-accent rounded-sm"></span>Other</span><span class="num">$0.45M</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- =================================================== -->
+  <!--  Story 2: What happened to mothers?                -->
+  <!-- =================================================== -->
+  <section class="mb-20">
+    <div class="grid grid-cols-12 gap-8">
+      <div class="col-span-12 lg:col-span-3">
+        <div class="flex items-center gap-2 mb-3 flex-wrap">
+          <span class="text-[10px] tracking-[0.2em] text-accent uppercase">Story 02</span>
+          <span class="text-[10px] px-2 py-0.5 bg-ink text-paper rounded font-medium">Cross-cutting</span>
+          <span class="text-[10px] px-2 py-0.5 bg-warning/20 text-warning rounded font-medium">+ Treatments</span>
+        </div>
+        <h2 class="font-display text-3xl leading-tight mb-3">What happened to mothers?</h2>
+        <p class="text-sm text-ink-soft leading-relaxed">
+          Maternal mortality and complication rates fall steadily. The biggest gains come from reduced postpartum haemorrhage and eclampsia deaths.
+        </p>
+        <div class="mt-5 p-3 bg-paper-deep/60 rounded text-[11px] text-ink-soft leading-relaxed">
+          <strong class="text-ink">How to read these charts:</strong> the left chart tracks the death rate over time — the shaded band is the 95% uncertainty range. The right chart breaks cumulative deaths by cause; longer gray bars mean more baseline deaths, shorter teal bars mean the intervention prevented more.
+        </div>
+      </div>
+      <div class="col-span-12 lg:col-span-9 grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <!-- Mortality over time -->
+        <div class="bg-card border border-border rounded-lg p-6">
+          <h4 class="font-display text-base mb-4">Maternal mortality rate · per 100k live births</h4>
+          <svg viewBox="0 0 360 200" class="w-full h-auto">
+            <g class="num" font-family="Instrument Sans" font-size="9" fill="#7E7464">
+              <line x1="40" y1="20" x2="350" y2="20" class="chart-grid"/>
+              <line x1="40" y1="70" x2="350" y2="70" class="chart-grid"/>
+              <line x1="40" y1="120" x2="350" y2="120" class="chart-grid"/>
+              <line x1="40" y1="170" x2="350" y2="170" class="chart-grid"/>
+              <text x="35" y="23" text-anchor="end">600</text>
+              <text x="35" y="73" text-anchor="end">450</text>
+              <text x="35" y="123" text-anchor="end">300</text>
+              <text x="35" y="173" text-anchor="end">150</text>
+            </g>
+            <line x1="40" y1="180" x2="350" y2="180" stroke="#1C1A15" stroke-width="0.5"/>
+
+            <!-- Baseline -->
+            <path d="M 40 50 L 100 55 L 160 53 L 220 56 L 280 54 L 350 58" fill="none" stroke="#9C9082" stroke-width="2"/>
+            <!-- Intervention -->
+            <path d="M 40 50 Q 100 60 160 90 T 280 130 L 350 138" fill="none" stroke="#2E5F5C" stroke-width="2.2"/>
+            <!-- Ribbon (uncertainty) -->
+            <path d="M 40 50 Q 100 50 160 80 T 280 120 L 350 128 L 350 148 Q 280 140 160 100 T 40 50 Z" fill="#2E5F5C" class="ribbon-fill"/>
+
+            <!-- Labels -->
+            <text x="340" y="62" font-family="Instrument Sans" font-size="9" fill="#9C9082" text-anchor="end">baseline 530</text>
+            <text x="340" y="148" font-family="Instrument Sans" font-size="9" fill="#2E5F5C" text-anchor="end">intervention 381</text>
+            <text x="40" y="195" font-family="Instrument Sans" font-size="9" fill="#7E7464">M 0</text>
+            <text x="350" y="195" font-family="Instrument Sans" font-size="9" fill="#7E7464" text-anchor="end">M 48</text>
+          </svg>
+        </div>
+
+        <!-- Complications breakdown -->
+        <div class="bg-card border border-border rounded-lg p-6">
+          <h4 class="font-display text-base mb-4">Deaths by cause · cumulative over 4 years</h4>
+          <div class="space-y-3.5 text-sm">
+            <!-- Row template: cause | baseline bar | intervention bar | change -->
+            <div>
+              <div class="flex items-baseline justify-between mb-1.5">
+                <span class="text-ink">Postpartum haemorrhage</span>
+                <span class="text-positive num text-xs">−41 (−34%)</span>
+              </div>
+              <div class="relative h-2 bg-paper-deep rounded-full">
+                <div class="absolute left-0 top-0 h-full bg-baseline rounded-full" style="width: 78%"></div>
+                <div class="absolute left-0 top-0 h-full bg-intervention rounded-full" style="width: 51%"></div>
+              </div>
+            </div>
+            <div>
+              <div class="flex items-baseline justify-between mb-1.5">
+                <span class="text-ink">Eclampsia</span>
+                <span class="text-positive num text-xs">−28 (−42%)</span>
+              </div>
+              <div class="relative h-2 bg-paper-deep rounded-full">
+                <div class="absolute left-0 top-0 h-full bg-baseline rounded-full" style="width: 55%"></div>
+                <div class="absolute left-0 top-0 h-full bg-intervention rounded-full" style="width: 32%"></div>
+              </div>
+            </div>
+            <div>
+              <div class="flex items-baseline justify-between mb-1.5">
+                <span class="text-ink">Maternal sepsis</span>
+                <span class="text-positive num text-xs">−19 (−31%)</span>
+              </div>
+              <div class="relative h-2 bg-paper-deep rounded-full">
+                <div class="absolute left-0 top-0 h-full bg-baseline rounded-full" style="width: 48%"></div>
+                <div class="absolute left-0 top-0 h-full bg-intervention rounded-full" style="width: 33%"></div>
+              </div>
+            </div>
+            <div>
+              <div class="flex items-baseline justify-between mb-1.5">
+                <span class="text-ink">Obstructed labor</span>
+                <span class="text-positive num text-xs">−24 (−27%)</span>
+              </div>
+              <div class="relative h-2 bg-paper-deep rounded-full">
+                <div class="absolute left-0 top-0 h-full bg-baseline rounded-full" style="width: 65%"></div>
+                <div class="absolute left-0 top-0 h-full bg-intervention rounded-full" style="width: 47%"></div>
+              </div>
+            </div>
+            <div>
+              <div class="flex items-baseline justify-between mb-1.5">
+                <span class="text-ink-muted">Other / unclassified</span>
+                <span class="text-ink-muted num text-xs">−30 (−12%)</span>
+              </div>
+              <div class="relative h-2 bg-paper-deep rounded-full">
+                <div class="absolute left-0 top-0 h-full bg-baseline rounded-full" style="width: 90%"></div>
+                <div class="absolute left-0 top-0 h-full bg-intervention rounded-full" style="width: 79%"></div>
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-4 mt-5 pt-4 border-t border-border-soft text-[11px] text-ink-muted">
+            <span class="flex items-center gap-1.5"><span class="w-3 h-2 bg-baseline rounded-sm"></span>Baseline</span>
+            <span class="flex items-center gap-1.5"><span class="w-3 h-2 bg-intervention rounded-sm"></span>With intervention</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- =================================================== -->
+  <!--  Story 1: Where are women giving birth?            -->
+  <!-- =================================================== -->
+  <section class="mb-20">
+    <div class="grid grid-cols-12 gap-8 mb-8">
+      <div class="col-span-12 lg:col-span-3">
+        <div class="flex items-center gap-2 mb-3 flex-wrap">
+          <span class="text-[10px] tracking-[0.2em] text-accent uppercase">Story 03</span>
+          <span class="text-[10px] px-2 py-0.5 bg-intervention-soft text-intervention rounded font-medium">From HSS</span>
+        </div>
+        <h2 class="font-display text-3xl leading-tight mb-3">Where are women giving birth?</h2>
+        <p class="text-sm text-ink-soft leading-relaxed">
+          The strategy succeeds in shifting deliveries from home and small clinics (L2/3) to higher-level facilities (L4/5) — exactly where complications can be managed.
+        </p>
+        <div class="mt-5 p-3 bg-intervention-soft/60 rounded text-[11px] text-intervention leading-relaxed">
+          <strong>Why this matters:</strong> Most maternal complications are survivable at L4/5 but not at home or L2/3. Shifting delivery location is the single highest-leverage outcome of HSS.
+        </div>
+      </div>
+      <div class="col-span-12 lg:col-span-9">
+        <div class="bg-card border border-border rounded-lg p-6">
+          <div class="flex items-center justify-between mb-4">
+            <h4 class="font-display text-base">Delivery location, share of births over time</h4>
+            <div class="flex items-center gap-4 text-[11px]">
+              <span class="flex items-center gap-1.5"><span class="w-3 h-2 bg-baseline rounded-sm"></span>Baseline</span>
+              <span class="flex items-center gap-1.5"><span class="w-3 h-2 bg-intervention rounded-sm"></span>Intervention</span>
+            </div>
+          </div>
+
+          <!-- Stacked area chart (simplified, SVG) -->
+          <svg viewBox="0 0 720 260" class="w-full h-auto" preserveAspectRatio="xMidYMid meet">
+            <!-- Y-axis ticks -->
+            <g class="num" font-family="Instrument Sans" font-size="10" fill="#7E7464">
+              <line x1="60" y1="20" x2="700" y2="20" class="chart-grid"/>
+              <line x1="60" y1="80" x2="700" y2="80" class="chart-grid"/>
+              <line x1="60" y1="140" x2="700" y2="140" class="chart-grid"/>
+              <line x1="60" y1="200" x2="700" y2="200" class="chart-grid"/>
+              <text x="50" y="24" text-anchor="end">100%</text>
+              <text x="50" y="84" text-anchor="end">75%</text>
+              <text x="50" y="144" text-anchor="end">50%</text>
+              <text x="50" y="204" text-anchor="end">25%</text>
+              <text x="50" y="234" text-anchor="end">0%</text>
+            </g>
+            <!-- X axis -->
+            <line x1="60" y1="230" x2="700" y2="230" stroke="#1C1A15" stroke-width="0.5"/>
+            <g font-family="Instrument Sans" font-size="10" fill="#7E7464">
+              <text x="60" y="248">Month 0</text>
+              <text x="220" y="248">12</text>
+              <text x="380" y="248">24</text>
+              <text x="540" y="248">36</text>
+              <text x="680" y="248" text-anchor="end">48</text>
+            </g>
+
+            <!-- L2/3 baseline (top, declining a little) — area from top -->
+            <path d="M 60 80 Q 200 85 380 90 T 700 100 L 700 20 L 60 20 Z" fill="#9C9082" opacity="0.25"/>
+            <!-- L4 baseline -->
+            <path d="M 60 145 Q 220 148 380 150 T 700 155 L 700 80 L 60 80 Z" fill="#9C9082" opacity="0.4"/>
+            <!-- L5 baseline -->
+            <path d="M 60 230 L 700 230 L 700 155 Q 540 153 380 150 T 60 145 Z" fill="#9C9082" opacity="0.55"/>
+
+            <!-- Intervention overlay lines (showing shift) -->
+            <!-- L4/5 share rising -->
+            <path d="M 60 145 Q 220 130 380 105 T 700 78" fill="none" stroke="#2E5F5C" stroke-width="2.2"/>
+            <!-- Home/L2/3 share falling -->
+            <path d="M 60 80 Q 220 95 380 110 T 700 130" fill="none" stroke="#2E5F5C" stroke-width="2.2" stroke-dasharray="4 3"/>
+
+            <!-- Annotation -->
+            <line x1="600" y1="78" x2="640" y2="60" stroke="#1C1A15" stroke-width="0.5"/>
+            <text x="645" y="58" font-family="Fraunces" font-size="11" font-style="italic" fill="#1C1A15">L4/5 = 68%</text>
+            <text x="645" y="71" font-family="Instrument Sans" font-size="9" fill="#7E7464">end state</text>
+
+            <!-- Section labels (inside areas) -->
+            <text x="380" y="55" text-anchor="middle" font-family="Instrument Sans" font-size="10" fill="#7E7464" letter-spacing="1">L 2/3 + HOME</text>
+            <text x="380" y="120" text-anchor="middle" font-family="Instrument Sans" font-size="10" fill="#7E7464" letter-spacing="1">LEVEL 4</text>
+            <text x="380" y="195" text-anchor="middle" font-family="Instrument Sans" font-size="10" fill="#7E7464" letter-spacing="1">LEVEL 5</text>
+
+            <!-- Phase divider -->
+            <line x1="540" y1="20" x2="540" y2="230" stroke="#1C1A15" stroke-width="0.3" stroke-dasharray="2 4" opacity="0.5"/>
+            <text x="544" y="32" font-family="Instrument Sans" font-size="9" fill="#7E7464" letter-spacing="1.5">MAINTENANCE →</text>
+          </svg>
+
+          <p class="text-xs text-ink-muted mt-4 leading-relaxed">
+            Solid line = intervention's L4/5 share; dashed = home/L2/3 share. Gray = baseline trajectory.
+          </p>
+          <div class="mt-4 pt-4 border-t border-border-soft flex gap-4">
+            <div class="text-[11px] leading-relaxed">
+              <strong class="text-ink">How to read it:</strong>
+              <span class="text-ink-muted">The wider the gap between teal (intervention) and gray (baseline) at month 48, the more deliveries the policy has moved upward. By the end, L4/5 share is <strong class="num text-ink">68%</strong> vs <strong class="num text-ink">39%</strong> at baseline — a <strong class="num text-positive">29-point shift</strong>.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Small multiples by SES -->
+    <div class="grid grid-cols-12 gap-8 mt-6">
+      <div class="col-span-12 lg:col-span-3"></div>
+      <div class="col-span-12 lg:col-span-9 grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="bg-card border border-border rounded-lg p-5">
+          <div class="text-[10px] tracking-[0.18em] text-ink-muted uppercase mb-2">Lower-SES mothers</div>
+          <div class="flex items-baseline gap-3 mb-3">
+            <span class="font-display text-3xl num">+34%</span>
+            <span class="text-xs text-ink-muted">L4/5 deliveries</span>
+          </div>
+          <!-- mini bar chart -->
+          <svg viewBox="0 0 240 50" class="w-full h-12">
+            <rect x="0" y="20" width="80" height="20" fill="#9C9082" opacity="0.5"/>
+            <rect x="0" y="20" width="148" height="20" fill="#2E5F5C"/>
+            <text x="84" y="34" font-family="Instrument Sans" font-size="10" fill="#7E7464">baseline</text>
+            <text x="152" y="34" font-family="Instrument Sans" font-size="10" fill="#F6F3ED">intervention</text>
+          </svg>
+        </div>
+        <div class="bg-card border border-border rounded-lg p-5">
+          <div class="text-[10px] tracking-[0.18em] text-ink-muted uppercase mb-2">Higher-SES mothers</div>
+          <div class="flex items-baseline gap-3 mb-3">
+            <span class="font-display text-3xl num">+12%</span>
+            <span class="text-xs text-ink-muted">L4/5 deliveries</span>
+          </div>
+          <svg viewBox="0 0 240 50" class="w-full h-12">
+            <rect x="0" y="20" width="155" height="20" fill="#9C9082" opacity="0.5"/>
+            <rect x="0" y="20" width="190" height="20" fill="#2E5F5C"/>
+            <text x="159" y="34" font-family="Instrument Sans" font-size="10" fill="#7E7464">baseline</text>
+            <text x="194" y="34" font-family="Instrument Sans" font-size="10" fill="#F6F3ED">int.</text>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== NEW VIZ: Mother's pathway comparison ===== -->
+    <div class="grid grid-cols-12 gap-8 mt-6">
+      <div class="col-span-12 lg:col-span-3">
+        <h4 class="font-display text-lg leading-tight mb-2">The 1,000-mother pathway</h4>
+        <p class="text-xs text-ink-soft leading-relaxed">
+          A cohort of 1,000 pregnant women traced through the system stage by stage. Compare baseline to intervention to see exactly where each stage's gains come from.
+        </p>
+      </div>
+      <div class="col-span-12 lg:col-span-9 bg-card border border-border rounded-lg p-7">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-4">
+
+          <!-- BASELINE column -->
+          <div>
+            <div class="flex items-center gap-2 mb-5">
+              <span class="w-2 h-2 bg-baseline rounded-full"></span>
+              <h5 class="text-[10px] tracking-[0.2em] text-ink-muted uppercase">Baseline · status quo</h5>
+            </div>
+            <div class="space-y-3.5">
+              <div>
+                <div class="flex items-baseline justify-between mb-1">
+                  <span class="text-xs">Receive 4+ ANC visits</span>
+                  <span class="num text-xs">560 / 1,000</span>
+                </div>
+                <div class="h-2.5 bg-paper-deep rounded-sm overflow-hidden"><div class="h-full bg-baseline" style="width: 56%"></div></div>
+              </div>
+              <div>
+                <div class="flex items-baseline justify-between mb-1">
+                  <span class="text-xs">Deliver at L4/5 facilities</span>
+                  <span class="num text-xs">390 / 1,000</span>
+                </div>
+                <div class="h-2.5 bg-paper-deep rounded-sm overflow-hidden"><div class="h-full bg-baseline" style="width: 39%"></div></div>
+              </div>
+              <div>
+                <div class="flex items-baseline justify-between mb-1">
+                  <span class="text-xs">Complications well-managed</span>
+                  <span class="num text-xs">240 / 1,000</span>
+                </div>
+                <div class="h-2.5 bg-paper-deep rounded-sm overflow-hidden"><div class="h-full bg-baseline" style="width: 24%"></div></div>
+              </div>
+              <div class="pt-3 mt-1 border-t border-border-soft">
+                <div class="flex items-baseline justify-between mb-1">
+                  <span class="text-sm font-medium">Mother & baby both survive</span>
+                  <span class="num text-sm">947 / 1,000</span>
+                </div>
+                <div class="h-2.5 bg-paper-deep rounded-sm overflow-hidden"><div class="h-full bg-baseline" style="width: 94.7%"></div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- INTERVENTION column -->
+          <div>
+            <div class="flex items-center gap-2 mb-5">
+              <span class="w-2 h-2 bg-intervention rounded-full"></span>
+              <h5 class="text-[10px] tracking-[0.2em] text-intervention uppercase">With intervention</h5>
+            </div>
+            <div class="space-y-3.5">
+              <div>
+                <div class="flex items-baseline justify-between mb-1">
+                  <span class="text-xs">Receive 4+ ANC visits</span>
+                  <span class="num text-xs"><span class="text-ink">820</span> <span class="text-positive">▲ +260</span></span>
+                </div>
+                <div class="h-2.5 bg-paper-deep rounded-sm overflow-hidden"><div class="h-full bg-intervention" style="width: 82%"></div></div>
+              </div>
+              <div>
+                <div class="flex items-baseline justify-between mb-1">
+                  <span class="text-xs">Deliver at L4/5 facilities</span>
+                  <span class="num text-xs"><span class="text-ink">680</span> <span class="text-positive">▲ +290</span></span>
+                </div>
+                <div class="h-2.5 bg-paper-deep rounded-sm overflow-hidden"><div class="h-full bg-intervention" style="width: 68%"></div></div>
+              </div>
+              <div>
+                <div class="flex items-baseline justify-between mb-1">
+                  <span class="text-xs">Complications well-managed</span>
+                  <span class="num text-xs"><span class="text-ink">520</span> <span class="text-positive">▲ +280</span></span>
+                </div>
+                <div class="h-2.5 bg-paper-deep rounded-sm overflow-hidden"><div class="h-full bg-intervention" style="width: 52%"></div></div>
+              </div>
+              <div class="pt-3 mt-1 border-t border-border-soft">
+                <div class="flex items-baseline justify-between mb-1">
+                  <span class="text-sm font-medium">Mother & baby both survive</span>
+                  <span class="num text-sm"><span class="text-ink">962</span> <span class="text-positive">▲ +15</span></span>
+                </div>
+                <div class="h-2.5 bg-paper-deep rounded-sm overflow-hidden"><div class="h-full bg-intervention" style="width: 96.2%"></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <p class="text-[11px] text-ink-muted mt-7 pt-4 border-t border-border-soft leading-relaxed">
+          <strong class="text-ink">What to look for:</strong> the bigger the gap between gray and teal at each stage, the bigger that stage's contribution to the final outcome. The dominant gain here is the jump in <em>L4/5 deliveries</em> (+290 women) — most lives saved trace back to this single shift.
+        </p>
+      </div>
+    </div>
+
+  </section>
+
+
+  <!-- =================================================== -->
+  <!--  Story 3: System pressure (was Story 4)            -->
+  <!-- =================================================== -->
+  <section class="mb-20">
+    <!-- Watch-style header strip (different rhythm from other stories) -->
+    <div class="bg-warning/10 border-l-4 border-warning rounded-r-lg px-7 py-5 mb-6 flex items-start gap-4">
+      <svg viewBox="0 0 24 24" class="w-6 h-6 text-warning shrink-0 mt-1" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <div class="flex-1">
+        <div class="flex items-center gap-2 mb-1 flex-wrap">
+          <span class="text-[10px] tracking-[0.2em] text-warning uppercase font-medium">Story 04 · Watch</span>
+          <span class="text-[10px] px-2 py-0.5 bg-intervention-soft text-intervention rounded font-medium">From HSS</span>
+        </div>
+        <h2 class="font-display text-2xl lg:text-3xl leading-tight mb-1">Is the system coping?</h2>
+        <p class="text-sm text-ink-soft leading-relaxed">
+          One pressure point and one weak link. As demand rises, facility capacity is briefly strained around month 18 — and referral transport never catches up.
+        </p>
+      </div>
+    </div>
+
+    <!-- Two-up: capacity chart + weakest-link panel -->
+    <div class="grid grid-cols-12 gap-4">
+      <!-- Capacity chart spanning wider -->
+      <div class="col-span-12 lg:col-span-7 bg-card border border-border rounded-lg p-6">
+        <div class="flex items-baseline justify-between mb-4">
+          <h4 class="font-display text-base">Facility capacity ratio · L4/5</h4>
+          <span class="text-[10px] text-warning uppercase tracking-[0.15em]">⚠ exceeds limit at M18</span>
+        </div>
+        <svg viewBox="0 0 540 220" class="w-full h-auto">
+          <!-- Warning zone shading (above 1.0) -->
+          <rect x="40" y="20" width="490" height="40" fill="#B68B3E" fill-opacity="0.06"/>
+          <g class="num" font-family="Instrument Sans" font-size="9" fill="#7E7464">
+            <line x1="40" y1="20" x2="530" y2="20" class="chart-grid"/>
+            <line x1="40" y1="60" x2="530" y2="60" stroke="#B68B3E" stroke-width="0.8" stroke-dasharray="4 3"/>
+            <line x1="40" y1="100" x2="530" y2="100" class="chart-grid"/>
+            <line x1="40" y1="150" x2="530" y2="150" class="chart-grid"/>
+            <text x="35" y="23" text-anchor="end">1.2</text>
+            <text x="35" y="63" text-anchor="end" fill="#B68B3E" font-weight="600">1.0</text>
+            <text x="35" y="103" text-anchor="end">0.8</text>
+            <text x="35" y="153" text-anchor="end">0.5</text>
+          </g>
+          <text x="525" y="56" font-family="Instrument Sans" font-size="9" fill="#B68B3E" text-anchor="end" font-weight="600">⚠ capacity limit</text>
+
+          <!-- Baseline (flat near 0.65) -->
+          <path d="M 40 120 L 110 122 L 180 121 L 250 122 L 320 123 L 400 121 L 530 121" fill="none" stroke="#9C9082" stroke-width="2"/>
+          <text x="450" y="115" font-family="Fraunces" font-style="italic" font-size="10" fill="#9C9082">baseline</text>
+
+          <!-- Intervention: rises, briefly above limit, settles -->
+          <path d="M 40 120 Q 95 100 145 75 T 245 50 Q 290 45 340 70 T 530 95" fill="none" stroke="#2E5F5C" stroke-width="2.2"/>
+          <text x="450" y="92" font-family="Fraunces" font-style="italic" font-size="10" fill="#2E5F5C">intervention</text>
+
+          <!-- Pinch point annotation -->
+          <circle cx="245" cy="50" r="4" fill="#B5471F"/>
+          <line x1="245" y1="45" x2="245" y2="30" stroke="#1C1A15" stroke-width="0.4"/>
+          <text x="245" y="25" text-anchor="middle" font-family="Fraunces" font-style="italic" font-size="10" fill="#B5471F" font-weight="600">M18 — strain peak</text>
+
+          <!-- X-axis ticks -->
+          <line x1="40" y1="185" x2="530" y2="185" stroke="#1C1A15" stroke-width="0.5"/>
+          <g font-family="Instrument Sans" font-size="9" fill="#7E7464">
+            <text x="40" y="200">M0</text>
+            <text x="160" y="200">M12</text>
+            <text x="285" y="200">M24</text>
+            <text x="410" y="200">M36</text>
+            <text x="530" y="200" text-anchor="end">M48</text>
+          </g>
+        </svg>
+      </div>
+
+      <!-- Resource adequacy with weakest-link highlighted -->
+      <div class="col-span-12 lg:col-span-5">
+        <div class="bg-card border border-border rounded-lg p-6">
+          <h4 class="font-display text-base mb-1">Resource adequacy · end of run</h4>
+          <p class="text-[11px] text-ink-muted mb-4">Each bar shows whether supply meets demand at month 48.</p>
+          <div class="space-y-3">
+            <div>
+              <div class="flex justify-between text-xs mb-1"><span>Skilled birth attendants</span><span class="num text-positive font-medium">102%</span></div>
+              <div class="h-1.5 bg-paper-deep rounded-full"><div class="h-full bg-intervention rounded-full" style="width: 100%"></div></div>
+            </div>
+            <div>
+              <div class="flex justify-between text-xs mb-1"><span>L4/5 beds</span><span class="num text-warning font-medium">87%</span></div>
+              <div class="h-1.5 bg-paper-deep rounded-full"><div class="h-full bg-warning rounded-full" style="width: 87%"></div></div>
+            </div>
+            <div>
+              <div class="flex justify-between text-xs mb-1"><span>Surgical staff</span><span class="num text-positive font-medium">98%</span></div>
+              <div class="h-1.5 bg-paper-deep rounded-full"><div class="h-full bg-intervention rounded-full" style="width: 98%"></div></div>
+            </div>
+            <div>
+              <div class="flex justify-between text-xs mb-1"><span>Equipment (PPH, MgSO4)</span><span class="num text-positive font-medium">100%</span></div>
+              <div class="h-1.5 bg-paper-deep rounded-full"><div class="h-full bg-intervention rounded-full" style="width: 100%"></div></div>
+            </div>
+            <!-- Highlighted weakest link -->
+            <div class="bg-negative/8 rounded-md p-3 -mx-1 mt-3" style="background: rgba(160, 58, 42, 0.06)">
+              <div class="flex justify-between text-xs mb-1"><span class="font-medium">Emergency transport</span><span class="num text-negative font-medium">61%</span></div>
+              <div class="h-1.5 bg-paper-deep rounded-full mb-2"><div class="h-full bg-negative rounded-full" style="width: 61%"></div></div>
+              <p class="text-[10px] text-negative leading-relaxed mt-1.5"><strong>Weakest link.</strong> Consider adding EMT in the next scenario.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer recommendation -->
+    <div class="mt-4 px-5 py-3 bg-paper-deep/50 rounded-md text-[12px] text-ink-soft leading-relaxed">
+      <strong class="text-warning">⚠ Action:</strong> if you want to keep this strategy but avoid the strain, raise the <em>Facility capacity</em> parameter or phase the rollout more gradually. The model can simulate both.
+    </div>
+  </section>
+
+</section>
+
+
+</main>
+
+<!-- ============== FIRST-TIME ONBOARDING OVERLAY ============== -->
+<div id="onboardingOverlay" class="hidden fixed inset-0 z-[100] bg-ink/60 backdrop-blur-sm items-center justify-center px-6">
+  <div class="bg-paper max-w-xl w-full rounded-xl shadow-2xl overflow-hidden">
+    <div class="bg-ink text-paper px-8 py-6">
+      <div class="text-[11px] tracking-[0.2em] uppercase opacity-60 mb-2">Welcome</div>
+      <h2 class="font-display text-3xl leading-tight">A quick orientation</h2>
+    </div>
+    <div class="px-8 py-7 space-y-4">
+      <p class="text-sm text-ink-soft leading-relaxed">This tool simulates how maternal-health policies might play out across Kenya. It's a three-step workflow:</p>
+      <ol class="space-y-3 text-sm">
+        <li class="flex gap-3"><span class="num font-display text-2xl text-accent leading-none shrink-0">1</span><div><strong class="text-ink">Start</strong> — pick a preset scenario or build your own from scratch.</div></li>
+        <li class="flex gap-3"><span class="num font-display text-2xl text-accent leading-none shrink-0">2</span><div><strong class="text-ink">Design &amp; Run</strong> — tune the parameters and run the simulation.</div></li>
+        <li class="flex gap-3"><span class="num font-display text-2xl text-accent leading-none shrink-0">3</span><div><strong class="text-ink">Results</strong> — read the outcome stories and explore the dashboard.</div></li>
+      </ol>
+      <p class="text-xs text-ink-muted leading-relaxed pt-2 border-t border-border-soft">
+        New to the underlying model? You can read about it any time via <strong>About the Model</strong> in the top nav.
+      </p>
+      <div class="flex items-center justify-between pt-2">
+        <label class="text-xs text-ink-muted flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" id="dontShowAgain" checked class="accent-ink w-3.5 h-3.5"> Don't show this again
+        </label>
+        <button onclick="dismissOnboarding()" class="px-5 py-2.5 bg-accent text-paper rounded-md text-sm font-medium hover:bg-accent/90 transition">
+          Get started →
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============== SHARE MODAL ============== -->
+<div id="shareModal" class="hidden fixed inset-0 z-[100] bg-ink/60 backdrop-blur-sm items-center justify-center px-6">
+  <div class="bg-paper max-w-md w-full rounded-xl shadow-2xl overflow-hidden">
+    <div class="px-7 py-5 border-b border-border flex items-center justify-between">
+      <h3 class="font-display text-xl">Share this scenario</h3>
+      <button onclick="document.getElementById('shareModal').classList.add('hidden')" class="text-ink-muted hover:text-ink text-lg">×</button>
+    </div>
+    <div class="px-7 py-6 space-y-4">
+      <p class="text-sm text-ink-soft">Send the link below to anyone — opening it loads this exact scenario configuration, including the parameters and run results.</p>
+      <div class="bg-paper-deep border border-border rounded-md p-3 flex items-center gap-2">
+        <input type="text" readonly value="https://sdr-tool.health.go.ke/r/hss-intensive-9k2f" class="flex-1 bg-transparent text-xs font-mono text-ink-soft outline-none">
+        <button class="px-3 py-1.5 bg-ink text-paper rounded text-xs font-medium hover:bg-accent transition shrink-0">Copy</button>
+      </div>
+      <div class="border-t border-border-soft pt-4">
+        <h4 class="text-sm font-medium mb-2">Or export</h4>
+        <div class="grid grid-cols-2 gap-2">
+          <button class="px-3 py-2 border border-border rounded text-xs hover:bg-paper-deep">↓ PDF report</button>
+          <button class="px-3 py-2 border border-border rounded text-xs hover:bg-paper-deep">↓ Raw data (CSV)</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============== COUNTY SWITCH CONFIRMATION MODAL ============== -->
+<div id="countySwitchModal" class="hidden fixed inset-0 z-[100] bg-ink/60 backdrop-blur-sm items-center justify-center px-6">
+  <div class="bg-paper max-w-md w-full rounded-xl shadow-2xl overflow-hidden">
+    <div class="px-7 py-5 border-b border-border flex items-center gap-3">
+      <svg viewBox="0 0 24 24" class="w-5 h-5 text-warning shrink-0" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <h3 class="font-display text-xl">Switch counties?</h3>
+    </div>
+    <div class="px-7 py-6 space-y-4">
+      <p class="text-sm text-ink-soft leading-relaxed">Changing the county will <strong class="text-ink">reset your current scenario</strong>. Any unsaved configuration will be lost.</p>
+      <p class="text-xs text-ink-muted">The selected county determines which baseline data and calibrated parameters are used.</p>
+      <div class="flex items-center justify-end gap-2 pt-2">
+        <button onclick="document.getElementById('countySwitchModal').classList.add('hidden')" class="px-4 py-2 text-sm text-ink-muted hover:text-ink">Cancel</button>
+        <button onclick="document.getElementById('countySwitchModal').classList.add('hidden')" class="px-4 py-2 bg-warning text-ink rounded-md text-sm font-medium hover:opacity-90 transition">Switch &amp; reset</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============== FOOTER ============== -->
+<footer class="border-t border-border mt-24 py-10">
+  <div class="max-w-7xl mx-auto px-8 flex items-center justify-between text-xs text-ink-muted">
+    <div>
+      <strong class="text-ink">Mockup · v0.7.1</strong> — Non-functional design preview. Numbers and charts are illustrative.
+    </div>
+    <div class="flex items-center gap-6">
+      <span>Service Delivery Redesign · Kenya (calibrated to Kakamega County)</span>
+      <span class="ascii-divider">— · —</span>
+      <span>For stakeholder review</span>
+    </div>
+  </div>
+</footer>
+
+
+<!-- ============== JAVASCRIPT ============== -->
+<script>
+  // ---------- Screen routing ----------
+  const stepperScreens = ['start', 'design', 'results'];
+  const allScreens = ['start', 'design', 'run', 'results', 'about', 'compare', 'compare-results'];
+  let current = 'start';
+
+  function goto(name) {
+    if (!allScreens.includes(name)) return;
+    document.querySelectorAll('.screen').forEach(el => el.classList.remove('active'));
+    document.getElementById('screen-' + name).classList.add('active');
+    current = name;
+    updateStepper();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function updateStepper() {
+    // Map sub-modes to their logical step
+    let effectiveScreen = current;
+    if (current === 'compare') effectiveScreen = 'design';
+    if (current === 'compare-results') effectiveScreen = 'results';
+    if (current === 'run') effectiveScreen = 'design';
+    if (current === 'about') effectiveScreen = null;
+    const idx = effectiveScreen ? stepperScreens.indexOf(effectiveScreen) : -1;
+    document.querySelectorAll('.step-btn').forEach((btn, i) => {
+      const numEl = btn.querySelector('.step-num');
+      numEl.classList.remove('bg-ink', 'text-paper', 'border-ink', 'border-border');
+      if (i < idx) {
+        // completed
+        numEl.classList.add('bg-ink', 'text-paper', 'border-ink');
+        numEl.innerHTML = '✓';
+      } else if (i === idx) {
+        // current
+        numEl.classList.add('border-ink');
+        numEl.innerHTML = String(i + 1);
+      } else {
+        numEl.classList.add('border-border');
+        numEl.innerHTML = String(i + 1);
+      }
+    });
+  }
+
+  document.querySelectorAll('[data-goto]').forEach(btn => {
+    btn.addEventListener('click', () => goto(btn.dataset.goto));
+  });
+
+  // ---------- Preset cards on Start ----------
+  document.querySelectorAll('.preset-card').forEach(card => {
+    card.addEventListener('click', () => goto('run'));
+  });
+
+  // ---------- Top-level intensity pills (Off / Light / Moderate / Intensive) ----------
+  // Changing intensity loads a fresh preset → clear the "modified" indicator.
+  document.querySelectorAll('.intensity-group').forEach(group => {
+    group.querySelectorAll('.pill').forEach(pill => {
+      pill.addEventListener('click', () => {
+        group.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+        pill.classList.add('active');
+        const card = group.closest('.pillar-card');
+        if (card) {
+          const indicator = card.querySelector('.modified-indicator');
+          if (indicator) {
+            indicator.classList.add('hidden');
+            indicator.classList.remove('flex');
+          }
+        }
+      });
+    });
+  });
+
+  // ---------- Preset-parameter pills (inside each pillar) ----------
+  // Changing any preset parameter shows the "Modified from preset · reset" indicator.
+  document.querySelectorAll('.param-group').forEach(group => {
+    group.querySelectorAll('.pill').forEach(pill => {
+      pill.addEventListener('click', () => {
+        const wasActive = pill.classList.contains('active');
+        group.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+        pill.classList.add('active');
+        if (!wasActive) {
+          const card = group.closest('.pillar-card');
+          if (card) {
+            const indicator = card.querySelector('.modified-indicator');
+            if (indicator) {
+              indicator.classList.remove('hidden');
+              indicator.classList.add('flex');
+            }
+          }
+        }
+      });
+    });
+  });
+
+  // ---------- Reset button inside the "modified" indicator ----------
+  document.querySelectorAll('.modified-indicator button').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const indicator = btn.closest('.modified-indicator');
+      if (indicator) {
+        indicator.classList.add('hidden');
+        indicator.classList.remove('flex');
+      }
+    });
+  });
+
+  // ---------- Filter & pill group toggles (used on Compare & Compare-Results) ----------
+  document.querySelectorAll('.filter-group, .chart-type-group').forEach(group => {
+    group.querySelectorAll('.pill').forEach(pill => {
+      pill.addEventListener('click', () => {
+        group.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+        pill.classList.add('active');
+      });
+    });
+  });
+
+  // ---------- Compare-mode toggle ----------
+  const compareToggle = document.getElementById('compareToggle');
+  const compareLabels = document.getElementById('compareLabels');
+  if (compareToggle) {
+    compareToggle.addEventListener('click', () => {
+      compareToggle.classList.toggle('on');
+      if (compareToggle.classList.contains('on')) {
+        compareLabels.classList.remove('hidden');
+      } else {
+        compareLabels.classList.add('hidden');
+      }
+    });
+  }
+
+  // ---------- Master toggles on pillar cards ----------
+  document.querySelectorAll('.pillar-card .toggle-track').forEach(t => {
+    t.addEventListener('click', (e) => {
+      e.stopPropagation();
+      t.classList.toggle('on');
+    });
+  });
+
+  // ---------- Modal helpers (override .hidden vs flex conflict) ----------
+  // Modal elements with class "hidden" use display:none. When we remove "hidden",
+  // they need display:flex to center their content. We achieve this by injecting CSS.
+  const modalStyle = document.createElement('style');
+  modalStyle.textContent = `
+    #onboardingOverlay:not(.hidden),
+    #shareModal:not(.hidden),
+    #countySwitchModal:not(.hidden) { display: flex !important; }
+  `;
+  document.head.appendChild(modalStyle);
+
+  // Close modals on backdrop click
+  ['onboardingOverlay', 'shareModal', 'countySwitchModal'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('click', (e) => {
+      if (e.target === el) el.classList.add('hidden');
+    });
+  });
+
+  // ---------- First-time onboarding ----------
+  function dismissOnboarding() {
+    if (document.getElementById('dontShowAgain').checked) {
+      try { localStorage.setItem('sdr_onboarding_seen', '1'); } catch (e) {}
+    }
+    document.getElementById('onboardingOverlay').classList.add('hidden');
+  }
+  window.dismissOnboarding = dismissOnboarding;
+
+  let seenOnboarding = false;
+  try { seenOnboarding = localStorage.getItem('sdr_onboarding_seen') === '1'; } catch (e) {}
+  if (!seenOnboarding) {
+    // Show on first visit, after a small delay so the page settles
+    setTimeout(() => {
+      document.getElementById('onboardingOverlay').classList.remove('hidden');
+    }, 500);
+  }
+
+  // ---------- County switch confirmation ----------
+  // The "current" county button is the first one; others trigger the confirmation modal
+  document.querySelectorAll('#countyMenu button:not(:first-of-type)').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      document.getElementById('countyMenu').classList.add('hidden');
+      document.getElementById('countySwitchModal').classList.remove('hidden');
+    });
+  });
+
+  // Initial render
+  updateStepper();
+</script>
+
+</body>
+</html>

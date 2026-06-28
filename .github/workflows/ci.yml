@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main]
+
+jobs:
+  api-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          pip install -r sdr-api/requirements.txt
+      - name: Run API tests
+        working-directory: sdr-api
+        env:
+          PYTHONPATH: ../sim:.
+        run: pytest tests/test_api.py -v -m "not slow"
+
+  web-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install and build
+        working-directory: sdr-web
+        env:
+          NEXT_PUBLIC_API_BASE: http://localhost:8000
+        run: |
+          npm ci
+          npm run build
