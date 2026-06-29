@@ -59,7 +59,7 @@ def render_calculation_sidebar():
     df_facility = df_fac.value_counts().reset_index()
 
     st.sidebar.subheader("By Facility")
-    st.sidebar.dataframe(df_facility, use_container_width=True, hide_index=True)
+    st.sidebar.dataframe(df_facility, width="stretch", hide_index=True)
 
 def go_back_to_main():
     st.session_state.intervention_selection = None
@@ -3814,7 +3814,7 @@ if st.session_state.b_df is not None and st.session_state.i_df is not None:
                     if cause_chart is None:
                         st.info("No attributed maternal deaths in the current run results.")
                     else:
-                        st.altair_chart(cause_chart, use_container_width=True)
+                        st.altair_chart(cause_chart, width="stretch")
 
 
             if selected_plot == "Severe maternal outcomes":
@@ -4785,7 +4785,7 @@ with st.expander("**Step 2 — Run All Scenarios & Download**", expanded=False):
                 )
                 st.dataframe(
                     combined_export[combined_export["Scenario"] == preview_scenario].head(100),
-                    use_container_width=True, hide_index=True,
+                    width="stretch", hide_index=True,
                 )
 
             with st.expander("Quick Export: All Templates", expanded=False):
