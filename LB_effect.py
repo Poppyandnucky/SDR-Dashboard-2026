@@ -25,7 +25,7 @@ def pulse_effect(
     if targeted_indicator != indicator_of_interest or not flags.get("flag_pulse", 0):
         return current_value
 
-    pulse_influence_strength = float(param.get("pulse_influence_strength", 0.05))
+    pulse_influence_strength = float(param.get("pulse_influence_strength", 0.17))
     fqa_pulse_modifier = float(param.get("fqa_pulse_modifier", 0.2))
     pulse_coverage = float(param.get("HSS", {}).get("pulse_coverage", 1.0))
     flag_fqa = float(flags.get("flag_fqa", 0))
