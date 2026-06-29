@@ -577,12 +577,12 @@ def fetal_sensor_calculator(track, param, i, flags, rng):
     fetal_sensor = {}
 
     # Calculate high-risk and low-risk pregancies in each facility level
-    highrisk_perday_perl23 = math.ceil(track['HighRisk_Track'][i][1] / 30 / param['num_L2/3'])
-    highrisk_perday_perl4 = math.ceil(track['HighRisk_Track'][i][2] / 30 / param['num_L4'])
-    highrisk_perday_perl5 = math.ceil(track['HighRisk_Track'][i][3] / 30 / param['num_L5'])
-    lowrisk_perday_perl23 = math.ceil((track['LB_Track'][i][1] - track['HighRisk_Track'][i][1]) / 30 / param['num_L2/3'])
-    lowrisk_perday_perl4 = math.ceil((track['LB_Track'][i][2] - track['HighRisk_Track'][i][2]) / 30 / param['num_L4'])
-    lowrisk_perday_perl5 = math.ceil((track['LB_Track'][i][3] - track['HighRisk_Track'][i][3]) / 30 / param['num_L5'])
+    highrisk_perday_perl23 = int(np.ceil(float(track['HighRisk_Track'][i][1]) / 30 / param['num_L2/3']))
+    highrisk_perday_perl4 = int(np.ceil(float(track['HighRisk_Track'][i][2]) / 30 / param['num_L4']))
+    highrisk_perday_perl5 = int(np.ceil(float(track['HighRisk_Track'][i][3]) / 30 / param['num_L5']))
+    lowrisk_perday_perl23 = int(np.ceil(float(track['LB_Track'][i][1] - track['HighRisk_Track'][i][1]) / 30 / param['num_L2/3']))
+    lowrisk_perday_perl4 = int(np.ceil(float(track['LB_Track'][i][2] - track['HighRisk_Track'][i][2]) / 30 / param['num_L4']))
+    lowrisk_perday_perl5 = int(np.ceil(float(track['LB_Track'][i][3] - track['HighRisk_Track'][i][3]) / 30 / param['num_L5']))
     
 
     # Calculate the number of fetal dopplers needed
@@ -602,9 +602,9 @@ def fetal_sensor_calculator(track, param, i, flags, rng):
     total_doppler_usage_time_perl4 = doppler_usage_time(lowrisk_perday_perl4)
     total_doppler_usage_time_perl5 = doppler_usage_time(lowrisk_perday_perl5)
 
-    num_dopplers_l23 = math.ceil(total_doppler_usage_time_perl23 / param['usage_time_sensor_perday']) * param['num_L2/3']
-    num_dopplers_l4 = math.ceil(total_doppler_usage_time_perl4 / param['usage_time_sensor_perday']) * param['num_L4']
-    num_dopplers_l5 = math.ceil(total_doppler_usage_time_perl5 / param['usage_time_sensor_perday']) * param['num_L5']
+    num_dopplers_l23 = int(np.ceil(float(total_doppler_usage_time_perl23) / param['usage_time_sensor_perday'])) * param['num_L2/3']
+    num_dopplers_l4 = int(np.ceil(float(total_doppler_usage_time_perl4) / param['usage_time_sensor_perday'])) * param['num_L4']
+    num_dopplers_l5 = int(np.ceil(float(total_doppler_usage_time_perl5) / param['usage_time_sensor_perday'])) * param['num_L5']
 
     # Calculate the number of CTGs needed
     def CTG_usage_time(highrisks_perday):
@@ -624,9 +624,9 @@ def fetal_sensor_calculator(track, param, i, flags, rng):
     total_CTG_usage_time_perl4 = CTG_usage_time(highrisk_perday_perl4)
     total_CTG_usage_time_perl5 = CTG_usage_time(highrisk_perday_perl5)
 
-    num_CTGs_l23 = math.ceil(total_CTG_usage_time_perl23 / param['usage_time_sensor_perday']) * param['num_L2/3']
-    num_CTGs_l4 = math.ceil(total_CTG_usage_time_perl4 / param['usage_time_sensor_perday']) * param['num_L4']
-    num_CTGs_l5 = math.ceil(total_CTG_usage_time_perl5 / param['usage_time_sensor_perday']) * param['num_L5']
+    num_CTGs_l23 = int(np.ceil(float(total_CTG_usage_time_perl23) / param['usage_time_sensor_perday'])) * param['num_L2/3']
+    num_CTGs_l4 = int(np.ceil(float(total_CTG_usage_time_perl4) / param['usage_time_sensor_perday'])) * param['num_L4']
+    num_CTGs_l5 = int(np.ceil(float(total_CTG_usage_time_perl5) / param['usage_time_sensor_perday'])) * param['num_L5']
 
     # Adjust based on flags
     if (not flags['flag_intrasensor']) and (not flags['flag_equipment']):
