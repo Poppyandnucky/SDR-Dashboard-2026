@@ -8,6 +8,7 @@ altair
 matplotlib
 seaborn
 pip
+openpyxl
 
 # streamlit==1.42.2
 # numpy==1.26.4
