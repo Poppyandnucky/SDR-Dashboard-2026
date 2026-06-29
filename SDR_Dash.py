@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import altair as alt
 import math
+import io
 import scipy.stats as stats
 import time
 import copy
@@ -4513,11 +4514,28 @@ ALL_EXPORTABLE_COLUMNS = [
 META_COLUMNS = ["Month", "Run", "Scenario", "Delivery_Location"]
 
 
+def _export_to_xlsx(combined_df, scenario_col="Scenario"):
+    """Write a DataFrame to an xlsx BytesIO buffer with one sheet per scenario."""
+    buf = io.BytesIO()
+    scenarios = combined_df[scenario_col].unique()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        for sc_name in scenarios:
+            sheet_name = str(sc_name)[:31]
+            sc_df = combined_df[combined_df[scenario_col] == sc_name].copy()
+            sc_df.to_excel(writer, sheet_name=sheet_name, index=False)
+    buf.seek(0)
+    return buf
+
+
 def _build_export_df(ind_outcomes_df, selected_columns, stratify_col="i_loc_new_v2"):
     available = [c for c in selected_columns if c in ind_outcomes_df.columns]
     meta = [c for c in ["Month", "Run", "Scenario"] if c in ind_outcomes_df.columns]
-    export = ind_outcomes_df[meta + [stratify_col] + available].copy()
-    export["Delivery_Location"] = export[stratify_col].map(LOCATION_MAP).fillna("Unknown")
+    keep = list(dict.fromkeys(meta + [stratify_col] + available))
+    export = ind_outcomes_df[keep].copy()
+    loc_series = export[stratify_col]
+    if isinstance(loc_series, pd.DataFrame):
+        loc_series = loc_series.iloc[:, 0]
+    export["Delivery_Location"] = loc_series.map(lambda x: LOCATION_MAP.get(int(x) if not isinstance(x, str) else -1, "Unknown"))
     if stratify_col not in available:
         export = export.drop(columns=[stratify_col])
     return export
@@ -4732,21 +4750,33 @@ with st.expander("**Step 2 — Run All Scenarios & Download**", expanded=False):
 
         if "dl_result" in st.session_state and st.session_state["dl_result"] is not None:
             combined_export = st.session_state["dl_result"]
-            st.markdown(f"**Preview** ({len(combined_export):,} rows, {combined_export.shape[1]} columns)")
-            st.dataframe(combined_export.head(100), use_container_width=True, hide_index=True)
+            n_scenarios = combined_export["Scenario"].nunique()
+            st.markdown(
+                f"**Preview** ({len(combined_export):,} rows, {combined_export.shape[1]} columns, "
+                f"{n_scenarios} sheets)"
+            )
+            preview_scenario = st.selectbox(
+                "Preview scenario",
+                options=combined_export["Scenario"].unique().tolist(),
+                key="dl_preview_scenario",
+            )
+            st.dataframe(
+                combined_export[combined_export["Scenario"] == preview_scenario].head(100),
+                use_container_width=True, hide_index=True,
+            )
 
-            csv_data = combined_export.to_csv(index=False)
+            xlsx_buf = _export_to_xlsx(combined_export)
             st.download_button(
-                label=f"Download table ({len(combined_export):,} rows)",
-                data=csv_data,
-                file_name=f"{dl_template}_all_scenarios.csv",
-                mime="text/csv",
+                label=f"Download .xlsx ({n_scenarios} sheets, {len(combined_export):,} rows)",
+                data=xlsx_buf,
+                file_name=f"{dl_template}_all_scenarios.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 key="btn_download_all",
             )
 
             st.markdown("---")
             st.subheader("Quick Export: All Templates")
-            st.caption("Download separate files for each intervention template using the same run results.")
+            st.caption("Download one .xlsx per intervention template — each scenario is a separate sheet.")
             if st.button("Generate all template downloads", key="btn_quick_all"):
                 combined_raw = st.session_state["dl_result_raw"]
                 for tmpl_name, tmpl_info in INTERVENTION_VARIABLE_PRESETS.items():
@@ -4759,11 +4789,11 @@ with st.expander("**Step 2 — Run All Scenarios & Download**", expanded=False):
                     ]
                     col_order = [c for c in col_order if c in tmpl_export.columns]
                     tmpl_export = tmpl_export[col_order]
-                    csv_data = tmpl_export.to_csv(index=False)
+                    tmpl_buf = _export_to_xlsx(tmpl_export)
                     st.download_button(
-                        label=f"{tmpl_name} ({len(tmpl_export):,} rows, {tmpl_export.shape[1]} cols)",
-                        data=csv_data,
-                        file_name=f"{tmpl_name}_export.csv",
-                        mime="text/csv",
+                        label=f"{tmpl_name} ({tmpl_export['Scenario'].nunique()} sheets, {len(tmpl_export):,} rows)",
+                        data=tmpl_buf,
+                        file_name=f"{tmpl_name}_export.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         key=f"btn_quick_{tmpl_name}",
                     )

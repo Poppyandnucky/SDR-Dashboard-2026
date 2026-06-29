@@ -809,6 +809,7 @@ def generate_negative_experience_heard(
     repeats = int(np.ceil(total_CHV_linked_mothers / n_CHV)) if n_CHV > 0 else 0
     CHV_assignments = np.tile(np.arange(n_CHV), int(np.ceil(mothers_per_CHV)))
     rng.shuffle(CHV_assignments)
+    CHV_assignments = CHV_assignments[:total_CHV_linked_mothers]
 
     CHV_IDs[linked_mother_indices] = CHV_assignments
 
