@@ -4517,10 +4517,14 @@ META_COLUMNS = ["Month", "Run", "Scenario", "Delivery_Location"]
 def _export_to_xlsx(combined_df, scenario_col="Scenario"):
     """Write a DataFrame to an xlsx BytesIO buffer with one sheet per scenario."""
     buf = io.BytesIO()
-    scenarios = combined_df[scenario_col].unique()
+    if scenario_col not in combined_df.columns or combined_df.empty:
+        combined_df.to_excel(buf, sheet_name="Data", index=False, engine="openpyxl")
+        buf.seek(0)
+        return buf
+    scenarios = combined_df[scenario_col].dropna().unique()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
         for sc_name in scenarios:
-            sheet_name = str(sc_name)[:31]
+            sheet_name = str(sc_name).replace("/", "-").replace("\\", "-")[:31]
             sc_df = combined_df[combined_df[scenario_col] == sc_name].copy()
             sc_df.to_excel(writer, sheet_name=sheet_name, index=False)
     buf.seek(0)
@@ -4530,14 +4534,19 @@ def _export_to_xlsx(combined_df, scenario_col="Scenario"):
 def _build_export_df(ind_outcomes_df, selected_columns, stratify_col="i_loc_new_v2"):
     available = [c for c in selected_columns if c in ind_outcomes_df.columns]
     meta = [c for c in ["Month", "Run", "Scenario"] if c in ind_outcomes_df.columns]
-    keep = list(dict.fromkeys(meta + [stratify_col] + available))
+    has_stratify = stratify_col in ind_outcomes_df.columns
+    keep_cols = meta + ([stratify_col] if has_stratify else []) + available
+    keep = list(dict.fromkeys(keep_cols))
     export = ind_outcomes_df[keep].copy()
-    loc_series = export[stratify_col]
-    if isinstance(loc_series, pd.DataFrame):
-        loc_series = loc_series.iloc[:, 0]
-    export["Delivery_Location"] = loc_series.map(lambda x: LOCATION_MAP.get(int(x) if not isinstance(x, str) else -1, "Unknown"))
-    if stratify_col not in available:
-        export = export.drop(columns=[stratify_col])
+    if has_stratify:
+        loc_series = export[stratify_col]
+        if isinstance(loc_series, pd.DataFrame):
+            loc_series = loc_series.iloc[:, 0]
+        export["Delivery_Location"] = loc_series.map(
+            lambda x: LOCATION_MAP.get(int(x) if not isinstance(x, str) else -1, "Unknown")
+        )
+        if stratify_col not in available:
+            export = export.drop(columns=[stratify_col])
     return export
 
 
@@ -4602,6 +4611,8 @@ with st.expander("**Step 1 — Capture Scenario Configurations**", expanded=Fals
     if st.button("Capture current configuration", key="btn_capture_config"):
         if not cap_name:
             st.warning("Please enter a scenario name.")
+        elif any(sc["name"] == cap_name for sc in st.session_state.download_scenarios):
+            st.warning(f"A scenario named **{cap_name}** already exists. Please use a different name.")
         else:
             if cap_as_baseline:
                 config = {
@@ -4751,33 +4762,34 @@ with st.expander("**Step 2 — Run All Scenarios & Download**", expanded=False):
         if "dl_result" in st.session_state and st.session_state["dl_result"] is not None:
             combined_export = st.session_state["dl_result"]
             n_scenarios = combined_export["Scenario"].nunique()
-            st.markdown(
-                f"**Preview** ({len(combined_export):,} rows, {combined_export.shape[1]} columns, "
-                f"{n_scenarios} sheets)"
-            )
-            preview_scenario = st.selectbox(
-                "Preview scenario",
-                options=combined_export["Scenario"].unique().tolist(),
-                key="dl_preview_scenario",
-            )
-            st.dataframe(
-                combined_export[combined_export["Scenario"] == preview_scenario].head(100),
-                use_container_width=True, hide_index=True,
+
+            st.success(
+                f"Ready to download: {n_scenarios} scenario(s), "
+                f"{len(combined_export):,} total rows, {combined_export.shape[1]} columns"
             )
 
             xlsx_buf = _export_to_xlsx(combined_export)
             st.download_button(
-                label=f"Download .xlsx ({n_scenarios} sheets, {len(combined_export):,} rows)",
+                label=f"Download .xlsx ({n_scenarios} sheets)",
                 data=xlsx_buf,
                 file_name=f"{dl_template}_all_scenarios.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 key="btn_download_all",
             )
 
-            st.markdown("---")
-            st.subheader("Quick Export: All Templates")
-            st.caption("Download one .xlsx per intervention template — each scenario is a separate sheet.")
-            if st.button("Generate all template downloads", key="btn_quick_all"):
+            with st.expander("Preview data", expanded=False):
+                preview_scenario = st.selectbox(
+                    "Preview scenario",
+                    options=combined_export["Scenario"].unique().tolist(),
+                    key="dl_preview_scenario",
+                )
+                st.dataframe(
+                    combined_export[combined_export["Scenario"] == preview_scenario].head(100),
+                    use_container_width=True, hide_index=True,
+                )
+
+            with st.expander("Quick Export: All Templates", expanded=False):
+                st.caption("Download one .xlsx per intervention template — each scenario is a separate sheet.")
                 combined_raw = st.session_state["dl_result_raw"]
                 for tmpl_name, tmpl_info in INTERVENTION_VARIABLE_PRESETS.items():
                     if tmpl_name == "Custom" or not tmpl_info["columns"]:
