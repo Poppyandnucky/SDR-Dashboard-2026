@@ -372,14 +372,9 @@ def labor_calculator(n_lb, n_cs, param, flags):
     L23_LBs = n_lb[1]
     L4_LBs = n_lb[2]
     L5_LBs = n_lb[3]
-    def average_lbs(live_births, num_facilities):
-        if num_facilities <= 0:
-            return 0
-        return live_births / num_facilities
-
-    Avg_L23_LBs = average_lbs(L23_LBs, param['num_L2/3'])
-    Avg_L4_LBs = average_lbs(L4_LBs, param['num_L4'])
-    Avg_L5_LBs = average_lbs(L5_LBs, param['num_L5'])
+    Avg_L23_LBs = L23_LBs / param['num_L2/3']
+    Avg_L4_LBs = L4_LBs / param['num_L4']
+    Avg_L5_LBs = L5_LBs / param['num_L5']
 
     # Surgical staff calculation
     surgical_l23 = (param['surgical_needed_below_thres'] * param['num_L2/3'] if Avg_L23_LBs < param['Ave_LBs_thres']
@@ -440,13 +435,10 @@ def compute_scaled_density_index(d_surgical, d_nurses, surgical_weight, scaled_f
     d_surgical_weighted = d_surgical * surgical_weight
 
     # Compute the harmonic mean-based density index with weighted surgical staff
-    valid_density = (d_surgical_weighted > 0) & (d_nurses > 0)
-    quality_adjusted = np.divide(
-        2 * d_surgical_weighted * d_nurses,
-        d_surgical_weighted + d_nurses,
-        out=np.zeros_like(d_surgical_weighted, dtype=float),
-        where=valid_density,
-    )
+    quality_adjusted = np.where(
+        (d_surgical_weighted > 0) & (d_nurses > 0),
+        (2 * d_surgical_weighted * d_nurses) / (d_surgical_weighted + d_nurses),
+        0
 
     scaled_index = quality_adjusted * scaled_factor
     #scaled factor is used to match the baseline density of skilled healthcare worker to Kenya level = 174.09
@@ -584,17 +576,13 @@ def fetal_sensor_calculator(track, param, i, flags, rng):
     fetal_sensor = {}
 
     # Calculate high-risk and low-risk pregancies in each facility level
-    def perday_per_facility(volume, num_facilities):
-        if num_facilities <= 0:
-            return 0
-        return math.ceil(volume / 30 / num_facilities)
-
-    highrisk_perday_perl23 = perday_per_facility(track['HighRisk_Track'][i][1], param['num_L2/3'])
-    highrisk_perday_perl4 = perday_per_facility(track['HighRisk_Track'][i][2], param['num_L4'])
-    highrisk_perday_perl5 = perday_per_facility(track['HighRisk_Track'][i][3], param['num_L5'])
-    lowrisk_perday_perl23 = perday_per_facility(track['LB_Track'][i][1] - track['HighRisk_Track'][i][1], param['num_L2/3'])
-    lowrisk_perday_perl4 = perday_per_facility(track['LB_Track'][i][2] - track['HighRisk_Track'][i][2], param['num_L4'])
-    lowrisk_perday_perl5 = perday_per_facility(track['LB_Track'][i][3] - track['HighRisk_Track'][i][3], param['num_L5'])
+    highrisk_perday_perl23 = math.ceil(track['HighRisk_Track'][i][1] / 30 / param['num_L2/3'])
+    highrisk_perday_perl4 = math.ceil(track['HighRisk_Track'][i][2] / 30 / param['num_L4'])
+    highrisk_perday_perl5 = math.ceil(track['HighRisk_Track'][i][3] / 30 / param['num_L5'])
+    lowrisk_perday_perl23 = math.ceil((track['LB_Track'][i][1] - track['HighRisk_Track'][i][1]) / 30 / param['num_L2/3'])
+    lowrisk_perday_perl4 = math.ceil((track['LB_Track'][i][2] - track['HighRisk_Track'][i][2]) / 30 / param['num_L4'])
+    lowrisk_perday_perl5 = math.ceil((track['LB_Track'][i][3] - track['HighRisk_Track'][i][3]) / 30 / param['num_L5'])
+    
 
     # Calculate the number of fetal dopplers needed
     def doppler_usage_time(lowrisks_perday):
@@ -810,7 +798,7 @@ def generate_negative_experience_heard(
     """
 
     # Initialize CHV IDs
-    total_CHV_linked_mothers = min(num_mothers, round(n_CHV * mothers_per_CHV))
+    total_CHV_linked_mothers = round(n_CHV * mothers_per_CHV)
     CHV_IDs = np.full(num_mothers, -1, dtype=int)  # -1 means no CHV
 
     # Randomly assign CHV IDs
@@ -818,8 +806,7 @@ def generate_negative_experience_heard(
     linked_mother_indices = perm_mothers[:total_CHV_linked_mothers]
 
     repeats = int(np.ceil(total_CHV_linked_mothers / n_CHV)) if n_CHV > 0 else 0
-    CHV_assignments = np.tile(np.arange(n_CHV), repeats)
-    CHV_assignments = CHV_assignments[:total_CHV_linked_mothers]
+    CHV_assignments = np.tile(np.arange(n_CHV), int(np.ceil(mothers_per_CHV)))
     rng.shuffle(CHV_assignments)
 
     CHV_IDs[linked_mother_indices] = CHV_assignments
