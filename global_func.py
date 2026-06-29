@@ -439,6 +439,7 @@ def compute_scaled_density_index(d_surgical, d_nurses, surgical_weight, scaled_f
         (d_surgical_weighted > 0) & (d_nurses > 0),
         (2 * d_surgical_weighted * d_nurses) / (d_surgical_weighted + d_nurses),
         0
+    )
 
     scaled_index = quality_adjusted * scaled_factor
     #scaled factor is used to match the baseline density of skilled healthcare worker to Kenya level = 174.09
