@@ -3,7 +3,6 @@ import numpy as np
 import pandas as pd
 import altair as alt
 import math
-import io
 import scipy.stats as stats
 import time
 import copy
@@ -1340,8 +1339,8 @@ if 'ab_base_df' not in st.session_state:
     st.session_state.ab_base_df = None
 if 'ab_base_ind_outcomes' not in st.session_state:
     st.session_state.ab_base_ind_outcomes = None
-if 'download_scenarios' not in st.session_state:
-    st.session_state.download_scenarios = []
+if 'dl_table' not in st.session_state:
+    st.session_state.dl_table = None
 
 
 
@@ -4514,23 +4513,6 @@ ALL_EXPORTABLE_COLUMNS = [
 META_COLUMNS = ["Month", "Run", "Scenario", "Delivery_Location"]
 
 
-def _export_to_xlsx(combined_df, scenario_col="Scenario"):
-    """Write a DataFrame to an xlsx BytesIO buffer with one sheet per scenario."""
-    buf = io.BytesIO()
-    if scenario_col not in combined_df.columns or combined_df.empty:
-        combined_df.to_excel(buf, sheet_name="Data", index=False, engine="openpyxl")
-        buf.seek(0)
-        return buf
-    scenarios = combined_df[scenario_col].dropna().unique()
-    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        for sc_name in scenarios:
-            sheet_name = str(sc_name).replace("/", "-").replace("\\", "-")[:31]
-            sc_df = combined_df[combined_df[scenario_col] == sc_name].copy()
-            sc_df.to_excel(writer, sheet_name=sheet_name, index=False)
-    buf.seek(0)
-    return buf
-
-
 def _build_export_df(ind_outcomes_df, selected_columns, stratify_col="i_loc_new_v2"):
     available = [c for c in selected_columns if c in ind_outcomes_df.columns]
     meta = [c for c in ["Month", "Run", "Scenario"] if c in ind_outcomes_df.columns]
@@ -4550,262 +4532,121 @@ def _build_export_df(ind_outcomes_df, selected_columns, stratify_col="i_loc_new_
     return export
 
 
-def _run_scenario_multi(scenario_config, n_runs, n_months, int_period, run_seeds_matrix, scenario_label, progress_cb=None):
-    """Run one scenario across multiple runs using shared seeds. Returns concatenated ind_outcomes."""
-    sc_flags = scenario_config["flags"]
-    sc_E = scenario_config["E"]
-    sc_S = scenario_config["S"]
-    sc_HSS = scenario_config["HSS"]
-
-    temp_ind = []
-    for run_index in range(n_runs):
-        monthly_seeds = run_seeds_matrix[run_index]
-        param_rng = np.random.default_rng(monthly_seeds[0])
-        sc_param = get_parameters(rng=param_rng)
-        sc_param = calculate_derived_parameters(sc_param)
-        sc_param.update({
-            "E": copy.deepcopy(sc_E),
-            "S": copy.deepcopy(sc_S),
-            "HSS": copy.deepcopy(sc_HSS),
-        })
-        sync_param_momish_from_hss(sc_param, sc_HSS)
-        _, ind_outcomes, _ = run_model_dash(
-            sc_param, copy.deepcopy(sc_flags), n_months, int_period, base_seed=monthly_seeds,
-        )
-        ind_outcomes["Run"] = run_index + 1
-        ind_outcomes["Scenario"] = scenario_label
-        temp_ind.append(ind_outcomes)
-        if progress_cb:
-            progress_cb(run_index + 1)
-
-    return pd.concat(temp_ind, ignore_index=True)
-
-
 st.markdown("---")
 st.header("Table Download Session")
 st.caption(
-    "Capture scenario configurations from the dashboard, then run them all at once "
-    "with shared random seeds (multiple-run mode). Download only the variables you need."
+    "Run the model with the current intervention settings and download a filtered CSV table. "
+    "Uses multiple-run mode with shared random seeds."
 )
 
-# --- Step 1: Capture scenario configurations ---
-with st.expander("**Step 1 — Capture Scenario Configurations**", expanded=False):
-    st.markdown(
-        "Adjust the intervention settings above, then capture the current configuration as a named scenario. "
-        "Repeat for each scenario you want to compare (e.g. Baseline, Current, High)."
+dl_col1, dl_col2 = st.columns(2)
+with dl_col1:
+    dl_scenario_name = st.text_input(
+        "Scenario name",
+        placeholder="e.g., PROMPTS_Baseline",
+        key="dl_scenario_name",
     )
-    cap_col1, cap_col2 = st.columns([2, 1])
-    with cap_col1:
-        cap_name = st.text_input(
-            "Scenario name",
-            placeholder="e.g., PROMPTS_High",
-            key="dl_capture_name",
-        )
-    with cap_col2:
-        cap_as_baseline = st.checkbox(
-            "Capture as Baseline (no interventions)",
-            key="dl_capture_baseline",
-            help="Ignores current slider settings and captures a clean baseline with all flags off.",
-        )
+with dl_col2:
+    dl_n_runs = st.number_input(
+        "Number of runs",
+        min_value=1, max_value=300, value=10, step=1,
+        key="dl_n_runs",
+    )
 
-    if st.button("Capture current configuration", key="btn_capture_config"):
-        if not cap_name:
-            st.warning("Please enter a scenario name.")
-        elif any(sc["name"] == cap_name for sc in st.session_state.download_scenarios):
-            st.warning(f"A scenario named **{cap_name}** already exists. Please use a different name.")
-        else:
-            if cap_as_baseline:
-                config = {
-                    "flags": reset_flags(),
-                    "E": reset_E(),
-                    "S": reset_S(slider_params),
-                    "HSS": reset_HSS(slider_params),
-                }
-            else:
-                config = {
-                    "flags": copy.deepcopy(i_flags),
-                    "E": copy.deepcopy(i_E),
-                    "S": copy.deepcopy(i_S),
-                    "HSS": copy.deepcopy(i_HSS),
-                }
-            st.session_state.download_scenarios.append({
-                "name": cap_name,
-                "config": config,
-            })
-            st.success(f"Captured **{cap_name}**")
+intervention_names = list(INTERVENTION_VARIABLE_PRESETS.keys())
+dl_template = st.selectbox(
+    "Intervention template (selects export variables)",
+    options=intervention_names,
+    key="dl_run_template",
+)
+st.caption(INTERVENTION_VARIABLE_PRESETS[dl_template]["description"])
 
-    if st.session_state.download_scenarios:
-        st.markdown("**Captured scenarios:**")
-        for idx, sc in enumerate(st.session_state.download_scenarios):
-            sc_col_a, sc_col_b = st.columns([4, 1])
-            with sc_col_a:
-                active_flags = [k for k, v in sc["config"]["flags"].items() if v]
-                flag_summary = ", ".join(active_flags) if active_flags else "(no interventions)"
-                st.text(f"  {idx + 1}. {sc['name']}  —  {flag_summary}")
-            with sc_col_b:
-                if st.button("Remove", key=f"btn_remove_sc_{idx}"):
-                    st.session_state.download_scenarios.pop(idx)
-                    st.rerun()
+preset_cols = INTERVENTION_VARIABLE_PRESETS[dl_template]["columns"]
+if dl_template == "Custom":
+    dl_columns = st.multiselect(
+        "Select variables to export",
+        options=ALL_EXPORTABLE_COLUMNS,
+        default=[],
+        key="dl_run_custom_cols",
+    )
+else:
+    dl_columns = st.multiselect(
+        "Variables (pre-filled — add or remove as needed)",
+        options=ALL_EXPORTABLE_COLUMNS,
+        default=preset_cols,
+        key="dl_run_template_cols",
+    )
 
-        if st.button("Clear all scenarios", key="btn_clear_scenarios"):
-            st.session_state.download_scenarios = []
-            st.rerun()
+btn_col1, btn_col2 = st.columns(2)
+with btn_col1:
+    run_clicked = st.button("Run & Generate Table", key="btn_run_dl")
+with btn_col2:
+    clean_clicked = st.button("Clean Up Table", key="btn_clean_dl")
 
-# --- Step 2: Run & Download ---
-with st.expander("**Step 2 — Run All Scenarios & Download**", expanded=False):
-    if not st.session_state.download_scenarios:
-        st.info("Capture at least one scenario configuration in Step 1.")
+if clean_clicked:
+    st.session_state.dl_table = None
+    st.rerun()
+
+if run_clicked:
+    if not dl_scenario_name:
+        st.warning("Please enter a scenario name.")
+    elif not dl_columns:
+        st.warning("Select at least one variable to export.")
     else:
-        st.markdown(
-            f"**{len(st.session_state.download_scenarios)} scenario(s) captured:** "
-            + ", ".join(sc["name"] for sc in st.session_state.download_scenarios)
-        )
+        n_months = MODEL["n_months"] if MODEL["n_months"] > 0 else 36
+        int_period = MODEL["int_period"] if MODEL["int_period"] > 0 else 36
 
-        run_col1, run_col2, run_col3 = st.columns(3)
-        with run_col1:
-            dl_n_runs = st.number_input(
-                "Number of runs per scenario",
-                min_value=1, max_value=300, value=10, step=1,
-                key="dl_n_runs",
-                help="All scenarios share the same random seeds across runs for fair comparison.",
+        master_rng = np.random.default_rng(2025)
+        run_seeds_matrix = master_rng.integers(low=0, high=1e9, size=(dl_n_runs, n_months))
+
+        dl_status = st.empty()
+        dl_progress = st.progress(0)
+        temp_ind = []
+
+        for run_index in range(dl_n_runs):
+            monthly_seeds = run_seeds_matrix[run_index]
+            param_rng = np.random.default_rng(monthly_seeds[0])
+
+            sc_param = get_parameters(rng=param_rng)
+            sc_param = calculate_derived_parameters(sc_param)
+            sc_param.update({"E": copy.deepcopy(i_E), "S": copy.deepcopy(i_S), "HSS": copy.deepcopy(i_HSS)})
+            sync_param_momish_from_hss(sc_param, i_HSS)
+
+            _, ind_outcomes, _ = run_model_dash(
+                sc_param, copy.deepcopy(i_flags), n_months, int_period, base_seed=monthly_seeds,
             )
-        with run_col2:
-            dl_impl_years = st.slider(
-                "Implementation phase (years)",
-                min_value=3, max_value=6, step=1, value=3,
-                key="dl_impl_years",
-            )
-        with run_col3:
-            dl_maint_years = st.slider(
-                "Maintenance phase (years)",
-                min_value=0, max_value=3, step=1, value=0,
-                key="dl_maint_years",
-            )
+            ind_outcomes["Run"] = run_index + 1
+            ind_outcomes["Scenario"] = dl_scenario_name
+            temp_ind.append(ind_outcomes)
 
-        dl_int_period = dl_impl_years * 12
-        dl_n_months = dl_int_period + dl_maint_years * 12
+            dl_progress.progress((run_index + 1) / dl_n_runs)
+            dl_status.text(f"Running... {run_index + 1}/{dl_n_runs}")
 
-        intervention_names = list(INTERVENTION_VARIABLE_PRESETS.keys())
-        dl_template = st.selectbox(
-            "Intervention template (selects export variables)",
-            options=intervention_names,
-            key="dl_run_template",
-        )
-        st.caption(INTERVENTION_VARIABLE_PRESETS[dl_template]["description"])
+        combined = pd.concat(temp_ind, ignore_index=True)
+        export = _build_export_df(combined, dl_columns)
 
-        preset_cols = INTERVENTION_VARIABLE_PRESETS[dl_template]["columns"]
-        if dl_template == "Custom":
-            dl_columns = st.multiselect(
-                "Select variables to export",
-                options=ALL_EXPORTABLE_COLUMNS,
-                default=[],
-                key="dl_run_custom_cols",
-            )
-        else:
-            dl_columns = st.multiselect(
-                "Variables (pre-filled — add or remove as needed)",
-                options=ALL_EXPORTABLE_COLUMNS,
-                default=preset_cols,
-                key="dl_run_template_cols",
-            )
+        col_order = META_COLUMNS + [
+            c for c in dl_columns if c in export.columns and c not in META_COLUMNS
+        ]
+        col_order = [c for c in col_order if c in export.columns]
+        export = export[col_order]
 
-        if st.button("Run all scenarios & generate tables", key="btn_run_all_scenarios"):
-            if not dl_columns:
-                st.warning("Select at least one variable to export.")
-            else:
-                master_rng = np.random.default_rng(2025)
-                run_seeds_matrix = master_rng.integers(low=0, high=1e9, size=(dl_n_runs, dl_n_months))
+        st.session_state.dl_table = export
+        dl_progress.progress(1.0)
+        dl_status.text(f"Done! {dl_n_runs} runs, {len(export):,} rows")
 
-                total_work = dl_n_runs * len(st.session_state.download_scenarios)
-                dl_status = st.empty()
-                dl_progress = st.progress(0)
-                completed = [0]
+if st.session_state.dl_table is not None:
+    export = st.session_state.dl_table
+    st.success(f"Table ready: {len(export):,} rows, {export.shape[1]} columns")
 
-                all_results = []
+    csv_data = export.to_csv(index=False)
+    st.download_button(
+        label=f"Download CSV ({len(export):,} rows)",
+        data=csv_data,
+        file_name=f"{dl_scenario_name or 'scenario'}_outcomes.csv",
+        mime="text/csv",
+        key="btn_download_csv",
+    )
 
-                for sc in st.session_state.download_scenarios:
-                    dl_status.text(f"Running **{sc['name']}**...")
-
-                    def _progress_cb(run_done, _sc_name=sc["name"], _total=total_work, _completed=completed, _bar=dl_progress, _status=dl_status):
-                        _completed[0] += 1
-                        _bar.progress(min(_completed[0] / _total, 1.0))
-                        _status.text(
-                            f"Running {_sc_name}... run {run_done}/{dl_n_runs} "
-                            f"(overall {_completed[0]}/{_total})"
-                        )
-
-                    ind_df = _run_scenario_multi(
-                        sc["config"], dl_n_runs, dl_n_months, dl_int_period,
-                        run_seeds_matrix, sc["name"], progress_cb=_progress_cb,
-                    )
-                    all_results.append(ind_df)
-
-                combined_raw = pd.concat(all_results, ignore_index=True)
-                combined_export = _build_export_df(combined_raw, dl_columns)
-
-                col_order = META_COLUMNS + [
-                    c for c in dl_columns
-                    if c in combined_export.columns and c not in META_COLUMNS
-                ]
-                col_order = [c for c in col_order if c in combined_export.columns]
-                combined_export = combined_export[col_order]
-
-                st.session_state["dl_result"] = combined_export
-                st.session_state["dl_result_raw"] = combined_raw
-
-                dl_progress.progress(1.0)
-                dl_status.text(
-                    f"Done! {len(st.session_state.download_scenarios)} scenarios x "
-                    f"{dl_n_runs} runs = {len(combined_export):,} rows"
-                )
-
-        if "dl_result" in st.session_state and st.session_state["dl_result"] is not None:
-            combined_export = st.session_state["dl_result"]
-            n_scenarios = combined_export["Scenario"].nunique()
-
-            st.success(
-                f"Ready to download: {n_scenarios} scenario(s), "
-                f"{len(combined_export):,} total rows, {combined_export.shape[1]} columns"
-            )
-
-            xlsx_buf = _export_to_xlsx(combined_export)
-            st.download_button(
-                label=f"Download .xlsx ({n_scenarios} sheets)",
-                data=xlsx_buf,
-                file_name=f"{dl_template}_all_scenarios.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="btn_download_all",
-            )
-
-            with st.expander("Preview data", expanded=False):
-                preview_scenario = st.selectbox(
-                    "Preview scenario",
-                    options=combined_export["Scenario"].unique().tolist(),
-                    key="dl_preview_scenario",
-                )
-                st.dataframe(
-                    combined_export[combined_export["Scenario"] == preview_scenario].head(100),
-                    width="stretch", hide_index=True,
-                )
-
-            with st.expander("Quick Export: All Templates", expanded=False):
-                st.caption("Download one .xlsx per intervention template — each scenario is a separate sheet.")
-                combined_raw = st.session_state["dl_result_raw"]
-                for tmpl_name, tmpl_info in INTERVENTION_VARIABLE_PRESETS.items():
-                    if tmpl_name == "Custom" or not tmpl_info["columns"]:
-                        continue
-                    tmpl_export = _build_export_df(combined_raw, tmpl_info["columns"])
-                    col_order = META_COLUMNS + [
-                        c for c in tmpl_info["columns"]
-                        if c in tmpl_export.columns and c not in META_COLUMNS
-                    ]
-                    col_order = [c for c in col_order if c in tmpl_export.columns]
-                    tmpl_export = tmpl_export[col_order]
-                    tmpl_buf = _export_to_xlsx(tmpl_export)
-                    st.download_button(
-                        label=f"{tmpl_name} ({tmpl_export['Scenario'].nunique()} sheets, {len(tmpl_export):,} rows)",
-                        data=tmpl_buf,
-                        file_name=f"{tmpl_name}_export.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        key=f"btn_quick_{tmpl_name}",
-                    )
+    with st.expander("Preview", expanded=False):
+        st.dataframe(export.head(100), width="stretch", hide_index=True)
