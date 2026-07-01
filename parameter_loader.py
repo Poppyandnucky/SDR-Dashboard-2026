@@ -19,6 +19,7 @@ Notes
 from __future__ import annotations
 
 import ast
+import copy
 import functools
 import os
 from dataclasses import dataclass
@@ -373,6 +374,18 @@ def _cast_count_params(param: dict[str, Any]) -> dict[str, Any]:
     return param
 
 
+@functools.lru_cache(maxsize=1)
+def _default_county_fallback_params(resolved_path: str) -> dict[str, Any]:
+    """Kakamega's parameter dict, used to fill in values missing for other counties.
+
+    Cached (deterministic seed) since this is only a fallback source, not the primary
+    sampling path — callers must deepcopy values out of it before use, since dict/array
+    values here are shared across every county that falls back to them.
+    """
+    wb = _load_workbook_cached(resolved_path)
+    return _build_params(wb, DEFAULT_COUNTY, rng=np.random.default_rng(0), strict_county=False)
+
+
 def _build_params(
     wb: ParameterWorkbook,
     county: str,
@@ -416,6 +429,15 @@ def _build_params(
     param.update(_county_supply(wb, county, rng))
     param.update(_county_calibrated(wb, county))
     param.update(_calibration_targets(wb, county))
+
+    # Fall back to Kakamega's value for any parameter this county's sheets don't yet
+    # provide (e.g. supply data not yet collected for a county), per this module's
+    # documented behavior. Values are deep-copied since callers mutate arrays in place.
+    if county_clean != DEFAULT_COUNTY:
+        fallback = _default_county_fallback_params(str(WORKBOOK_PATH.resolve()))
+        for key, value in fallback.items():
+            if key not in param:
+                param[key] = copy.deepcopy(value)
 
     # Derived convenience values.
     if "base_LB" in param:

@@ -577,12 +577,13 @@ def fetal_sensor_calculator(track, param, i, flags, rng):
     fetal_sensor = {}
 
     # Calculate high-risk and low-risk pregancies in each facility level
-    highrisk_perday_perl23 = math.ceil(track['HighRisk_Track'][i][1] / 30 / param['num_L2/3'])
-    highrisk_perday_perl4 = math.ceil(track['HighRisk_Track'][i][2] / 30 / param['num_L4'])
-    highrisk_perday_perl5 = math.ceil(track['HighRisk_Track'][i][3] / 30 / param['num_L5'])
-    lowrisk_perday_perl23 = math.ceil((track['LB_Track'][i][1] - track['HighRisk_Track'][i][1]) / 30 / param['num_L2/3'])
-    lowrisk_perday_perl4 = math.ceil((track['LB_Track'][i][2] - track['HighRisk_Track'][i][2]) / 30 / param['num_L4'])
-    lowrisk_perday_perl5 = math.ceil((track['LB_Track'][i][3] - track['HighRisk_Track'][i][3]) / 30 / param['num_L5'])
+    # (a facility level with 0 facilities in this county has no per-facility rate to compute)
+    highrisk_perday_perl23 = math.ceil(track['HighRisk_Track'][i][1] / 30 / param['num_L2/3']) if param['num_L2/3'] > 0 else 0
+    highrisk_perday_perl4 = math.ceil(track['HighRisk_Track'][i][2] / 30 / param['num_L4']) if param['num_L4'] > 0 else 0
+    highrisk_perday_perl5 = math.ceil(track['HighRisk_Track'][i][3] / 30 / param['num_L5']) if param['num_L5'] > 0 else 0
+    lowrisk_perday_perl23 = math.ceil((track['LB_Track'][i][1] - track['HighRisk_Track'][i][1]) / 30 / param['num_L2/3']) if param['num_L2/3'] > 0 else 0
+    lowrisk_perday_perl4 = math.ceil((track['LB_Track'][i][2] - track['HighRisk_Track'][i][2]) / 30 / param['num_L4']) if param['num_L4'] > 0 else 0
+    lowrisk_perday_perl5 = math.ceil((track['LB_Track'][i][3] - track['HighRisk_Track'][i][3]) / 30 / param['num_L5']) if param['num_L5'] > 0 else 0
     
 
     # Calculate the number of fetal dopplers needed
