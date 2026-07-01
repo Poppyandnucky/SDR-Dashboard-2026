@@ -18,6 +18,7 @@ Notes
 
 from __future__ import annotations
 
+import ast
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
@@ -82,12 +83,24 @@ def _is_missing(value: Any) -> bool:
     return value is None or (isinstance(value, float) and np.isnan(value)) or pd.isna(value)
 
 
-def _sample_or_value(row: Mapping[str, Any], rng: np.random.Generator) -> float:
+def _parse_array_string(value: Any) -> np.ndarray | None:
+    """Parse a single cell like '[0.29, 0.47, 0.24]' into a float array, or None if not array-shaped."""
+    if isinstance(value, str) and value.strip().startswith("[") and value.strip().endswith("]"):
+        return np.array(ast.literal_eval(value.strip()), dtype=float)
+    return None
+
+
+def _sample_or_value(row: Mapping[str, Any], rng: np.random.Generator) -> float | np.ndarray:
     value = row.get("value")
     kind = row.get("kind")
     ci_lower = row.get("ci_lower")
     ci_upper = row.get("ci_upper")
     n = row.get("n")
+
+    # A whole array pasted into one cell, e.g. '[0.29, 0.47, 0.24]' -- always deterministic.
+    array_value = _parse_array_string(value)
+    if array_value is not None:
+        return array_value
 
     # Treat blank/fixed kinds or rows without CIs as deterministic.
     if _is_missing(kind) or str(kind).lower() == "fixed" or _is_missing(ci_lower) or _is_missing(ci_upper):
@@ -135,7 +148,7 @@ def _sampled_params(wb: ParameterWorkbook, rng: np.random.Generator) -> dict[str
 
 def _intervention_params(wb: ParameterWorkbook, rng: np.random.Generator) -> dict[str, Any]:
     rows = wb.sheet("interv_params")
-    return {row["parameter_name"]: _sample_or_value(row, rng) for _, row in rows.iterrows() if not _is_missing(row.get("value"))}
+    return {row["parameter_name"]: _sample_or_value(row, rng) for _, row in rows.iterrows() if not _is_missing(row.get("parameter_name")) and not _is_missing(row.get("value"))}
 
 
 def _constants(wb: ParameterWorkbook) -> dict[str, Any]:
@@ -200,15 +213,6 @@ def _county_supply(wb: ParameterWorkbook, county: str, rng: np.random.Generator)
 
     for name, g in rows.dropna(subset=["parameter_name", "value"]).groupby("parameter_name", sort=False):
         name = str(name)
-
-        if name == "base_LB":
-            continue
-
-        if name == "base_LB":
-            continue
-
-        if name == "base_LB":
-            continue
 
         if (
             name in collapse_l3_params
@@ -349,6 +353,15 @@ def get_parameters(
     param.update(_intervention_params(wb, rng))
     param["cost_dict"] = _cost_dict(wb)
     param["DW"] = _disability_weights(wb, rng)
+
+    if "fqa_pulse_modifier" in param:
+        medium = param["fqa_pulse_modifier"]
+        param.setdefault("fqa_pulse_modifier_level", "Medium")
+        param["fqa_pulse_modifier_options"] = {
+            "Low": medium * 0.5,
+            "Medium": medium,
+            "High": medium * 1.5,
+        }
 
     # County-specific overrides.
     param.update(_county_demographics(wb, county, rng))

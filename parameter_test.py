@@ -6,7 +6,7 @@ rng1 = np.random.default_rng(123)
 rng2 = np.random.default_rng(123)
 
 old = get_old_parameters(rng=rng1)
-new = get_new_parameters("/Users/poppy/Library/CloudStorage/OneDrive-SharedLibraries-JohnsHopkins/Meibin Chen - MOMISH interventions.xlsx", county="kakamega", rng=rng2)
+new = get_new_parameters("/Users/poppy/Library/CloudStorage/OneDrive-SharedLibraries-JohnsHopkins/Meibin Chen - MOMISH interventions/SDR Parameters.xlsx", county="kakamega", rng=rng2)
 
 ignore = []  # add intentionally changed params here
 
