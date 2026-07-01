@@ -347,6 +347,32 @@ def _disability_weights(wb: ParameterWorkbook, rng: np.random.Generator) -> dict
     return out
 
 
+# Count-like parameters (facility/equipment/volunteer counts) are used downstream as
+# np.zeros/np.arange/np.tile sizes and loop counts, which require Python ints. Excel
+# loads whole numbers as floats (e.g. 5040.0), so cast them explicitly after loading.
+_COUNT_PARAM_KEYS = (
+    "n_CHV",
+    "num_L2/3",
+    "num_L4",
+    "num_L5",
+    "num_dopplers_L2/3",
+    "num_dopplers_L4",
+    "num_dopplers_L5",
+    "num_CTGs_L2/3",
+    "num_CTGs_L4",
+    "num_CTGs_L5",
+)
+
+
+def _cast_count_params(param: dict[str, Any]) -> dict[str, Any]:
+    """Cast known count-like parameters (and any other scalar 'num_*' param) to int in place."""
+    for key, value in param.items():
+        if key in _COUNT_PARAM_KEYS or key.startswith("num_"):
+            if isinstance(value, (int, float, np.integer, np.floating)) and not isinstance(value, bool):
+                param[key] = int(round(value))
+    return param
+
+
 def _build_params(
     wb: ParameterWorkbook,
     county: str,
@@ -399,6 +425,8 @@ def _build_params(
             param["p_l5_l45"] = float(base_lb[3] / (base_lb[2] + base_lb[3])) if (base_lb[2] + base_lb[3]) > 0 else np.nan
             param["Num_Exp_L45"] = float(base_lb[2] + base_lb[3])
 
+    _cast_count_params(param)
+
     param["county"] = county_clean
     return param
 
@@ -437,6 +465,28 @@ def get_parameters(
         rng = np.random.default_rng(seed)
     wb = _load_workbook_cached(str(WORKBOOK_PATH.resolve()))
     return _build_params(wb, county, rng, strict_county)
+
+
+def get_fqa_pulse_modifier_options() -> dict[str, float]:
+    """Static Low/Medium/High multipliers for the FQA-PULSE interaction.
+
+    Sourced directly from the workbook's base 'fqa_pulse_modifier' value (deterministic,
+    no CI/sampling for this parameter), so it can be read once at import time without
+    running a full get_parameters() sampling pass.
+    """
+    wb = _load_workbook_cached(str(WORKBOOK_PATH.resolve()))
+    rows = wb.sheet("interv_params")
+    medium = float(rows.loc[rows["parameter_name"] == "fqa_pulse_modifier", "value"].iloc[0])
+    return {"Low": medium * 0.5, "Medium": medium, "High": medium * 1.5}
+
+
+def get_available_counties() -> list[str]:
+    """List county names available in the workbook (uses the cached workbook, no re-read)."""
+    wb = _load_workbook_cached(str(WORKBOOK_PATH.resolve()))
+    counties = wb.sheet("counties")
+    if "enabled" in counties.columns:
+        counties = counties[counties["enabled"].astype(bool)]
+    return sorted(counties["county"].astype(str).str.strip().str.lower().unique().tolist())
 
 
 def get_slider_params(county: str | None = None) -> dict[str, Any]:

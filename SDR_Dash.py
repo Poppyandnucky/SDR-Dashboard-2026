@@ -8,11 +8,29 @@ import time
 import copy
 import matplotlib.pyplot as plt
 import seaborn as sns
-from parameters import FQA_PULSE_MODIFIER_OPTIONS, get_parameters, get_slider_params, calculate_derived_parameters
+from parameter_loader import (
+    get_parameters,
+    calculate_derived_parameters,
+    get_available_counties,
+    get_slider_params,
+    get_fqa_pulse_modifier_options,
+    DEFAULT_COUNTY,
+)
 from model_run import run_model_dash
 from global_func import reset_flags, reset_E, reset_HSS, reset_S, get_P_l45
 st.set_page_config(layout="wide")
 selected_plot = None
+
+FQA_PULSE_MODIFIER_OPTIONS = get_fqa_pulse_modifier_options()
+
+county_options = get_available_counties()
+if DEFAULT_COUNTY not in county_options:
+    county_options = [DEFAULT_COUNTY] + county_options
+selected_county = st.selectbox(
+    "County",
+    county_options,
+    index=county_options.index(DEFAULT_COUNTY),
+)
 
 MODEL = {
     "imple_time": 3,
@@ -1604,10 +1622,10 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
                 master_rng = np.random.default_rng(base_seed)
                 base_seeds = master_rng.integers(low=0, high=1e6, size=num_seeds)
 
-                b_param = get_parameters(rng=np.random.default_rng(base_seed))
+                b_param = get_parameters(rng=np.random.default_rng(base_seed), county=selected_county)
                 b_param = calculate_derived_parameters(b_param)
 
-                i_param = get_parameters(rng=np.random.default_rng(base_seed))
+                i_param = get_parameters(rng=np.random.default_rng(base_seed), county=selected_county)
                 i_param = calculate_derived_parameters(i_param)
                 # base_seed = np.random.default_rng().integers(low=0, high=1e6, size=1)[0]
                 # rng_param = np.random.default_rng(base_seed)
@@ -1658,7 +1676,7 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
                 # In A/B mode, also run plain baseline once for column comparison
                 if compare_two_interventions:
                     status.text("⏳ Running Plain Baseline for A/B column comparison...")
-                    base_param = get_parameters(rng=np.random.default_rng(base_seed))
+                    base_param = get_parameters(rng=np.random.default_rng(base_seed), county=selected_county)
                     base_param = calculate_derived_parameters(base_param)
                     base_flags = reset_flags()
                     base_HSS = reset_HSS(slider_params)
@@ -1704,7 +1722,7 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
                         monthly_seeds_for_this_run = run_seeds_matrix[run_index]
                         # Use the VERY FIRST seed of this run's sequence to generate parameters
                         param_rng = np.random.default_rng(monthly_seeds_for_this_run[0])
-                        b_param = get_parameters(rng=param_rng)
+                        b_param = get_parameters(rng=param_rng, county=selected_county)
                         b_param = calculate_derived_parameters(b_param)
                         
                         b_flags, b_HSS, b_S, b_E = reset_flags(), reset_HSS(slider_params), reset_S(slider_params), reset_E()
@@ -1786,7 +1804,7 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
 
                     # Use the exact same seed to generate identical starting parameters
                     param_rng = np.random.default_rng(monthly_seeds_for_this_run[0])
-                    i_param = get_parameters(rng=param_rng)
+                    i_param = get_parameters(rng=param_rng, county=selected_county)
                     i_param = calculate_derived_parameters(i_param)
                     i_param.update({"E": i_E, "S": i_S, "HSS": i_HSS})
                     sync_param_momish_from_hss(i_param, i_HSS)
@@ -1841,7 +1859,7 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
                     for run_index in range(total_runs):
                         monthly_seeds_for_this_run = run_seeds_matrix[run_index]
                         param_rng = np.random.default_rng(monthly_seeds_for_this_run[0])
-                        base_param = get_parameters(rng=param_rng)
+                        base_param = get_parameters(rng=param_rng, county=selected_county)
                         base_param = calculate_derived_parameters(base_param)
                         base_flags = reset_flags()
                         base_HSS = reset_HSS(slider_params)
@@ -4607,7 +4625,7 @@ if run_clicked:
             monthly_seeds = run_seeds_matrix[run_index]
             param_rng = np.random.default_rng(monthly_seeds[0])
 
-            sc_param = get_parameters(rng=param_rng)
+            sc_param = get_parameters(rng=param_rng, county=selected_county)
             sc_param = calculate_derived_parameters(sc_param)
             sc_param.update({"E": copy.deepcopy(i_E), "S": copy.deepcopy(i_S), "HSS": copy.deepcopy(i_HSS)})
             sync_param_momish_from_hss(sc_param, i_HSS)
