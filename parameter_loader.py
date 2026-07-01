@@ -19,8 +19,9 @@ Notes
 from __future__ import annotations
 
 import ast
+import functools
+import os
 from dataclasses import dataclass
-from functools import lru_cache
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -45,6 +46,18 @@ SAMPLED_ARRAYS = {
     "p_PL_GA": ["p_PL_GA_37", "p_PL_GA_38", "p_PL_GA_39", "p_PL_GA_40", "p_PL_GA_41", "p_PL_GA_42"],
     "p_OL": ["p_OL_notprolonged", "p_OL_prolonged"],
 }
+
+# ---------------------------------------------------------------------------
+# Module-level workbook path and county default.
+# Override WORKBOOK_PATH at runtime by setting the SDR_PARAMS_PATH env var,
+# e.g. for server deployment:  export SDR_PARAMS_PATH=/app/SDR_Parameters.xlsx
+# ---------------------------------------------------------------------------
+WORKBOOK_PATH: Path = Path(os.environ.get(
+    "SDR_PARAMS_PATH",
+    "/Users/poppy/Library/CloudStorage/OneDrive-SharedLibraries-JohnsHopkins/"
+    "Meibin Chen - MOMISH interventions/SDR Parameters.xlsx",
+))
+DEFAULT_COUNTY: str = "kakamega"
 
 # Disability-weight labels expected by existing DALY code.
 DW_NAME_MAP = {
@@ -76,15 +89,15 @@ class ParameterWorkbook:
         return self.sheets[name].copy()
 
 
-@lru_cache(maxsize=8)
-def _load_workbook_cached(path: str, modified_ns: int) -> ParameterWorkbook:
-    return ParameterWorkbook.load(path)
+@functools.lru_cache(maxsize=None)
+def _load_workbook_cached(resolved_path: str) -> ParameterWorkbook:
+    """Load the Excel workbook from disk exactly once per resolved path per process.
 
-
-def load_parameter_workbook(path: str | Path) -> ParameterWorkbook:
-    """Load a workbook once per path and modification timestamp."""
-    resolved = Path(path).expanduser().resolve()
-    return _load_workbook_cached(str(resolved), resolved.stat().st_mtime_ns)
+    The return value is an immutable ParameterWorkbook whose .sheet() method
+    always returns a fresh copy of the underlying DataFrame, so downstream
+    sampling code cannot mutate the cached data.
+    """
+    return ParameterWorkbook.load(resolved_path)
 
 
 def _clean_county(county: str) -> str:
@@ -95,43 +108,32 @@ def _is_missing(value: Any) -> bool:
     return value is None or (isinstance(value, float) and np.isnan(value)) or pd.isna(value)
 
 
-def _to_float_or_none(value: Any) -> float | None:
-    """Convert workbook values to float, treating placeholders as missing."""
-    if _is_missing(value):
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
+def _parse_array_string(value: Any) -> np.ndarray | None:
+    """Parse a single cell like '[0.29, 0.47, 0.24]' into a float array, or None if not array-shaped."""
+    if isinstance(value, str) and value.strip().startswith("[") and value.strip().endswith("]"):
+        return np.array(ast.literal_eval(value.strip()), dtype=float)
+    return None
 
 
-def _sample_or_value(row: Mapping[str, Any], rng: np.random.Generator) -> Any:
+def _sample_or_value(row: Mapping[str, Any], rng: np.random.Generator) -> float | np.ndarray | None:
+    """Return a numeric value, array, or None for placeholder strings like 'TBD'."""
     value = row.get("value")
     kind = row.get("kind")
     ci_lower = row.get("ci_lower")
     ci_upper = row.get("ci_upper")
     n = row.get("n")
 
+    # A whole array pasted into one cell, e.g. '[0.29, 0.47, 0.24]' -- always deterministic.
+    array_value = _parse_array_string(value)
+    if array_value is not None:
+        return array_value
+
     # Treat blank/fixed kinds or rows without CIs as deterministic.
     if _is_missing(kind) or str(kind).lower() == "fixed" or _is_missing(ci_lower) or _is_missing(ci_upper):
-        if isinstance(value, str):
-            stripped = value.strip()
-            if stripped.startswith("[") and stripped.endswith("]"):
-                parsed = ast.literal_eval(stripped)
-                array = np.asarray(parsed, dtype=float)
-                if array.ndim != 1 or array.size == 0:
-                    raise ValueError(f"Expected a non-empty numeric parameter array, got {value!r}")
-                return array
-        elif isinstance(value, (list, tuple, np.ndarray)):
-            array = np.asarray(value, dtype=float)
-            if array.ndim != 1 or array.size == 0:
-                raise ValueError(f"Expected a non-empty numeric parameter array, got {value!r}")
-            return array
-
-        converted = _to_float_or_none(value)
-        if converted is None:
-            raise ValueError(f"Expected numeric parameter value, got {value!r}")
-        return converted
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None  # placeholder text like 'TBD' or 'L3 calc TBD' — skip silently
 
     n_arg = None if _is_missing(n) else int(n)
     return float(sample_from_ci(float(value), float(ci_lower), float(ci_upper), n=n_arg, kind=str(kind), size=1, rng=rng)[0])
@@ -145,6 +147,16 @@ def _scalar_table(df: pd.DataFrame, key_col: str, value_col: str = "value") -> d
         if not _is_missing(key) and not _is_missing(val):
             out[str(key)] = float(val)
     return out
+
+
+def _as_optional_float(value: Any) -> float | None:
+    """Return a numeric value, or None for blanks/placeholders such as 'x'."""
+    if _is_missing(value):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _sampled_params(wb: ParameterWorkbook, rng: np.random.Generator) -> dict[str, Any]:
@@ -164,8 +176,8 @@ def _sampled_params(wb: ParameterWorkbook, rng: np.random.Generator) -> dict[str
 
 
 def _intervention_params(wb: ParameterWorkbook, rng: np.random.Generator) -> dict[str, Any]:
-    rows = wb.sheet("interv_params").dropna(subset=["parameter_name"])
-    return {row["parameter_name"]: _sample_or_value(row, rng) for _, row in rows.iterrows() if not _is_missing(row.get("value"))}
+    rows = wb.sheet("interv_params")
+    return {row["parameter_name"]: _sample_or_value(row, rng) for _, row in rows.iterrows() if not _is_missing(row.get("parameter_name")) and not _is_missing(row.get("value"))}
 
 
 def _constants(wb: ParameterWorkbook) -> dict[str, Any]:
@@ -178,7 +190,7 @@ def _array_constants(wb: ParameterWorkbook) -> dict[str, np.ndarray]:
     out: dict[str, np.ndarray] = {}
     for name, g in rows.dropna(subset=["parameter_name", "value"]).groupby("parameter_name", sort=False):
         g = g.sort_values("index") if "index" in g.columns else g
-        arr = g["value"].to_numpy(dtype=float, copy=True)
+        arr = g["value"].to_numpy(dtype=float)
         # Preserve GA_sequence as integers, matching existing code.
         if name == "GA_sequence":
             arr = arr.astype(int)
@@ -206,61 +218,51 @@ def _county_demographics(wb: ParameterWorkbook, county: str, rng: np.random.Gene
 def _county_calibrated(wb: ParameterWorkbook, county: str) -> dict[str, Any]:
     rows = _county_rows(wb, "county_calibrated", county)
     out: dict[str, Any] = {}
-    for name, g in rows.dropna(subset=["parameter_name"]).groupby("parameter_name", sort=False):
+    for name, g in rows.dropna(subset=["parameter_name", "value"]).groupby("parameter_name", sort=False):
         if "index" in g.columns and g["index"].notna().any():
-            indexed = g[g["index"].notna()].copy()
-            values = np.full(int(indexed["index"].max()) + 1, np.nan, dtype=float)
-            for _, row in indexed.iterrows():
-                if not _is_missing(row.get("value")):
-                    values[int(row["index"])] = float(row["value"])
-            if np.isfinite(values).any():
-                out[str(name)] = values
+            out[str(name)] = g.sort_values("index")["value"].to_numpy(dtype=float)
         else:
-            non_missing = g[g["value"].notna()]
-            if not non_missing.empty:
-                out[str(name)] = float(non_missing.iloc[0]["value"])
+            out[str(name)] = float(g.iloc[0]["value"])
     return out
-
-
-def _merge_county_params(base: dict[str, Any], overrides: dict[str, Any]) -> None:
-    """Apply county values while retaining fallback entries for partial arrays."""
-    for name, value in overrides.items():
-        if isinstance(value, np.ndarray) and np.isnan(value).any() and name in base:
-            fallback = np.asarray(base[name], dtype=float)
-            if fallback.shape == value.shape:
-                value = np.where(np.isnan(value), fallback, value)
-        base[name] = value
 
 
 def _county_supply(wb: ParameterWorkbook, county: str, rng: np.random.Generator) -> dict[str, Any]:
     rows = _county_rows(wb, "county_supply", county)
     out: dict[str, Any] = {}
 
+    # These may have an extra L3 row in Excel, but the model expects
+    # [home, L2/3, L4, L5]. Here, L2/3 is already the combined model value.
+    collapse_l3_params = {
+        "S_MgSO4",
+        "S_antibiotics",
+        "S_oxytocin",
+    }
+
     model_facility_order = ["home", "L2/3", "L4", "L5"]
 
-    for name, g in rows.dropna(subset=["parameter_name"]).groupby("parameter_name", sort=False):
+    for name, g in rows.dropna(subset=["parameter_name", "value"]).groupby("parameter_name", sort=False):
         name = str(name)
 
-        if "facility_level" in g.columns and g["facility_level"].notna().any():
-            lookup = {
-                str(row["facility_level"]).strip(): _sample_or_value(row, rng)
-                for _, row in g.iterrows()
-                if _to_float_or_none(row.get("value")) is not None
-            }
+        if (
+            name in collapse_l3_params
+            and "facility_level" in g.columns
+            and g["facility_level"].notna().any()
+        ):
+            # Skip rows whose value is a placeholder string (e.g. 'TBD').
+            lookup = {}
+            for _, row in g.iterrows():
+                v = _sample_or_value(row, rng)
+                if v is not None:
+                    lookup[str(row["facility_level"]).strip()] = v
 
-            values = [lookup.get(level) for level in model_facility_order]
-            if all(value is not None for value in values):
-                out[name] = np.array(values, dtype=float)
-            elif len(lookup) == 1:
-                out[name] = float(next(iter(lookup.values())))
+            out[name] = np.array(
+                [lookup.get(level, 0.0) for level in model_facility_order],
+                dtype=float,
+            )
 
         else:
             g = g.sort_values("index") if "index" in g.columns else g
-            values = [
-                _sample_or_value(row, rng)
-                for _, row in g.iterrows()
-                if _to_float_or_none(row.get("value")) is not None
-            ]
+            values = [v for v in (_sample_or_value(row, rng) for _, row in g.iterrows()) if v is not None]
             if not values:
                 continue
             out[name] = np.array(values, dtype=float) if len(values) > 1 else float(values[0])
@@ -312,24 +314,14 @@ def _county_facilities(wb: ParameterWorkbook, county: str) -> dict[str, Any]:
     return out
 
 
-def _county_specific_params(wb: ParameterWorkbook, county: str, rng: np.random.Generator) -> dict[str, Any]:
-    params: dict[str, Any] = {}
-    params.update(_county_demographics(wb, county, rng))
-    params.update(_county_facilities(wb, county))
-    params.update(_county_supply(wb, county, rng))
-    params.update(_county_calibrated(wb, county))
-    params.update(_calibration_targets(wb, county))
-    return params
-
-
 def _calibration_targets(wb: ParameterWorkbook, county: str) -> dict[str, float]:
     rows = _county_rows(wb, "calibration_targets", county)
     out = {}
     for _, row in rows.iterrows():
         name = row.get("target_name")
-        value = row.get("value")
-        if not _is_missing(name) and not _is_missing(value):
-            out[str(name)] = float(value)
+        value = _as_optional_float(row.get("value"))
+        if not _is_missing(name) and value is not None:
+            out[str(name)] = value
     return out
 
 
@@ -355,33 +347,18 @@ def _disability_weights(wb: ParameterWorkbook, rng: np.random.Generator) -> dict
     return out
 
 
-def get_parameters(
-    workbook_path: str | Path,
-    county: str = "kakamega",
-    rng: np.random.Generator | None = None,
-    seed: int | None = None,
+def _build_params(
+    wb: ParameterWorkbook,
+    county: str,
+    rng: np.random.Generator,
     strict_county: bool = False,
-    fallback_county: str | None = "kakamega",
 ) -> dict[str, Any]:
-    """Build the parameter dictionary for one county.
+    """Build a fresh sampled parameter dict from an already-loaded workbook.
 
-    Parameters
-    ----------
-    workbook_path:
-        Path to `SDR Parameters.xlsx`.
-    county:
-        County name in the workbook, e.g. "kakamega", "kisii", "makueni", "mombasa".
-    rng, seed:
-        Use either a numpy Generator or a seed for reproducible uncertainty draws.
-    strict_county:
-        If True, raise an error when the county has no row in the `counties` sheet.
-    fallback_county:
-        County used for missing county-specific values. Set to None to disable fallback.
+    This is the hot path called inside Monte Carlo loops.  It performs no disk
+    I/O — all DataFrame access goes through wb.sheet() which returns a .copy(),
+    so the cached workbook is never mutated in-place.
     """
-    if rng is None:
-        rng = np.random.default_rng(seed)
-
-    wb = load_parameter_workbook(workbook_path)
     county_clean = _clean_county(county)
 
     counties = wb.sheet("counties")
@@ -398,14 +375,23 @@ def get_parameters(
     param["cost_dict"] = _cost_dict(wb)
     param["DW"] = _disability_weights(wb, rng)
 
-    # County-specific overrides. Load fallback first so non-missing requested-county
-    # values replace it while blank workbook cells inherit the fallback county.
-    fallback_clean = _clean_county(fallback_county) if fallback_county else None
-    if fallback_clean and county_clean != fallback_clean:
-        param.update(_county_specific_params(wb, fallback_clean, rng))
-    _merge_county_params(param, _county_specific_params(wb, county, rng))
+    if "fqa_pulse_modifier" in param:
+        medium = param["fqa_pulse_modifier"]
+        param.setdefault("fqa_pulse_modifier_level", "Medium")
+        param["fqa_pulse_modifier_options"] = {
+            "Low": medium * 0.5,
+            "Medium": medium,
+            "High": medium * 1.5,
+        }
 
-    # Derived convenience values used in your current code.
+    # County-specific overrides.
+    param.update(_county_demographics(wb, county, rng))
+    param.update(_county_facilities(wb, county))
+    param.update(_county_supply(wb, county, rng))
+    param.update(_county_calibrated(wb, county))
+    param.update(_calibration_targets(wb, county))
+
+    # Derived convenience values.
     if "base_LB" in param:
         base_lb = np.asarray(param["base_LB"], dtype=float)
         if base_lb.size == 4 and base_lb.sum() > 0:
@@ -417,17 +403,59 @@ def get_parameters(
     return param
 
 
-def get_slider_params(workbook_path: str | Path, county: str = "kakamega") -> dict[str, Any]:
-    """Load dashboard slider defaults for one county."""
-    wb = load_parameter_workbook(workbook_path)
+def get_parameters(
+    rng: np.random.Generator | None = None,
+    county: str | None = None,
+    *,
+    seed: int | None = None,
+    strict_county: bool = False,
+) -> dict[str, Any]:
+    """Build a freshly sampled parameter dictionary.
+
+    Parameters
+    ----------
+    rng:
+        A numpy Generator for reproducible uncertainty draws.  A new
+        non-deterministic generator is created when None.
+    county:
+        County name, e.g. "kakamega", "kisii", "makueni", "mombasa".
+        Defaults to DEFAULT_COUNTY ("kakamega").
+    seed:
+        Integer seed used only when rng is None.
+    strict_county:
+        If True, raise an error when the county is not in the workbook.
+
+    Notes
+    -----
+    The workbook is loaded from WORKBOOK_PATH (or the SDR_PARAMS_PATH env var)
+    exactly once per process and cached.  Repeated calls with different rng
+    values produce independently sampled dictionaries without re-reading Excel.
+    """
+    if county is None:
+        county = DEFAULT_COUNTY
+    if rng is None:
+        rng = np.random.default_rng(seed)
+    wb = _load_workbook_cached(str(WORKBOOK_PATH.resolve()))
+    return _build_params(wb, county, rng, strict_county)
+
+
+def get_slider_params(county: str | None = None) -> dict[str, Any]:
+    """Load dashboard slider defaults for one county.
+
+    Uses the cached workbook (no re-read from disk).  County defaults to
+    DEFAULT_COUNTY when not specified.
+    """
+    if county is None:
+        county = DEFAULT_COUNTY
     county_clean = _clean_county(county)
+    wb = _load_workbook_cached(str(WORKBOOK_PATH.resolve()))
 
     out: dict[str, Any] = {}
 
     # Lookup-table slider arrays, e.g. p_l45_anc_slider.
     lookup = wb.sheet("lookup_tables")
     for table_name, g in lookup.dropna(subset=["table_name", "key", "value"]).groupby("table_name", sort=False):
-        out[str(table_name)] = g[["key", "value"]].to_numpy(dtype=float, copy=True)
+        out[str(table_name)] = g[["key", "value"]].to_numpy(dtype=float)
 
     sliders = wb.sheet("slider_parameters")
     if "county" in sliders.columns:
@@ -440,22 +468,20 @@ def get_slider_params(workbook_path: str | Path, county: str = "kakamega") -> di
         if _is_missing(name) or _is_missing(value):
             continue
         if typ == "array":
-            # Allows comma-separated values in Excel, if you choose to store arrays that way.
-            if isinstance(value, str):
-                stripped = value.strip()
-                if stripped.startswith("[") and stripped.endswith("]"):
-                    parsed = ast.literal_eval(stripped)
-                    out[str(name)] = np.array(parsed, dtype=float)
-                else:
-                    out[str(name)] = np.array([float(x.strip()) for x in value.split(",") if x.strip()], dtype=float)
+            # Bracket-string format "[0, 0, 0.77, 0.77]" or plain comma-separated.
+            arr = _parse_array_string(value)
+            if arr is not None:
+                out[str(name)] = arr
+            elif isinstance(value, str):
+                out[str(name)] = np.array([float(x.strip()) for x in value.split(",") if x.strip()], dtype=float)
             else:
                 out[str(name)] = np.array([float(value)], dtype=float)
         else:
             out[str(name)] = float(value)
 
     # Sensible fallbacks from the main county parameter table.
-    params = get_parameters(workbook_path, county=county)
-    derived_params = calculate_derived_parameters(params)
+    # Use a fixed seed so slider defaults are deterministic regardless of call order.
+    params = _build_params(wb, county, rng=np.random.default_rng(0))
     out.setdefault("base_knowledge_L45_slider", params.get("base_knowledge_L45"))
     out.setdefault("base_p_45_slider", params.get("base_p_45"))
     out.setdefault("p_ANC_base_slider", params.get("p_ANC_base"))
@@ -463,24 +489,8 @@ def get_slider_params(workbook_path: str | Path, county: str = "kakamega") -> di
     out.setdefault("S_iv_iron_slider", params.get("S_iv_iron"))
     out.setdefault("S_MgSO4_slider", params.get("S_MgSO4"))
     out.setdefault("S_antibiotics_slider", params.get("S_antibiotics"))
-    out.setdefault("S_oxytocin_slider", derived_params.get("S_oxytocin"))
+    out.setdefault("S_oxytocin_slider", params.get("S_oxytocin"))
     out.setdefault("t_l23_l45_notsevere_slider", params.get("t_l23_l45_notsevere"))
-
-    # reset_S indexes these defaults by facility level. Some county workbook
-    # rows use a scalar when the same default applies at every level.
-    for name in (
-        "S_pph_bundle_slider",
-        "S_MgSO4_slider",
-        "S_antibiotics_slider",
-        "S_oxytocin_slider",
-    ):
-        value = np.asarray(out[name], dtype=float)
-        if value.ndim == 0 or value.size == 1:
-            out[name] = np.full(4, float(value.reshape(-1)[0]), dtype=float)
-        elif value.ndim == 1 and value.size == 4:
-            out[name] = value.copy()
-        else:
-            raise ValueError(f"{name} must be a scalar or a four-element array, got shape {value.shape}")
     return out
 
 

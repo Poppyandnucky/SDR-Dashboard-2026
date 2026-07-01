@@ -1,9 +1,15 @@
 import numpy as np
 import math
 import random
-
 from global_func import sample_from_ci, odds_prob, comps_riskstatus_vs_lowrisk, comp2_comp1_anemia, P_RDS
 import streamlit as st
+
+FQA_PULSE_MODIFIER_MEDIUM = 0.2  # baseline PULSE amplification when FQA is also active
+FQA_PULSE_MODIFIER_OPTIONS = {
+    "Low": FQA_PULSE_MODIFIER_MEDIUM * 0.5,
+    "Medium": FQA_PULSE_MODIFIER_MEDIUM,
+    "High": FQA_PULSE_MODIFIER_MEDIUM * 1.5,
+}
 
 def get_slider_params():
     slider_params = {
@@ -37,9 +43,9 @@ def get_slider_params():
         'p_ANC_base_slider': 0.56,                              #Baseline probability of 4+ ANC - default value of slider
         'S_pph_bundle_slider': np.array([0, 0, 0, 0]),          #PPH bundle implementation - default value of slider
         'S_iv_iron_slider': 0.44,                               #IV iron implementation - default value of slider
-        'S_MgSO4_slider': np.array([0, 0*0.3157 + 0.73*(1-0.3157), 0.77, 0.77]),         #MgSO4 implementation - default value of slider
-        'S_antibiotics_slider': np.array([0, 0*0.3157 + 0.38*(1-0.3157), 0.48, 0.48]),   #Antibiotics implementation - default value of slider
-        'S_oxytocin_slider': np.array([0, 0*0.3157 + 0.33*(1-0.3157), 0.78, 0.78]),      #Oxytocin implementation - default value of slider
+        'S_MgSO4_slider': np.array([0, 0.73 * (1 - 0.311), 0.77, 0.77]),         #MgSO4 implementation - default value of slider
+        'S_antibiotics_slider': np.array([0, 0.38 * (1 - 0.311), 0.48, 0.48]),   #Antibiotics implementation - default value of slider
+        'S_oxytocin_slider': np.array([0, 0.33 * (1 - 0.311), 0.78, 0.78]),      #Oxytocin implementation - default value of slider
         't_l23_l45_notsevere_slider': 76,                       #Probability of referral from L2/3 to L4/5 for not severe cases - default value of slider
     }
     return slider_params
@@ -82,28 +88,13 @@ def get_parameters(rng = None):
         'num_CTGs_L5': 0,                                                                                   #number of CTG machines in L5 facilities
 
         ##parameters in LB_effect.py##
-        # Sen_traditional: 0.6687
-        # Spec_traditional: 0.3360
-        # P_home_lowrisk: 0.0685
-        # P_L23_highrisk: 0.0956
         # calibrated in model
-
-        # Kisii 
-
-        "home_noANC": 0.1295, #calculated based on P(home)=0.35 and P(home|anc)=0.07 # probability of home delivery without ANC
-        "l45_fac": 0.6, #assumed based on cloest distance to L4/5 if no ANC and based on mothers' decision  # probability of delivery at L4/5 facility if chosing deliver at facilities and without ANC
-        "home_lowrisk": 0.0685,  # probability of home delivery if predicted as low risk
-        "L23_highrisk": 0.0956,  # probability of delivery at L2/3 facility if predicted as high risk
-        "sen_risk_trad": 0.6687, # sensitivity of traditional ANC monitoring in predicting high risk
-        "spec_risk_trad": 0.3360, # specificity of traditional ANC monitoring in predicting low risk
-
-        # # Kakamega
-        # "home_noANC": 0.706, #calculated based on P(home)=0.35 and P(home|anc)=0.07 #0.7056735167353498,    # probability of home delivery without ANC
-        # "l45_fac": 0.11, #assumed based on cloest distance to L4/5 if no ANC and based on mothers' decision #0.21039299793502853,                                                                     # probability of delivery at L4/5 facility if chosing deliver at facilities and without ANC
-        # "home_lowrisk": 0.1692, #0.17051451153731043(old version),                                          # probability of home delivery if predicted as low risk
-        # "L23_highrisk": 0.3255, #0.36751767996993084(old version),                                          # probability of delivery at L2/3 facility if predicted as high risk
-        # "sen_risk_trad": 0.7641, #0.7939486174518111(old version),                                          # sensitivity of traditional ANC monitoring in predicting high risk
-        # "spec_risk_trad": 0.6306, #0.6311811663318615(old version),                                         # specificity of traditional ANC monitoring in predicting low risk
+        "home_noANC": 0.706, #calculated based on P(home)=0.35 and P(home|anc)=0.07 #0.7056735167353498,    # probability of home delivery without ANC
+        "l45_fac": 0.11, #assumed based on cloest distance to L4/5 if no ANC and based on mothers' decision #0.21039299793502853,                                                                     # probability of delivery at L4/5 facility if chosing deliver at facilities and without ANC
+        "home_lowrisk": 0.1692, #0.17051451153731043(old version),                                          # probability of home delivery if predicted as low risk
+        "L23_highrisk": 0.3255, #0.36751767996993084(old version),                                          # probability of delivery at L2/3 facility if predicted as high risk
+        "sen_risk_trad": 0.7641, #0.7939486174518111(old version),                                          # sensitivity of traditional ANC monitoring in predicting high risk
+        "spec_risk_trad": 0.6306, #0.6311811663318615(old version),                                         # specificity of traditional ANC monitoring in predicting low risk
         "PT_scale": 0.8250540888309176,                                                                     # scaling factor for reducing preterm birth rate to Kenya level
         "p_elec_CS|highrisk": 0.0642,                                                                       # probability of elective CS if predicted as high risk
         "p_elec_CS|preterm": 0.7799,                                                                        # probability of elective CS if predicted as preterm
@@ -227,12 +218,18 @@ def get_parameters(rng = None):
         'p_comp_severe_lowrisk': 0.0501,               # probability of severe if complications for low-risk mothers - calibrated to match severe maternal outcome rate at L4/5
         'p_NM_home': 0.235,                            # neonatal mortality rate by home - calibrated to match NMR at home (need revision)
         'weight_facility_neo': 3.15,                   # weight of facility in calculating NMR due to healthcare worker density (need revision)
+        "blood_tracking_upper_bound": 0.133,           # max flag*slider effect on PPH/APH comp_risks in mortality (13.3%)
 
         # known parameters
         'OR_MM_CSvsSVD': sample_from_ci(2.28, 1.87, 2.79, kind='OR', size=1, rng = rng)[0],                                 # odds ratio of maternal mortality by CS vs SVD
         'OR_MM_EmCSvsELCS': sample_from_ci(3.17, 2.48, 4.04, kind='OR', size=1, rng = rng)[0],                              # odds ratio of maternal mortality by emergency CS vs elective CS
         'OR_MM_transfer': sample_from_ci(1.59, 1.30, 1.93, kind='OR', size=1, rng = rng)[0],                                # odds ratio of maternal mortality by transfer
         'OR_NM_transfer': sample_from_ci(2.5, 1.1, 5.6, kind='OR', size=1, rng = rng)[0],                                   # odds ratio of neonatal mortality by transfer
+        "transfer_delay_probs_l23": np.array([0.29, 0.47, 0.24]), # Makueni referral travel time distribution from L2/3: <1h, 1-2h, 2+h
+        "transfer_delay_probs_l45": np.array([0.69, 0.15, 0.15]), # Makueni referral travel time distribution from L4/5: <1h, 1-2h, 2+h
+        "transfer_delay_rr_scale": 0.969442,                      # calibration scale for maternal mortality RR by transfer delay
+        "RR_transfer_delay_1_2": 2.11,                            # RR of maternal mortality for transfer delay 1-2h vs <1h
+        "RR_transfer_delay_2plus": 2.39,                          # RR of maternal mortality for transfer delay 2+h vs <1h
         "D_RDS": np.array([39.7, 20.0]) / 100,              # % P[death|RDS] for GA < 32 or >= 32
         "D_IVH": 11.0 / 100,                                # % P[death|IVH]
         "D_NEC": 21.2 / 100,                                # % P[death|NEC]
@@ -256,13 +253,11 @@ def get_parameters(rng = None):
         'S_oxytocin_l45': sample_from_ci(0.78, 0.706, 0.854, n=120, kind='proportion', size=1, rng = rng)[0],      # the supply level of oxytocin at L4/5
         'S_preterm_treat_l45': sample_from_ci(0.35, 0.285, 0.415, n=206, kind='proportion', size=1, rng = rng)[0], # the supply level of preterm treatment at L4/5
         'S_pph_bundle': np.array([0, 0, 0, 0]),                                                                                       # the supply level of obstetric drape at L4/5
-        # 'S_MgSO4': np.array([0, 0, 0.77, 0.77]),  
-                                                                                                                                                                                # the supply level of MgSO4 at L4/5
-        'S_MgSO4': np.array([0, 0*0.3157 + 0.73*(1-0.3157), 0.77, 0.77]),                                                                                       # the supply level of MgSO4 at L4/5
-        # 'S_antibiotics': np.array([0, 0, 0.48, 0.48]),                                                                                # the supply level of antibiotics at L4/5
-        'S_antibiotics': np.array([0, 0*0.3157 + 0.38*(1-0.3157), 0.48, 0.48]),                                                                                       # the supply level of antibiotics at L4/5
+        'S_MgSO4': np.array([0, 0.73 * (1 - 0.311), 0.77, 0.77]),                                                                      # supply level of MgSO4 by facility level
+        'S_antibiotics': np.array([0, 0.38 * (1 - 0.311), 0.48, 0.48]),                                                                  # supply level of antibiotics by facility level
         "OR_RDS_treat": 0.53,                                                                                                         # odds ratio of preterm having RDS given treatment
-        'OR_IVH_treat': 0.38,                                                                                                         # odds ratio of preterm having IVH given treatment
+        'OR_IVH_treat': 0.38, 
+        "mentors_knowledge_target": 1.0,                                                                                             # knowledge target that MENTORS moves providers toward
         'OR_NEC_treat': sample_from_ci(0.28, 0.14, 0.56, n=580, kind='OR', size=1, rng = rng)[0],                  # odds ratio of preterm having NEC given treatment
         'RR_Sepsis_treat': sample_from_ci(0.24, 0.13, 0.44, n=2063, kind='RR', size=1, rng = rng)[0],              # relative risk of preterm having sepsis given treatment
         'E_pph_bundle': sample_from_ci(0.51, 0.44, 0.60, kind='RR', size=1, rng = rng)[0],                         # efficacy of obstetric drape in reducing PPH
@@ -273,7 +268,29 @@ def get_parameters(rng = None):
         # PROMPTS mechanism parameters (NOT user inputs)
         'phone_ownership': 0.89,
         'intervention_fidelity': 0.87,
-        'OR_anc4p': 1.38,
+        'OR_anc4p': 1.38,  # default; dashboard PROMPTS slider overrides when PROMPTS is enabled
+        'fqa_knowledge_improve': 0.043,  # direct FQA increase in healthcare worker knowledge
+        'pulse_influence_strength': 0.17,  # fraction of selected PULSE indicator gap closed each model step
+        # FQA-PULSE interaction:
+        # FQA is modeled as a separate intervention with a direct effect on P["knowledge"].
+        # In addition, when both FQA and PULSE are active, FQA amplifies the PULSE effect.
+        # The amplification level is selected by the user:
+        #   Low    = 0.1 -> PULSE effect multiplied by 1.1
+        #   Medium = 0.2 -> PULSE effect multiplied by 1.2
+        #   High   = 0.3 -> PULSE effect multiplied by 1.3
+        # This modifier should only amplify PULSE when flag_fqa == 1 and flag_pulse == 1.
+        'fqa_pulse_modifier_level': 'Medium',
+        'fqa_pulse_modifier': FQA_PULSE_MODIFIER_OPTIONS['Medium'],
+        'pulse_indicator_threshold': 0.013,
+        # order: p_pph, p_aph, p_OL, p_ruptured_uterus, p_eclampsia, p_mat_sepsis (see PULSE_INDICATOR_ORDER in intrapartum.py)
+        'pulse_indicator_targets': [
+            0.007372925,
+            0.004540962,
+            0.01120199,
+            0.0003560327,
+            0.001979122,
+            0.0005203555,
+        ],
         'sen_risk_trad_target': 0.95, ## under case where mothers recognize danger signs
         'spec_risk_trad_target': 0.631,
         'p_move_home_base': 0.3,
@@ -397,7 +414,7 @@ def calculate_derived_parameters(param):
     param["RDS_T"] = P_RDS(param) # probability of RDS by GA with treatment
 
     # supply
-    param["S_oxytocin"] = np.array([0, 0*0.3157 + 0.33*(1-0.3157), param["S_oxytocin_l45"], param["S_oxytocin_l45"]])                         # supply level of oxytocin at different facility levels
+    param["S_oxytocin"] = np.array([0, 0.33 * (1 - 0.311), param["S_oxytocin_l45"], param["S_oxytocin_l45"]])       # supply level of oxytocin by facility level
     param["S_preterm_treat"] = np.array([0, 0, param["S_preterm_treat_l45"], param["S_preterm_treat_l45"]])          # supply level of preterm treatment at different facility levels
     return param
 
@@ -428,9 +445,9 @@ def reset_inputs(param, n_months):
     track['LB_Track'][0,:] = track['LB']
     track['ANC_Track'][0,:] = np.repeat(ANC, 4)
     track['HighRisk_Track'][0,:] = np.repeat(highrisk, 4)
-    track['Facility_Capacity_Track'][0, 0] = 34777 / 12
+    track['Facility_Capacity_Track'][0, 0] = param['Capacity']
     track['Referral_Capacity_Track'][0, 0] = 0
-    track['Num_Exp_L45_Track'][0, 0] = (20709 + 5126) / 12
+    track['Num_Exp_L45_Track'][0, 0] = param['base_LB'][2] + param['base_LB'][3]
     track['Constraint_Ratio_Track'][0, 0] = 1
     track['CS_Capacity_Track'][0, 0] = param["p_cs_capacity"][3]
 

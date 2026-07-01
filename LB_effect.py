@@ -12,6 +12,39 @@ def odds_update(p, OR):
     odds_new = odds * OR
     return clip01(odds_new / (1.0 + odds_new))
 
+def pulse_effect(
+    indicator_of_interest,
+    targeted_indicator,
+    current_value,
+    target_value,
+    flags,
+    param,
+    clip_min=None,
+    clip_max=None,
+):
+    if targeted_indicator != indicator_of_interest or not flags.get("flag_pulse", 0):
+        return current_value
+
+    pulse_influence_strength = float(param.get("pulse_influence_strength", 0.17))
+    fqa_pulse_modifier = float(param.get("fqa_pulse_modifier", 0.2))
+    pulse_coverage = float(param.get("HSS", {}).get("pulse_coverage", 1.0))
+    flag_fqa = float(flags.get("flag_fqa", 0))
+    pulse_influence_strength_effective = np.clip(
+        pulse_coverage * pulse_influence_strength * (1 + flag_fqa * fqa_pulse_modifier),
+        0,
+        1,
+    )
+
+    indicator_gap = max(current_value - target_value, 0)
+    new_value = current_value - pulse_influence_strength_effective * indicator_gap
+
+    if clip_min is not None or clip_max is not None:
+        low = -np.inf if clip_min is None else clip_min
+        high = np.inf if clip_max is None else clip_max
+        new_value = np.clip(new_value, low, high)
+
+    return new_value
+
 import random
 import numpy as np
 import math
@@ -89,7 +122,10 @@ def f_ANC_LB_effect_vectorized(track, LB_base, param, flags, i, int_period, rng)
         adoption_prompts = clip01(param["HSS"].get("adoption_prompts", 1.0))
         chv_engagement = clip01(param["HSS"].get("chv_engagement", 1.0))
         phone_ownership = clip01(param.get("phone_ownership", 0.89))
-        intervention_fidelity = clip01(param.get("intervention_fidelity", 0.87))
+        # Dashboard writes the slider as HSS["prompts_effect"]; legacy name is top-level intervention_fidelity
+        intervention_fidelity = clip01(
+            param["HSS"].get("prompts_effect", param.get("intervention_fidelity", 0.87))
+        )
 
         # clip CHV engagement for probability usage
         chv_engagement = clip01(chv_engagement)
@@ -99,15 +135,12 @@ def f_ANC_LB_effect_vectorized(track, LB_base, param, flags, i, int_period, rng)
         engagement_level = clip01(P_participation * intervention_fidelity)
 
         # map engagement to effective OR on ANC4+
-        OR_anc4p = float(param.get("OR_anc4p", 1.38))
+        OR_anc4p = float(param.get("OR_anc4p", 1.50))
         # anc4p_eff = 1.0 + (OR_anc4p - 1.0) * engagement_level
         OR_anc4p_eff = np.exp(engagement_level * np.log(OR_anc4p))
 
         # apply OR update to system-level P_ANC
         P_ANC = odds_update(P_ANC, OR_anc4p_eff)
-        # RR of 1.44 
-        P_ANC = P_ANC * 1.44
-        print(P_ANC)
 
     else:
         engagement_level = 0.0
@@ -288,11 +321,11 @@ def f_ANC_LB_effect_vectorized(track, LB_base, param, flags, i, int_period, rng)
     shuffled_all = rng.permutation(num_mothers)   # shuffle all mother indices
     l45_indices = np.where(i_loc == 2)[0]         # identify L4/5 mothers
     shuffled_l45 = shuffled_all[np.isin(shuffled_all, l45_indices)]  # filter only those in L4/5 from the shuffled list
-    relocate_indices = shuffled_l45[:int(exceed_lb)]                      # select only the top `exceed_lb` mothers to relocate
+    relocate_indices = shuffled_l45[:exceed_lb]                      # select only the top `exceed_lb` mothers to relocate
     mask_relocate_l23 = np.zeros(num_mothers, dtype=bool)            # apply relocation
     mask_relocate_l23[relocate_indices] = True
     i_loc[mask_relocate_l23] = 1
-    # print(exceed_lb, np.sum(mask_relocate_l23), np.sum(i_loc == 2))
+    print(exceed_lb, np.sum(mask_relocate_l23), np.sum(i_loc == 2))
 
     ##-------------------Elective C-section Decision----------------------##
     elcs_mask1 = (i_loc == 2) & (i_risk_pred == 1) & (i_preterm_pred == 0) & (i_ANC == 1)
@@ -318,6 +351,19 @@ def f_ANC_LB_effect_vectorized(track, LB_base, param, flags, i, int_period, rng)
     if flags['flag_performance']:
         P_knowledge[2] = param["HSS"]["knowledge"]
         P_knowledge[3] = param["HSS"]["knowledge"]
+    # MENTORS: same mechanism as intrapartum.initialize_intra_params (dashboard keys live under param["HSS"])
+    if flags.get("flag_MENTOR"):
+        adoption_rate = clip01(float(param["HSS"].get("mentor_adoption", param.get("mentor_adoption", 0.0))))
+        attendance_rate = clip01(float(param["HSS"].get("mentor_attendance", param.get("mentor_attendance", 0.0))))
+        fidelity_rate = clip01(float(param["HSS"].get("mentor_fidelity", param.get("mentor_fidelity", 0.0))))
+        mentors_coverage = adoption_rate * attendance_rate * fidelity_rate
+        mentors_knowledge_target = float(param.get("mentors_knowledge_target", 1.0))
+        P_knowledge[1:4] = np.clip(
+            P_knowledge[1:4]
+            + mentors_coverage * (mentors_knowledge_target - P_knowledge[1:4]),
+            0.0,
+            1.0,
+        )
     P_close_to_L23 = param["close_to_L23"]
     P_close_to_L45 = 1 - P_close_to_L23
     P_iv_iron = param["S"]["iv_iron"] * (P_knowledge[1] * P_close_to_L23 + P_knowledge[3] * P_close_to_L45)
@@ -372,8 +418,8 @@ def shifting_live_births_vectorized(individual_outcomes, param, i, track, flags,
         ##-------------------Parameter initialization-------------------##
         i_loc = individual_outcomes['i_loc'].values
         i_class = individual_outcomes['i_class'].values
-        i_self_referral = individual_outcomes['i_self_referral'].values
-        i_free_referral = individual_outcomes['i_free_referral'].values
+        i_self_referral = individual_outcomes['i_self_referral'].values.copy()
+        i_free_referral = individual_outcomes['i_free_referral'].values.copy()
         num_mothers = i_loc.shape[0]
         LB_base = track["LB_Track"][0]
         Facility_Capacity = track['Facility_Capacity_Track'][i, 0]
@@ -442,7 +488,16 @@ def shifting_live_births_vectorized(individual_outcomes, param, i, track, flags,
             sorted_movers_indices = movers_intended_indices[np.argsort(move_random_draw_intended)]
 
             num_intended = len(movers_intended_indices)
-            num_l45_max = int(np.floor(Facility_Capacity - num_l45_bf_shift))
+            effective_capacity = -pulse_effect(
+                "Facility_Capacity",
+                "Facility_Capacity",
+                -Facility_Capacity,
+                -num_l45_exp,
+                flags,
+                param,
+            )
+            num_l45_max = int(np.floor(effective_capacity - num_l45_bf_shift))
+            num_l45_max = max(num_l45_max, 0)
             num_select_final = min(num_l45_max, num_intended)
 
             allowed_indices = sorted_movers_indices[:num_select_final]

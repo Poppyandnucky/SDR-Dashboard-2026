@@ -8,7 +8,7 @@ import time
 import copy
 import matplotlib.pyplot as plt
 import seaborn as sns
-from parameters import get_parameters, get_slider_params, calculate_derived_parameters
+from parameters import FQA_PULSE_MODIFIER_OPTIONS, get_parameters, get_slider_params, calculate_derived_parameters
 from model_run import run_model_dash
 from global_func import reset_flags, reset_E, reset_HSS, reset_S, get_P_l45
 st.set_page_config(layout="wide")
@@ -58,7 +58,7 @@ def render_calculation_sidebar():
     df_facility = df_fac.value_counts().reset_index()
 
     st.sidebar.subheader("By Facility")
-    st.sidebar.dataframe(df_facility, use_container_width=True, hide_index=True)
+    st.sidebar.dataframe(df_facility, width="stretch", hide_index=True)
 
 def go_back_to_main():
     st.session_state.intervention_selection = None
@@ -70,6 +70,308 @@ def go_back_to_hss():
     st.session_state.hss_mode = None
     st.session_state.scenario_selected = None
     st.session_state.model_finished = False
+
+
+HSS_DEMAND_PRESETS = {
+    "Conservative": {"P_ANC": 70, "P_L45": 53},
+    "Moderate": {"P_ANC": 80, "P_L45": 68},
+    "Aggressive": {"P_ANC": 90, "P_L45": 90},
+}
+HSS_CAPACITY_MATCH = {
+    "Conservative": 25.0,
+    "Moderate": 50.0,
+    "Aggressive": 85.0,
+}
+HSS_CAPACITY_MISMATCH = {
+    "Conservative": 12.5,
+    "Moderate": 25.0,
+    "Aggressive": 42.5,
+}
+PROMPTS_FIDELITY_PRESET = {"Low": 0.60, "High": 0.80}
+MENTORS_FIDELITY_PRESET = {"Low": 0.60, "High": 0.80}
+FQA_PULSE_MODIFIER_LEVELS = list(FQA_PULSE_MODIFIER_OPTIONS.keys())
+
+
+def fqa_pulse_modifier_default_index():
+    level = st.session_state.get("fqa_pulse_modifier_level", "Medium")
+    if level not in FQA_PULSE_MODIFIER_LEVELS:
+        level = "Medium"
+    return FQA_PULSE_MODIFIER_LEVELS.index(level)
+
+
+def render_hss_preset():
+    """All (Preset): component toggles + intensity; presets apply only to enabled blocks."""
+    st.subheader(":chart_with_upwards_trend: HSS interventions (Preset)")
+    st.caption(
+        "Choose which components are on, then set intensity. "
+        "Conservative / Moderate / Aggressive values apply only to enabled components."
+    )
+
+    col_d, col_s = st.columns(2)
+    with col_d:
+        st.markdown("**Demand**")
+        enable_chv = st.toggle(
+            "Employ CHVs",
+            value=False,
+            key="preset_enable_chv",
+            help="CHVs refer to Community Healthcare Workers",
+        )
+        intensity = st.radio(
+            "Intervention intensity",
+            list(HSS_DEMAND_PRESETS.keys()),
+            horizontal=True,
+            key="preset_demand_intensity",
+        )
+
+    with col_s:
+        st.markdown("**Supply**")
+        enable_facility = st.toggle(
+            "Upgrade L4/5 facilities",
+            value=False,
+            key="preset_enable_facility",
+        )
+        enable_network = st.toggle(
+            "Upgrade Rescue network",
+            value=False,
+            key="preset_enable_network",
+            help="Referral capacity and emergency transfer",
+        )
+        supply_scenario = st.radio(
+            "Supply relative to demand",
+            ["Match Demand", "Cannot Meet Demand"],
+            horizontal=True,
+            key="preset_supply_scenario",
+        )
+
+    d = HSS_DEMAND_PRESETS[intensity]
+    match_supply = supply_scenario == "Match Demand"
+
+    i_flags["flag_CHV"] = 0
+    i_flags["flag_ANC"] = 0
+    i_flags["flag_LB"] = 0
+    i_HSS["P_ANC"] = slider_params["p_ANC_base_slider"]
+    i_HSS["P_L45"] = slider_params["base_p_45_slider"]
+    i_HSS["tau_decay"] = 6
+    i_HSS["CHV_memory"] = "Always Forget"
+
+    if enable_chv:
+        i_flags["flag_CHV"] = 1
+        i_flags["flag_ANC"] = 1
+        i_flags["flag_LB"] = 1
+        i_HSS["P_ANC"] = d["P_ANC"] / 100.0
+        p_l45_exp = get_P_l45(i_HSS["P_ANC"], slider_params)
+        min_l45 = round(p_l45_exp * 100) if p_l45_exp is not None else 0
+        i_HSS["P_L45"] = max(min_l45, d["P_L45"]) / 100.0
+        i_HSS["tau_decay"] = 6
+        i_HSS["CHV_memory"] = "Logistic Decay"
+        st.session_state["P_ANC"] = i_HSS["P_ANC"]
+        st.session_state["P_L45"] = i_HSS["P_L45"]
+
+    i_flags["flag_performance"] = 0
+    i_flags["flag_capacity"] = 0
+    i_flags["flag_labor"] = 0
+    i_flags["flag_equipment"] = 0
+    i_HSS["knowledge"] = slider_params["base_knowledge_L45_slider"]
+    i_HSS["capacity_added"] = 0
+    i_HSS["labor_ratio"] = 0
+    i_HSS["sensor_ratio"] = 0
+
+    if enable_facility:
+        if match_supply:
+            performance_pct = 100
+            capacity_pct = HSS_CAPACITY_MATCH[intensity]
+            labor_pct = 100
+            equipment_pct = 100
+        else:
+            performance_pct = 75
+            capacity_pct = HSS_CAPACITY_MISMATCH[intensity]
+            labor_pct = 50
+            equipment_pct = 50
+        i_flags["flag_performance"] = 1
+        i_flags["flag_capacity"] = 1
+        i_flags["flag_labor"] = 1
+        i_flags["flag_equipment"] = 1
+        i_HSS["knowledge"] = performance_pct / 100.0
+        i_HSS["capacity_added"] = capacity_pct / 100.0
+        i_HSS["labor_ratio"] = labor_pct / 100.0
+        i_HSS["sensor_ratio"] = equipment_pct / 100.0
+
+    i_flags["flag_refer"] = 0
+    i_flags["flag_transfer"] = 0
+    i_HSS["P_refer"] = 0
+    i_HSS["P_transfer"] = 0
+
+    if enable_network:
+        if match_supply:
+            refer_pct = 100
+            transfer_pct = 100
+        else:
+            refer_pct = 50
+            transfer_pct = 80
+        i_flags["flag_refer"] = 1
+        i_flags["flag_transfer"] = 1
+        i_HSS["P_refer"] = refer_pct / 100.0
+        i_HSS["P_transfer"] = transfer_pct / 100.0
+
+    i_flags["flag_SDR"] = 1 if (enable_chv or enable_facility or enable_network) else 0
+
+
+def render_single_preset():
+    """All (Preset): treatment/diagnosis as enable toggles; parameters use analyst UI defaults."""
+    st.subheader(":pill: Treatment interventions (Preset)")
+    mat_specs = [
+        ("PPH bundle", "flag_pph_bundle", "pph_bundle"),
+        ("IV iron infusion", "flag_iv_iron", "iv_iron"),
+        ("Magnesium sulfate (MgSO4)", "flag_MgSO4", "MgSO4"),
+        ("Antibiotics for maternal sepsis", "flag_antibiotics", "antibiotics"),
+        ("Oxytocin for prolonged labor", "flag_oxytocin", "oxytocin"),
+    ]
+    for label, flag_key, s_key in mat_specs:
+        on = st.toggle(label, value=False, key=f"preset_single_{flag_key}")
+        if on:
+            i_flags[flag_key] = 1
+            i_S[s_key] = 1.0
+        else:
+            i_flags[flag_key] = 0
+            i_S[s_key] = 0
+
+    st.markdown("---")
+    st.subheader(":stethoscope: Diagnosis interventions (Preset)")
+    diag_col1, diag_col2, diag_col3 = st.columns(3)
+    with diag_col1:
+        us_on = st.toggle("AI portable ultrasound (AI-US)", value=False, key="preset_single_us")
+    with diag_col2:
+        sensor_on = st.toggle("Intrapartum sensors", value=False, key="preset_single_intrasensor")
+    with diag_col3:
+        ai_sensor_on = st.toggle(
+            "AI algorithms (intrapartum)",
+            value=False,
+            key="preset_single_sensor_ai",
+            disabled=not sensor_on,
+        )
+
+    if us_on:
+        i_flags["flag_us"] = 1
+        i_E["sens_us"] = 0.95
+        i_E["spec_us"] = 0.95
+        i_S["US"] = 1
+    else:
+        i_flags["flag_us"] = 0
+        i_S["US"] = 0
+
+    if sensor_on:
+        i_flags["flag_intrasensor"] = 1
+        if ai_sensor_on:
+            i_flags["flag_sensor_ai"] = 1
+            i_E["sens_sensor"] = 0.95
+            i_E["spec_sensor"] = 0.95
+        else:
+            i_flags["flag_sensor_ai"] = 0
+    else:
+        i_flags["flag_intrasensor"] = 0
+        i_flags["flag_sensor_ai"] = 0
+
+
+def render_prompts_preset():
+    """All (Preset): MOMISH as checkboxes; low/high fidelity presets for PROMPTS and MENTORS only."""
+    st.subheader(":bulb: MOMISH interventions (Preset)")
+
+    st.markdown("**PROMPTS**")
+    p_col1, p_col2 = st.columns([1, 2])
+    with p_col1:
+        prompts_on = st.checkbox("Enable PROMPTS", value=False, key="preset_prompts_on")
+    with p_col2:
+        prompts_fidelity = st.radio(
+            "PROMPTS fidelity",
+            ["Low Fidelity", "High Fidelity"],
+            horizontal=True,
+            key="preset_prompts_fidelity",
+            disabled=not prompts_on,
+        )
+
+    i_flags["flag_PROMPTS"] = 1 if prompts_on else 0
+    st.session_state["flag_PROMPTS"] = int(prompts_on)
+    if prompts_on:
+        fid_key = "Low" if prompts_fidelity.startswith("Low") else "High"
+        i_HSS["adoption_prompts"] = 1.0
+        i_HSS["chv_engagement"] = 1.0
+        i_HSS["prompts_effect"] = PROMPTS_FIDELITY_PRESET[fid_key]
+        st.session_state["prompts_effect"] = int(PROMPTS_FIDELITY_PRESET[fid_key] * 100)
+        i_HSS["OR_anc4p"] = float(st.session_state.get("prompts_or_anc4p", 1.38))
+    else:
+        i_HSS["adoption_prompts"] = 0.0
+        i_HSS["chv_engagement"] = 0.0
+        i_HSS["prompts_effect"] = 0.0
+        i_HSS.pop("OR_anc4p", None)
+
+    st.markdown("**MENTORS**")
+    m_col1, m_col2 = st.columns([1, 2])
+    with m_col1:
+        mentor_on = st.checkbox("Enable MENTORS", value=False, key="preset_mentor_on")
+    with m_col2:
+        mentor_fidelity = st.radio(
+            "MENTORS fidelity",
+            ["Low Fidelity", "High Fidelity"],
+            horizontal=True,
+            key="preset_mentor_fidelity",
+            disabled=not mentor_on,
+        )
+
+    i_flags["flag_MENTOR"] = 1 if mentor_on else 0
+    st.session_state["flag_MENTOR"] = int(mentor_on)
+    if mentor_on:
+        fid_key = "Low" if mentor_fidelity.startswith("Low") else "High"
+        i_HSS["mentor_adoption"] = 0.70
+        i_HSS["mentor_attendance"] = 0.70
+        i_HSS["mentor_fidelity"] = MENTORS_FIDELITY_PRESET[fid_key]
+        st.session_state["mentor_adoption"] = 70
+        st.session_state["mentor_attendance"] = 70
+        st.session_state["mentor_fidelity"] = int(MENTORS_FIDELITY_PRESET[fid_key] * 100)
+    else:
+        i_HSS["mentor_adoption"] = 0.0
+        i_HSS["mentor_attendance"] = 0.0
+        i_HSS["mentor_fidelity"] = 0.0
+
+    st.markdown("**Other MOMISH programs**")
+    o_col1, o_col2, o_col3, o_col4 = st.columns(4)
+    with o_col1:
+        pulse_on = st.checkbox("PULSE", value=False, key="preset_pulse_on")
+    with o_col2:
+        fqa_on = st.checkbox("FQA", value=False, key="preset_fqa_on")
+    with o_col3:
+        blood_on = st.checkbox("Blood tracking", value=False, key="preset_blood_on")
+    with o_col4:
+        emt_on = st.checkbox("Referral systems & EMT training", value=False, key="preset_emt_on")
+
+    i_flags["flag_pulse"] = 1 if pulse_on else 0
+    i_flags["flag_fqa"] = 1 if fqa_on else 0
+    st.session_state["flag_pulse"] = int(pulse_on)
+    st.session_state["flag_fqa"] = int(fqa_on)
+    i_HSS["pulse_coverage"] = 1.0 if pulse_on else 0.0
+    if not pulse_on:
+        i_HSS["pulse_effectiveness"] = 0.0
+    selected_fqa_pulse_level = st.selectbox(
+        "FQA amplification of PULSE effect",
+        options=FQA_PULSE_MODIFIER_LEVELS,
+        index=fqa_pulse_modifier_default_index(),
+        key="preset_fqa_pulse_modifier_level",
+    )
+    i_HSS["fqa_pulse_modifier_level"] = selected_fqa_pulse_level
+    i_HSS["fqa_pulse_modifier"] = FQA_PULSE_MODIFIER_OPTIONS[selected_fqa_pulse_level]
+    st.session_state["fqa_pulse_modifier_level"] = selected_fqa_pulse_level
+
+    i_flags["flag_blood"] = 1 if blood_on else 0
+    i_flags["flag_blood_tracking"] = i_flags["flag_blood"]
+    st.session_state["flag_blood"] = int(blood_on)
+    i_HSS["blood_participation"] = 1.0 if blood_on else 0.0
+    i_HSS["blood_tracking_slider"] = i_HSS["blood_participation"]
+
+    i_flags["flag_emt"] = 1 if emt_on else 0
+    st.session_state["flag_emt"] = int(emt_on)
+    i_HSS["emt_participation"] = 1.0 if emt_on else 0.0
+    if not emt_on:
+        i_HSS["emt_intensity"] = 0.0
+
 
 # Function to render HSS interventions
 def render_hss(preset_demand_scenario, preset_supply_scenario):
@@ -441,30 +743,159 @@ def render_hss(preset_demand_scenario, preset_supply_scenario):
                 i_flags['flag_transfer'] = 0
                 i_HSS["P_transfer"] = 0
 
+
+def sync_param_momish_from_hss(i_param, i_HSS):
+    """Align top-level param keys with dashboard i_HSS (LB_effect + intrapartum may read either)."""
+    i_param["intervention_fidelity"] = float(
+        i_HSS.get("prompts_effect", i_param.get("intervention_fidelity", 0.87))
+    )
+    if i_HSS.get("OR_anc4p") is not None:
+        i_param["OR_anc4p"] = float(i_HSS["OR_anc4p"])
+    if i_HSS.get("fqa_pulse_modifier") is not None:
+        i_param["fqa_pulse_modifier_level"] = i_HSS.get("fqa_pulse_modifier_level", "Medium")
+        i_param["fqa_pulse_modifier"] = float(i_HSS["fqa_pulse_modifier"])
+    for _k in ("mentor_adoption", "mentor_attendance", "mentor_fidelity"):
+        if _k in i_HSS:
+            i_param[_k] = float(i_HSS[_k])
+
+
+def apply_momish_facility_delivery(i_flags, i_HSS, slider_params, choice_key, intervention_selection):
+    """
+    Map MOMISH "Overall facility delivery" to HSS infrastructure (no sliders here).
+    - high: same numeric presets as render_hss(Aggressive, Match Demand)
+    - low:  same as render_hss(Conservative, Match Demand)
+    - off:  baseline / no HSS demand–supply stack (does not clear PROMPTS/MENTOR/PULSE fields)
+    - follow: only used when intervention_selection == \"Both\" — keep i_HSS/i_flags from render_hss above
+    """
+    if choice_key == "follow":
+        return
+
+    Demand_scenarios = {
+        "Conservative": {"P_ANC": 70, "P_L45": 53},
+        "Moderate": {"P_ANC": 80, "P_L45": 68},
+        "Aggressive": {"P_ANC": 90, "P_L45": 90},
+    }
+    Capacity_match = {
+        "Conservative": 25.0,
+        "Moderate": 50.0,
+        "Aggressive": 85.0,
+    }
+
+    if choice_key == "off":
+        i_flags["flag_SDR"] = 0
+        i_flags["flag_CHV"] = 0
+        i_flags["flag_ANC"] = 0
+        i_flags["flag_LB"] = 0
+        i_flags["flag_performance"] = 0
+        i_flags["flag_capacity"] = 0
+        i_flags["flag_labor"] = 0
+        i_flags["flag_equipment"] = 0
+        i_flags["flag_refer"] = 0
+        i_flags["flag_transfer"] = 0
+        i_HSS["P_ANC"] = slider_params["p_ANC_base_slider"]
+        i_HSS["P_L45"] = slider_params["base_p_45_slider"]
+        i_HSS["knowledge"] = slider_params["base_knowledge_L45_slider"]
+        i_HSS["capacity_added"] = 0
+        i_HSS["labor_ratio"] = 0
+        i_HSS["sensor_ratio"] = 0
+        i_HSS["P_refer"] = 0
+        i_HSS["P_transfer"] = 0
+        i_HSS["tau_decay"] = 6
+        i_HSS["CHV_memory"] = "Always Forget"
+        i_HSS["referadded"] = 0
+        i_HSS["transadded"] = 0
+        i_HSS["supply_level"] = 0
+        st.session_state["P_ANC"] = i_HSS["P_ANC"]
+        st.session_state["P_L45"] = i_HSS["P_L45"]
+        return
+
+    scenario = "Aggressive" if choice_key == "high" else "Conservative"
+    d = Demand_scenarios[scenario]
+    i_flags["flag_SDR"] = 1
+    i_flags["flag_CHV"] = 1
+    i_flags["flag_ANC"] = 1
+    i_flags["flag_LB"] = 1
+    i_flags["flag_performance"] = 1
+    i_flags["flag_capacity"] = 1
+    i_flags["flag_labor"] = 1
+    i_flags["flag_equipment"] = 1
+    i_flags["flag_refer"] = 1
+    i_flags["flag_transfer"] = 1
+
+    i_HSS["P_ANC"] = d["P_ANC"] / 100.0
+    p_l45_exp = get_P_l45(i_HSS["P_ANC"], slider_params)
+    min_l45 = round(p_l45_exp * 100) if p_l45_exp is not None else 0
+    p_l45_pct = max(min_l45, d["P_L45"])
+    i_HSS["P_L45"] = p_l45_pct / 100.0
+    i_HSS["tau_decay"] = 6
+    i_HSS["CHV_memory"] = "Logistic Decay"
+
+    i_HSS["knowledge"] = 1.0
+    i_HSS["capacity_added"] = Capacity_match[scenario] / 100.0
+    i_HSS["labor_ratio"] = 1.0
+    i_HSS["sensor_ratio"] = 1.0
+    i_HSS["P_refer"] = 1.0
+    i_HSS["P_transfer"] = 1.0
+
+    st.session_state["P_ANC"] = i_HSS["P_ANC"]
+    st.session_state["P_L45"] = i_HSS["P_L45"]
+
+
 def render_prompts():
     st.subheader(":bulb: MOMISH Interventions")
 
-    colP1, colP2 = st.columns(2)
-    with colP1:
-        prompts_int = st.toggle(
-            "Enable PROMPTS",
-            value=bool(st.session_state.get("flag_PROMPTS", 0)),
-            help="Enable PROMPTS engagement program (affects engagement-related mechanisms in LB_effect).",
-            key="prompts_enable"
-        )
+    _intervention = st.session_state.get("intervention_selection")
+    if _intervention == "Both":
+        _facility_spec = [
+            ("Use HSS from Scenario Settings", "follow"),
+            ("Low overall facility delivery", "low"),
+            ("High overall facility delivery", "high"),
+            ("Not enabled (no HSS)", "off"),
+        ]
+    else:
+        _facility_spec = [
+            ("Not enabled (no HSS)", "off"),
+            ("Low — Conservative preset", "low"),
+            ("High — Aggressive preset", "high"),
+        ]
+    _facility_labels = [x[0] for x in _facility_spec]
+    _facility_map = dict(_facility_spec)
+    st.markdown("**Overall facility delivery**")
+    _facility_choice_label = st.radio(
+        "HSS demand/supply context for PROMPTS & MENTORS (no sliders)",
+        _facility_labels,
+        horizontal=True,
+        key=f"momish_facility_delivery_radio_{_intervention}",
+        help=(
+            "High / Low apply the same numeric presets as HSS **Scenario** mode (Aggressive or Conservative) with **Match Demand** supply. "
+            "Not enabled turns off the HSS demand–supply stack (baseline facility context). "
+            + (
+                "In **Both** mode, the first option keeps the HSS values from the Scenario Settings expander above."
+                if _intervention == "Both"
+                else "In **MOMISH-only** mode there is no separate HSS screen — pick Low/High here to embed facility context."
+            )
+        ),
+    )
+    _facility_choice_key = _facility_map[_facility_choice_label]
 
-    with colP2:
-        i_flags["flag_PROMPTS"] = 1 if prompts_int else 0
-        st.session_state["flag_PROMPTS"] = int(prompts_int)
+    prompts_enabled = st.toggle(
+        "Enable PROMPTS",
+        value=bool(st.session_state.get("flag_PROMPTS", 0)),
+        help="Enable PROMPTS engagement",
+        key="prompts_enable"
+    )
 
-    if prompts_int:
-        colP3, colP4, colP5 = st.columns(3)
+    i_flags["flag_PROMPTS"] = 1 if prompts_enabled else 0
+    st.session_state["flag_PROMPTS"] = int(prompts_enabled)
+
+    if prompts_enabled:
+        colP3, colP4 = st.columns(2)
 
         with colP3:
             adoption_default = int(st.session_state.get("adoption_prompts", 100))
             adoption_val = st.slider(
                 "PROMPTS adoption",
-                min_value=0, max_value=100, step=5,
+                min_value=0, max_value=100, step=2,
                 value=adoption_default,
                 format="%d%%",
                 help="Program adoption level.",
@@ -477,29 +908,83 @@ def render_prompts():
             engage_default = int(st.session_state.get("chv_engagement", 100))
             engage_val = st.slider(
                 "CHV engagement (PROMPTS)",
-                min_value=0, max_value=100, step=5,
+                min_value=0, max_value=100, step=2,
                 value=engage_default,
                 format="%d%%",
-                help="CHV engagement level used ONLY inside PROMPTS.",
+                help="CHV engagement level used only inside PROMPTS.",
                 key="prompts_engagement"
             )
             i_HSS["chv_engagement"] = engage_val / 100.0
             st.session_state["chv_engagement"] = engage_val
 
-        with colP5: 
-            prompts_effect_default = int(st.session_state.get("intervention_fidelity", 100))
-            prompts_effect_val = st.slider(
-                "Intervention Fidelity",
-                min_value=87, max_value=100, step=5,
-                value=prompts_effect_default,
-                format="%d%%",
-                help="Effectiveness of PROMPTS in increasing intention to deliver at L4/5."
+        col_if_s, col_if_f = st.columns(2)
+        prompts_if_bundle_options = ["Default", "Low", "High"]
+        prompts_if_default = st.session_state.get("prompts_intervention_fidelity_bundle", "Default")
+        if prompts_if_default not in prompts_if_bundle_options:
+            prompts_if_default = "Default"
+
+        prompts_if_prev_key = "prompts_intervention_fidelity_bundle_prev"
+        if "prompts_effect_slider" not in st.session_state:
+            # Start from 0; presets apply only after the user picks/changes scenario
+            st.session_state["prompts_effect_slider"] = 0
+
+        prompts_if_bundle_map = {
+            "Default": 70,
+            "Low": 60,
+            "High": 80,
+        }
+
+        with col_if_s:
+            prompts_if_bundle = st.selectbox(
+                "PROMPTS intervention fidelity — scenario",
+                options=prompts_if_bundle_options,
+                index=prompts_if_bundle_options.index(prompts_if_default),
+                key="prompts_intervention_fidelity_bundle_select",
+                help="Choosing a scenario presets the slider on the right; you can still drag the slider.",
             )
-            i_HSS["prompts_effect"] = prompts_effect_val / 100.0
-            st.session_state["prompts_effect"] = prompts_effect_val
+            st.session_state["prompts_intervention_fidelity_bundle"] = prompts_if_bundle
+
+        preset_if = prompts_if_bundle_map[prompts_if_bundle]
+        _prev_if = st.session_state.get(prompts_if_prev_key)
+        if _prev_if is None:
+            st.session_state[prompts_if_prev_key] = prompts_if_bundle
+        elif _prev_if != prompts_if_bundle:
+            st.session_state["prompts_effect_slider"] = preset_if
+            st.session_state[prompts_if_prev_key] = prompts_if_bundle
+
+        with col_if_f:
+            prompts_effect_val = st.slider(
+                "Intervention fidelity",
+                min_value=0,
+                max_value=100,
+                step=2,
+                format="%d%%",
+                help="Effectiveness of PROMPTS in increasing intention to deliver at L4/5.",
+                key="prompts_effect_slider",
+            )
+        i_HSS["prompts_effect"] = prompts_effect_val / 100.0
+        st.session_state["prompts_effect"] = prompts_effect_val
+
+        if "prompts_or_anc4p" not in st.session_state:
+            st.session_state["prompts_or_anc4p"] = 1.38
+        st.session_state["prompts_or_anc4p"] = max(
+            1.15, min(1.44, float(st.session_state["prompts_or_anc4p"]))
+        )
+        or_anc4p_val = st.slider(
+            "PROMPTS effect on 4+ ANC (OR)",
+            min_value=1.15,
+            max_value=1.44,
+            step=0.01,
+            format="%.2f",
+            help="Odds ratio for 4+ ANC when PROMPTS is on (LB_effect).",
+            key="prompts_or_anc4p",
+        )
+        i_HSS["OR_anc4p"] = float(or_anc4p_val)
     else:
         i_HSS["adoption_prompts"] = 0.0
         i_HSS["chv_engagement"] = 0.0
+        i_HSS["prompts_effect"] = 0.0
+        i_HSS.pop("OR_anc4p", None)
 
     # ==========================================================
     # BLOCK 2 — MENTORS
@@ -518,13 +1003,13 @@ def render_prompts():
         st.session_state["flag_MENTOR"] = int(mentor_on)
 
     if mentor_on:
-        col7, col8, col9 = st.columns(3)
+        col7, col8 = st.columns(2)
 
         with col7:
             adoption_default = int(st.session_state.get("mentor_adoption", 70))
             adoption_val = st.slider(
                 "Adoption of MENTORS",
-                0, 100, adoption_default, 5,
+                0, 100, adoption_default, 2,
                 format="%d%%",
                 key="mentor_adoption_slider"
             )
@@ -535,23 +1020,60 @@ def render_prompts():
             attendance_default = int(st.session_state.get("mentor_attendance", 70))
             attendance_val = st.slider(
                 "On-site attendance of MENTORS sessions",
-                0, 100, attendance_default, 5,
+                0, 100, attendance_default, 2,
                 format="%d%%",
                 key="mentor_attendance_slider"
             )
             i_HSS["mentor_attendance"] = attendance_val / 100.0
             st.session_state["mentor_attendance"] = attendance_val
 
-        with col9:
-            fidelity_default = int(st.session_state.get("mentor_fidelity", 80))
+        col_m_s, col_m_f = st.columns(2)
+        mentor_fidelity_options = ["Default", "Low", "High"]
+        mentor_fidelity_choice_default = st.session_state.get(
+            "mentor_session_fidelity_bundle", "Default"
+        )
+        if mentor_fidelity_choice_default not in mentor_fidelity_options:
+            mentor_fidelity_choice_default = "Default"
+
+        bundle_prev_key = "mentor_session_fidelity_bundle_prev"
+        if "mentor_fidelity_slider" not in st.session_state:
+            st.session_state["mentor_fidelity_slider"] = 0
+
+        mentor_fidelity_bundle_map = {
+            "Default": 70,
+            "Low": 60,
+            "High": 80,
+        }
+
+        with col_m_s:
+            mentor_fidelity_choice = st.selectbox(
+                "MENTORS session fidelity — scenario",
+                options=mentor_fidelity_options,
+                index=mentor_fidelity_options.index(mentor_fidelity_choice_default),
+                key="mentor_session_fidelity_bundle_select",
+                help="Choosing a scenario presets the fidelity slider on the right; you can still drag the slider.",
+            )
+            st.session_state["mentor_session_fidelity_bundle"] = mentor_fidelity_choice
+
+        preset_pct = mentor_fidelity_bundle_map[mentor_fidelity_choice]
+        _prev_m = st.session_state.get(bundle_prev_key)
+        if _prev_m is None:
+            st.session_state[bundle_prev_key] = mentor_fidelity_choice
+        elif _prev_m != mentor_fidelity_choice:
+            st.session_state["mentor_fidelity_slider"] = preset_pct
+            st.session_state[bundle_prev_key] = mentor_fidelity_choice
+
+        with col_m_f:
             fidelity_val = st.slider(
                 "Fidelity in delivering MENTORS sessions",
-                0, 100, fidelity_default, 5,
+                min_value=0,
+                max_value=100,
+                step=2,
                 format="%d%%",
-                key="mentor_fidelity_slider"
+                key="mentor_fidelity_slider",
             )
-            i_HSS["mentor_fidelity"] = fidelity_val / 100.0
-            st.session_state["mentor_fidelity"] = fidelity_val
+        i_HSS["mentor_fidelity"] = fidelity_val / 100.0
+        st.session_state["mentor_fidelity"] = fidelity_val
 
     else:
         i_HSS["mentor_adoption"] = 0.0
@@ -570,8 +1092,17 @@ def render_prompts():
         )
 
     with col10:
-        i_flags["flag_pulse"] = 1 if pulse_int else 0
-        st.session_state["flag_pulse"] = int(pulse_int)
+        fqa_int = st.toggle(
+            "FQA Intervention",
+            value=bool(st.session_state.get("flag_fqa", 0)),
+            key="fqa_enable",
+            help="FQA directly improves healthcare worker knowledge. When PULSE is also on, it also strengthens PULSE actionable insights.",
+        )
+
+    i_flags["flag_pulse"] = 1 if pulse_int else 0
+    i_flags["flag_fqa"] = 1 if fqa_int else 0
+    st.session_state["flag_pulse"] = int(pulse_int)
+    st.session_state["flag_fqa"] = int(fqa_int)
 
     if pulse_int:
         pulse_default = int(st.session_state.get("pulse_coverage", 100))
@@ -582,10 +1113,19 @@ def render_prompts():
             key="pulse_coverage"
         )
         i_HSS["pulse_coverage"] = pulse_val / 100.0
-        # st.session_state["pulse_coverage"] = pulse_val
     else:
         i_HSS["pulse_coverage"] = 0.0
         i_HSS["pulse_effectiveness"] = 0.0
+
+    selected_fqa_pulse_level = st.selectbox(
+        "FQA amplification of PULSE effect",
+        options=FQA_PULSE_MODIFIER_LEVELS,
+        index=fqa_pulse_modifier_default_index(),
+        key="fqa_pulse_modifier_level_select",
+    )
+    i_HSS["fqa_pulse_modifier_level"] = selected_fqa_pulse_level
+    i_HSS["fqa_pulse_modifier"] = FQA_PULSE_MODIFIER_OPTIONS[selected_fqa_pulse_level]
+    st.session_state["fqa_pulse_modifier_level"] = selected_fqa_pulse_level
 
 
     # ==========================================================
@@ -601,6 +1141,7 @@ def render_prompts():
 
     with col14:
         i_flags["flag_blood"] = 1 if blood_int else 0
+        i_flags["flag_blood_tracking"] = i_flags["flag_blood"]
         st.session_state["flag_blood"] = int(blood_int)
 
     if blood_int:
@@ -609,12 +1150,15 @@ def render_prompts():
             "Adoption of Blood Tracking System",
             0, 100, blood_default, 5,
             format="%d%%",
-            key="blood_participation"
+            key="blood_participation",
+            help="Scales PPH/APH maternal death weights in mortality; effect capped at 13.3%.",
         )
-        i_HSS["blood_participation"] = blood_val / 100.0
-        # st.session_state["blood_participation"] = blood_val
+        blood_frac = blood_val / 100.0
+        i_HSS["blood_participation"] = blood_frac
+        i_HSS["blood_tracking_slider"] = blood_frac
     else:
         i_HSS["blood_participation"] = 0.0
+        i_HSS["blood_tracking_slider"] = 0.0
         i_HSS["blood_intensity"] = 0.0
 
     # ==========================================================
@@ -645,7 +1189,11 @@ def render_prompts():
     else:
         i_HSS["emt_participation"] = 0.0
         i_HSS["emt_intensity"] = 0.0
-        
+
+    apply_momish_facility_delivery(
+        i_flags, i_HSS, slider_params, _facility_choice_key, _intervention
+    )
+
 # Function to render Single Interventions
 def render_single():
     col1, col2 = st.columns(2)
@@ -791,6 +1339,8 @@ if 'ab_base_df' not in st.session_state:
     st.session_state.ab_base_df = None
 if 'ab_base_ind_outcomes' not in st.session_state:
     st.session_state.ab_base_ind_outcomes = None
+if 'dl_table' not in st.session_state:
+    st.session_state.dl_table = None
 
 
 
@@ -801,13 +1351,15 @@ with st.expander("⚙️ **Scenario Settings** (Click to expand/collapse)", expa
         st.title("Intervention Selection")
         st.subheader("1. Which types of interventions would you like to explore?")
 
+        if st.button("All (Analyst Mode)"):
+            st.session_state.intervention_selection = "Both"
+        if st.button("All (Preset Mode)"):
+            st.session_state.intervention_selection = "BothPreset"
         if st.button(":one: Health Systems Strengthening Interventions (Demand and Supply)"):
             st.session_state.intervention_selection = "HSS"
         if st.button(":two: Single Interventions (Treatment and Diagnosis)"):
             st.session_state.intervention_selection = "Single"
-        if st.button(":three: Both"):
-            st.session_state.intervention_selection = "Both"
-        if st.button(":four: MOMISH Interventions"):
+        if st.button(":three: MOMISH Interventions"):
             st.session_state.intervention_selection = "PROMPTS"
 
 
@@ -848,15 +1400,66 @@ with st.expander("⚙️ **Scenario Settings** (Click to expand/collapse)", expa
         render_single()
         st.session_state.scenario_selected = True
 
+    elif st.session_state.intervention_selection == "BothPreset":
+        st.button("🔙 Back to Intervention Options", on_click=go_back_to_main)
+        st.caption(
+            "Preset mode: choose enabled interventions and strategy levels only. "
+            "Parameters use predefined values (no sliders)."
+        )
+        render_hss_preset()
+        st.markdown("---")
+        render_single_preset()
+        st.markdown("---")
+        render_prompts_preset()
+        st.session_state.scenario_selected = True
+
     elif st.session_state.intervention_selection == "Both":
         st.button("🔙 Back to Intervention Options", on_click=go_back_to_main)
-        render_hss(preset_demand_scenario=None, preset_supply_scenario=None)
-        st.markdown("---")
-        render_single()
-        st.markdown("---")
-        st.subheader("MOMISH interventions")
-        render_prompts()
-        st.session_state.scenario_selected = True
+        st.subheader("2. Choose how you want to explore HSS interventions (with Single + MOMISH below):")
+
+        if st.button("📊 Select Pre-set Scenarios", key="both_btn_scenarios"):
+            st.session_state.hss_mode = "Scenarios"
+
+        if st.button("🎛️ Customize Manually", key="both_btn_manual"):
+            st.session_state.hss_mode = "Manual"
+
+        if st.session_state.hss_mode == "Scenarios":
+            st.button("🔙 Back to HSS Options", on_click=go_back_to_hss, key="both_back_hss_scenarios")
+            st.subheader("3. Select a scenario:")
+            col_b1, col_b2 = st.columns(2)
+            with col_b1:
+                demand_scenario_both = st.selectbox(
+                    "**3.1 Choose a pre-set demand scenario**",
+                    ["Conservative", "Moderate", "Aggressive"],
+                    key="both_demand_preset",
+                )
+                supply_scenario_both = st.selectbox(
+                    "**3.2 Choose a pre-set supply scenario**",
+                    ["Match Demand", "Cannot Meet Demand"],
+                    key="both_supply_preset",
+                )
+            with col_b2:
+                pass
+            render_hss(
+                preset_demand_scenario=demand_scenario_both,
+                preset_supply_scenario=supply_scenario_both,
+            )
+            st.markdown("---")
+            render_single()
+            st.markdown("---")
+            st.subheader("MOMISH interventions")
+            render_prompts()
+            st.session_state.scenario_selected = True
+
+        elif st.session_state.hss_mode == "Manual":
+            st.button("🔙 Back to HSS Options", on_click=go_back_to_hss, key="both_back_hss_manual")
+            render_hss(preset_demand_scenario=None, preset_supply_scenario=None)
+            st.markdown("---")
+            render_single()
+            st.markdown("---")
+            st.subheader("MOMISH interventions")
+            render_prompts()
+            st.session_state.scenario_selected = True
 
     elif st.session_state.intervention_selection == "PROMPTS":
         st.button("🔙 Back to Intervention Options", on_click=go_back_to_main)
@@ -1022,7 +1625,10 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
                     b_HSS = copy.deepcopy(st.session_state.dual_first_config["HSS"])
 
                 b_param.update({"E": b_E, "S": b_S, "HSS": b_HSS})
+                if compare_two_interventions:
+                    sync_param_momish_from_hss(b_param, b_HSS)
                 i_param.update({"E": i_E, "S": i_S, "HSS": i_HSS})
+                sync_param_momish_from_hss(i_param, i_HSS)
 
                 # rng_clone = np.random.default_rng(base_seed)
                 # i_param = get_parameters(rng = rng_clone)
@@ -1108,6 +1714,8 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
                             b_S = copy.deepcopy(st.session_state.dual_first_config["S"])
                             b_HSS = copy.deepcopy(st.session_state.dual_first_config["HSS"])
                         b_param.update({"E": b_E, "S": b_S, "HSS": b_HSS})
+                        if compare_two_interventions:
+                            sync_param_momish_from_hss(b_param, b_HSS)
 
                         # Pass the ARRAY of monthly seeds to run_model_dash
                         b_df_i, b_ind_outcomes_i, _ = run_model_dash(b_param, b_flags, n_months, int_period, base_seed=monthly_seeds_for_this_run)
@@ -1181,6 +1789,7 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
                     i_param = get_parameters(rng=param_rng)
                     i_param = calculate_derived_parameters(i_param)
                     i_param.update({"E": i_E, "S": i_S, "HSS": i_HSS})
+                    sync_param_momish_from_hss(i_param, i_HSS)
 
                     # Pass the exact same ARRAY of monthly seeds
                     i_df_i, i_ind_outcomes_i, _ = run_model_dash(i_param, i_flags, n_months, int_period, base_seed=monthly_seeds_for_this_run)
@@ -1436,7 +2045,7 @@ if st.session_state.b_df is not None and st.session_state.i_df is not None:
                 # In Both + A/B mode, add plain baseline as the 3rd scenario for bar/column comparisons
                 if (
                     st.session_state.get("compare_two_interventions", False)
-                    and st.session_state.get("intervention_selection") == "Both"
+                    and st.session_state.get("intervention_selection") in ("Both", "BothPreset")
                     and st.session_state.get("ab_base_df") is not None
                 ):
                     ab_base_df = st.session_state.ab_base_df
@@ -1558,8 +2167,8 @@ if st.session_state.b_df is not None and st.session_state.i_df is not None:
                 num_facets = len(bar_data["Level"].unique())
                 scenario_values = bar_data["Scenario"].dropna().unique().tolist()
                 preferred_order = ["Baseline", st.session_state.reference_label, st.session_state.target_label]
-                scenario_domain = [s for s in preferred_order if s in scenario_values]
-                scenario_domain.extend([s for s in scenario_values if s not in scenario_domain])
+                scenario_domain = list(dict.fromkeys(s for s in preferred_order if s in scenario_values))
+                scenario_domain.extend(s for s in scenario_values if s not in scenario_domain)
                 scenario_color_map = {
                     "Baseline": "#1F3A93",
                     st.session_state.reference_label: "#4C78A8",
@@ -1601,6 +2210,152 @@ if st.session_state.b_df is not None and st.session_state.i_df is not None:
                 )
 
                 return chart
+
+            def aggregate_deaths_by_cause(ind_outcomes):
+                """Mean maternal death count by cause across simulation runs."""
+                df = ind_outcomes.loc[
+                    ind_outcomes["death_cause"] != "none", ["Run", "death_cause"]
+                ].copy()
+                per_run = (
+                    df.groupby(["Run", "death_cause"], as_index=False)
+                    .size()
+                    .rename(columns={"size": "count"})
+                )
+                if per_run.empty:
+                    return per_run
+                if per_run["Run"].nunique() <= 1:
+                    return per_run.groupby("death_cause", as_index=False)["count"].sum()
+                return per_run.groupby("death_cause", as_index=False)["count"].mean()
+
+            def death_by_cause_comparison_chart(b_ind_outcomes, i_ind_outcomes, ref_name, tgt_name):
+                """
+                Stacked bar: base = reference deaths by cause; overlay = change to target (count delta).
+                Labels show percent change (target vs reference).
+                """
+                cause_order = ["pph", "sepsis", "eclampsia", "ol", "aph", "other"]
+                cause_labels = {
+                    "pph": "PPH",
+                    "sepsis": "Sepsis",
+                    "eclampsia": "Eclampsia",
+                    "ol": "Obstructed labor",
+                    "aph": "APH",
+                    "other": "Other",
+                }
+
+                ref_counts = aggregate_deaths_by_cause(b_ind_outcomes)
+                tgt_counts = aggregate_deaths_by_cause(i_ind_outcomes)
+                if ref_counts.empty and tgt_counts.empty:
+                    return None
+
+                merged = pd.DataFrame({"death_cause": cause_order})
+                merged = merged.merge(
+                    ref_counts.rename(columns={"count": "count_ref"}),
+                    on="death_cause",
+                    how="left",
+                ).merge(
+                    tgt_counts.rename(columns={"count": "count_tgt"}),
+                    on="death_cause",
+                    how="left",
+                )
+                merged[["count_ref", "count_tgt"]] = merged[["count_ref", "count_tgt"]].fillna(0)
+                merged["delta"] = merged["count_tgt"] - merged["count_ref"]
+                merged["pct_change"] = np.where(
+                    merged["count_ref"] > 0,
+                    merged["delta"] / merged["count_ref"] * 100,
+                    np.where(merged["count_tgt"] > 0, np.inf, 0),
+                )
+                merged["cause_label"] = merged["death_cause"].map(cause_labels)
+
+                change_label = f"Change ({tgt_name} − {ref_name})"
+                base_layer = merged.assign(segment=ref_name, y=merged["count_ref"])
+                delta_layer = merged.assign(segment=change_label, y=merged["delta"])
+                stack_df = pd.concat(
+                    [
+                        base_layer[["cause_label", "death_cause", "segment", "y", "count_ref", "count_tgt", "delta", "pct_change"]],
+                        delta_layer[["cause_label", "death_cause", "segment", "y", "count_ref", "count_tgt", "delta", "pct_change"]],
+                    ],
+                    ignore_index=True,
+                )
+                stack_df["segment_order"] = np.where(stack_df["segment"] == ref_name, 0, 1)
+                stack_df["bar_color"] = np.where(
+                    stack_df["segment"] == ref_name,
+                    ref_name,
+                    np.where(stack_df["delta"] > 0, "Increase", "Decrease"),
+                )
+
+                bars = (
+                    alt.Chart(stack_df)
+                    .mark_bar()
+                    .encode(
+                        x=alt.X(
+                            "cause_label:N",
+                            sort=[cause_labels[c] for c in cause_order],
+                            title="Cause of death",
+                        ),
+                        y=alt.Y("y:Q", stack="zero", title="Maternal deaths (mean count)"),
+                        color=alt.Color(
+                            "bar_color:N",
+                            title="Component",
+                            scale=alt.Scale(
+                                domain=[ref_name, "Increase", "Decrease"],
+                                range=["#4C78A8", "#E45756", "#54A24B"],
+                            ),
+                        ),
+                        order=alt.Order("segment_order:O", sort="ascending"),
+                        tooltip=[
+                            alt.Tooltip("cause_label:N", title="Cause"),
+                            alt.Tooltip("count_ref:Q", format=".1f", title=ref_name),
+                            alt.Tooltip("count_tgt:Q", format=".1f", title=tgt_name),
+                            alt.Tooltip("delta:Q", format="+.1f", title="Absolute change"),
+                            alt.Tooltip("pct_change:Q", format="+.1f", title="% change"),
+                        ],
+                    )
+                )
+
+                label_df = merged.copy()
+
+                def _pct_label(row):
+                    if row["count_ref"] > 0:
+                        return f"{row['pct_change']:+.0f}%"
+                    if row["count_tgt"] > 0:
+                        return "new"
+                    return "0%"
+
+                label_df["pct_label"] = label_df.apply(_pct_label, axis=1)
+                label_df["y_top"] = label_df["count_tgt"]
+                label_df["trend"] = np.select(
+                    [label_df["pct_change"] > 0, label_df["pct_change"] < 0],
+                    ["Increase", "Decrease"],
+                    default="No change",
+                )
+
+                labels = (
+                    alt.Chart(label_df)
+                    .mark_text(dy=-8, fontSize=12, fontWeight="bold")
+                    .encode(
+                        x=alt.X(
+                            "cause_label:N",
+                            sort=[cause_labels[c] for c in cause_order],
+                        ),
+                        y=alt.Y("y_top:Q"),
+                        text="pct_label:N",
+                        color=alt.Color(
+                            "trend:N",
+                            scale=alt.Scale(
+                                domain=["Increase", "Decrease", "No change"],
+                                range=["#C44E52", "#2CA02C", "#444444"],
+                            ),
+                            legend=None,
+                        ),
+                    )
+                )
+
+                title = f"Maternal deaths by cause: {ref_name} with change to {tgt_name}"
+                return (bars + labels).properties(
+                    width=700,
+                    height=420,
+                    title=alt.TitleParams(text=title, anchor="middle", fontSize=16),
+                ).configure_axis(labelFontSize=12, titleFontSize=14)
 
             def line_chart_ci_matplotlib(line_data, title, ytitle, ydomain):
                 """
@@ -2971,7 +3726,9 @@ if st.session_state.b_df is not None and st.session_state.i_df is not None:
             if selected_plot == "Maternal mortality rate":
                 st.markdown("<h3 style='text-align: left;'>Maternal deaths per 100,000 live births (MMR)</h3>",
                            unsafe_allow_html=True)
-                tab1, tab2, tab3 = st.tabs(["MMR by location", "Distribution of Causes", "MMR by causes"])
+                tab1, tab2, tab3 = st.tabs(
+                    ["MMR by location", "Distribution of Causes", "Death by cause"]
+                )
 
                 with tab1:
 
@@ -3035,11 +3792,28 @@ if st.session_state.b_df is not None and st.session_state.i_df is not None:
                     st.altair_chart(chart)
 
                 with tab3:
-                    df_all = pd.concat([b_ind_outcomes, i_ind_outcomes], ignore_index=True)
-                    #select Run, Scenario, and death_cause columns
-                    df_all = df_all[['Run', 'Scenario', 'death_cause']]
-                    #groub by Run, Scenario, and death_cause and calculate mean of death_cause
-                    df_all = df_all.groupby(['Run', 'Scenario', 'death_cause'], as_index=False).mean('death_cause')
+                    ref_name = (
+                        st.session_state.reference_label
+                        if st.session_state.compare_two_interventions
+                        else "Baseline"
+                    )
+                    tgt_name = (
+                        st.session_state.target_label
+                        if st.session_state.compare_two_interventions
+                        else "Intervention"
+                    )
+                    st.caption(
+                        f"Bar base: **{ref_name}** maternal deaths by cause (mean count across runs when applicable). "
+                        f"Stacked segment: absolute change from {ref_name} to **{tgt_name}**. "
+                        f"Labels above bars show percent change."
+                    )
+                    cause_chart = death_by_cause_comparison_chart(
+                        b_ind_outcomes, i_ind_outcomes, ref_name, tgt_name
+                    )
+                    if cause_chart is None:
+                        st.info("No attributed maternal deaths in the current run results.")
+                    else:
+                        st.altair_chart(cause_chart, width="stretch")
 
 
             if selected_plot == "Severe maternal outcomes":
@@ -3675,3 +4449,204 @@ if st.session_state.b_df is not None and st.session_state.i_df is not None:
     elif st.session_state.b_df is None or st.session_state.i_df is None:
         st.warning("Please run the model first before generating plots.")
 
+# ==========================================================================
+# TABLE DOWNLOAD SESSION
+# ==========================================================================
+
+LOCATION_MAP = {0: "Home", 1: "L2/3", 2: "L4", 3: "L5"}
+
+INTERVENTION_VARIABLE_PRESETS = {
+    "PROMPTS": {
+        "description": "ANC, referrals, delivery locations, maternal complications & deaths",
+        "columns": [
+            "i_ANC", "i_free_referral", "i_self_referral",
+            "i_loc", "i_loc_new_v2",
+            "i_pph", "i_mat_sepsis", "i_eclampsia",
+            "i_OL_final", "i_ruptured_uterus", "i_aph",
+            "i_mat_death", "death_cause",
+        ],
+    },
+    "MENTORS": {
+        "description": "Maternal complications & mortality",
+        "columns": [
+            "i_pph", "i_mat_sepsis", "i_eclampsia",
+            "i_OL_final", "i_ruptured_uterus", "i_aph",
+            "i_mat_death", "death_cause",
+        ],
+    },
+    "Referral": {
+        "description": "Maternal mortality",
+        "columns": ["i_mat_death", "death_cause"],
+    },
+    "Blood": {
+        "description": "Maternal mortality",
+        "columns": ["i_mat_death", "death_cause"],
+    },
+    "Custom": {
+        "description": "Choose your own variables",
+        "columns": [],
+    },
+}
+
+ALL_EXPORTABLE_COLUMNS = [
+    "i_ANC", "i_free_referral", "i_self_referral",
+    "i_loc", "i_loc_new_v1", "i_loc_new_v2",
+    "i_risk", "i_risk_pred", "i_class",
+    "i_GA", "i_preterm", "i_preterm_pred",
+    "i_elec_CS", "i_pocus",
+    "i_anemia", "i_anemia_new", "i_iv_iron",
+    "i_PL", "i_PL_new", "i_OL", "i_OL_final",
+    "i_hypoxia", "i_mod",
+    "i_transfer_pred", "i_transfer_actual",
+    "i_oxytocin", "i_pph_bundle", "i_MgSO4", "i_antibiotics",
+    "i_pph", "i_pph_new", "i_pph_severe_new",
+    "i_mat_sepsis", "i_mat_sepsis_new",
+    "i_eclampsia", "i_eclampsia_new",
+    "i_ruptured_uterus", "i_aph",
+    "i_severe_new", "i_comp_death_new",
+    "i_stillbirth", "i_asphyxia", "i_RDS",
+    "i_mat_death", "i_neo_death",
+    "i_transfer", "travel_time_transfer", "death_cause",
+    "M_DALY", "N_DALY", "DALY",
+]
+
+META_COLUMNS = ["Month", "Run", "Scenario", "Delivery_Location"]
+
+
+def _build_export_df(ind_outcomes_df, selected_columns, stratify_col="i_loc_new_v2"):
+    available = [c for c in selected_columns if c in ind_outcomes_df.columns]
+    meta = [c for c in ["Month", "Run", "Scenario"] if c in ind_outcomes_df.columns]
+    has_stratify = stratify_col in ind_outcomes_df.columns
+    keep_cols = meta + ([stratify_col] if has_stratify else []) + available
+    keep = list(dict.fromkeys(keep_cols))
+    export = ind_outcomes_df[keep].copy()
+    if has_stratify:
+        loc_series = export[stratify_col]
+        if isinstance(loc_series, pd.DataFrame):
+            loc_series = loc_series.iloc[:, 0]
+        export["Delivery_Location"] = loc_series.map(
+            lambda x: LOCATION_MAP.get(int(x) if not isinstance(x, str) else -1, "Unknown")
+        )
+        if stratify_col not in available:
+            export = export.drop(columns=[stratify_col])
+    return export
+
+
+st.markdown("---")
+st.header("Table Download Session")
+st.caption(
+    "Run the model with the current intervention settings and download a filtered CSV table. "
+    "Uses multiple-run mode with shared random seeds."
+)
+
+dl_col1, dl_col2 = st.columns(2)
+with dl_col1:
+    dl_scenario_name = st.text_input(
+        "Scenario name",
+        placeholder="e.g., PROMPTS_Baseline",
+        key="dl_scenario_name",
+    )
+with dl_col2:
+    dl_n_runs = st.number_input(
+        "Number of runs",
+        min_value=1, max_value=300, value=10, step=1,
+        key="dl_n_runs",
+    )
+
+intervention_names = list(INTERVENTION_VARIABLE_PRESETS.keys())
+dl_template = st.selectbox(
+    "Intervention template (selects export variables)",
+    options=intervention_names,
+    key="dl_run_template",
+)
+st.caption(INTERVENTION_VARIABLE_PRESETS[dl_template]["description"])
+
+preset_cols = INTERVENTION_VARIABLE_PRESETS[dl_template]["columns"]
+if dl_template == "Custom":
+    dl_columns = st.multiselect(
+        "Select variables to export",
+        options=ALL_EXPORTABLE_COLUMNS,
+        default=[],
+        key="dl_run_custom_cols",
+    )
+else:
+    dl_columns = st.multiselect(
+        "Variables (pre-filled — add or remove as needed)",
+        options=ALL_EXPORTABLE_COLUMNS,
+        default=preset_cols,
+        key="dl_run_template_cols",
+    )
+
+btn_col1, btn_col2 = st.columns(2)
+with btn_col1:
+    run_clicked = st.button("Run & Generate Table", key="btn_run_dl")
+with btn_col2:
+    clean_clicked = st.button("Clean Up Table", key="btn_clean_dl")
+
+if clean_clicked:
+    st.session_state.dl_table = None
+    st.rerun()
+
+if run_clicked:
+    if not dl_scenario_name:
+        st.warning("Please enter a scenario name.")
+    elif not dl_columns:
+        st.warning("Select at least one variable to export.")
+    else:
+        n_months = MODEL["n_months"] if MODEL["n_months"] > 0 else 36
+        int_period = MODEL["int_period"] if MODEL["int_period"] > 0 else 36
+
+        master_rng = np.random.default_rng(2025)
+        run_seeds_matrix = master_rng.integers(low=0, high=1e9, size=(dl_n_runs, n_months))
+
+        dl_status = st.empty()
+        dl_progress = st.progress(0)
+        temp_ind = []
+
+        for run_index in range(dl_n_runs):
+            monthly_seeds = run_seeds_matrix[run_index]
+            param_rng = np.random.default_rng(monthly_seeds[0])
+
+            sc_param = get_parameters(rng=param_rng)
+            sc_param = calculate_derived_parameters(sc_param)
+            sc_param.update({"E": copy.deepcopy(i_E), "S": copy.deepcopy(i_S), "HSS": copy.deepcopy(i_HSS)})
+            sync_param_momish_from_hss(sc_param, i_HSS)
+
+            _, ind_outcomes, _ = run_model_dash(
+                sc_param, copy.deepcopy(i_flags), n_months, int_period, base_seed=monthly_seeds,
+            )
+            ind_outcomes["Run"] = run_index + 1
+            ind_outcomes["Scenario"] = dl_scenario_name
+            temp_ind.append(ind_outcomes)
+
+            dl_progress.progress((run_index + 1) / dl_n_runs)
+            dl_status.text(f"Running... {run_index + 1}/{dl_n_runs}")
+
+        combined = pd.concat(temp_ind, ignore_index=True)
+        export = _build_export_df(combined, dl_columns)
+
+        col_order = META_COLUMNS + [
+            c for c in dl_columns if c in export.columns and c not in META_COLUMNS
+        ]
+        col_order = [c for c in col_order if c in export.columns]
+        export = export[col_order]
+
+        st.session_state.dl_table = export
+        dl_progress.progress(1.0)
+        dl_status.text(f"Done! {dl_n_runs} runs, {len(export):,} rows")
+
+if st.session_state.dl_table is not None:
+    export = st.session_state.dl_table
+    st.success(f"Table ready: {len(export):,} rows, {export.shape[1]} columns")
+
+    csv_data = export.to_csv(index=False)
+    st.download_button(
+        label=f"Download CSV ({len(export):,} rows)",
+        data=csv_data,
+        file_name=f"{dl_scenario_name or 'scenario'}_outcomes.csv",
+        mime="text/csv",
+        key="btn_download_csv",
+    )
+
+    with st.expander("Preview", expanded=False):
+        st.dataframe(export.head(100), width="stretch", hide_index=True)

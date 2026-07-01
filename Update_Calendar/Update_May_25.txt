@@ -1,0 +1,40 @@
+May 25 26
+referral intervention:
+
+
+in parameters.py:
+ADD
+        "transfer_delay_probs_l23": np.array([0.29, 0.47, 0.24]), # Makueni referral travel time distribution from L2/3: <1h, 1-2h, 2+h
+        "transfer_delay_probs_l45": np.array([0.69, 0.15, 0.15]), # Makueni referral travel time distribution from L4/5: <1h, 1-2h, 2+h
+        "RR_transfer_delay_1_2": 2.11,                            # RR of maternal mortality for transfer delay 1-2h vs <1h
+        "RR_transfer_delay_2plus": 2.39,  
+
+
+in mortality.py:
+ADD
+   # **Step 4: Apply transfer delay RRs**
+    transfer_update_mask = severe_mask & transfer_mask  # Mask for severe cases with emergency transfer
+    travel_time_transfer = np.full(num_mothers, -1, dtype=int)  # -1: no delay category, 0: <1h, 1: 1-2h, 2: 2+h
+    transfer_delay_rr = np.ones(num_mothers, dtype=float)
+
+    from_l23_mask = transfer_mask & (i_loc == 1)
+    from_l45_mask = transfer_mask & ((i_loc == 2) | (i_loc == 3))
+
+    if np.any(from_l23_mask):
+        delay_probs_l23 = np.asarray(param["transfer_delay_probs_l23"], dtype=float)
+        delay_probs_l23 = delay_probs_l23 / delay_probs_l23.sum()
+        travel_time_transfer[from_l23_mask] = rng.choice(
+            [0, 1, 2],
+            size=np.sum(from_l23_mask),
+            p=delay_probs_l23,
+        )
+    if np.any(from_l45_mask):
+        delay_probs_l45 = np.asarray(param["transfer_delay_probs_l45"], dtype=float)
+        delay_probs_l45 = delay_probs_l45 / delay_probs_l45.sum()
+        travel_time_transfer[from_l45_mask] = rng.choice(
+            [0, 1, 2],
+            size=np.sum(from_l45_mask),
+            p=delay_probs_l45,
+        )
+
+a is located at : "transfer_delay_rr_scale": 1.0,
