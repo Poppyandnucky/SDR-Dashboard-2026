@@ -99,15 +99,15 @@ def f_ANC_LB_effect_vectorized(track, LB_base, param, flags, i, int_period, rng)
         engagement_level = clip01(P_participation * intervention_fidelity)
 
         # map engagement to effective OR on ANC4+
-        OR_anc4p = float(param.get("OR_anc4p", 1.50))
+        OR_anc4p = float(param.get("OR_anc4p", 1.38))
         # anc4p_eff = 1.0 + (OR_anc4p - 1.0) * engagement_level
         OR_anc4p_eff = np.exp(engagement_level * np.log(OR_anc4p))
 
         # apply OR update to system-level P_ANC
-        print(P_ANC)
         P_ANC = odds_update(P_ANC, OR_anc4p_eff)
-        P_ANC = P_ANC
-        print(P_ANC, P_participation, engagement_level, OR_anc4p_eff)
+        # RR of 1.44 
+        P_ANC = P_ANC * 1.44
+        print(P_ANC)
 
     else:
         engagement_level = 0.0
@@ -288,11 +288,11 @@ def f_ANC_LB_effect_vectorized(track, LB_base, param, flags, i, int_period, rng)
     shuffled_all = rng.permutation(num_mothers)   # shuffle all mother indices
     l45_indices = np.where(i_loc == 2)[0]         # identify L4/5 mothers
     shuffled_l45 = shuffled_all[np.isin(shuffled_all, l45_indices)]  # filter only those in L4/5 from the shuffled list
-    relocate_indices = shuffled_l45[:exceed_lb]                      # select only the top `exceed_lb` mothers to relocate
+    relocate_indices = shuffled_l45[:int(exceed_lb)]                      # select only the top `exceed_lb` mothers to relocate
     mask_relocate_l23 = np.zeros(num_mothers, dtype=bool)            # apply relocation
     mask_relocate_l23[relocate_indices] = True
     i_loc[mask_relocate_l23] = 1
-    print(exceed_lb, np.sum(mask_relocate_l23), np.sum(i_loc == 2))
+    # print(exceed_lb, np.sum(mask_relocate_l23), np.sum(i_loc == 2))
 
     ##-------------------Elective C-section Decision----------------------##
     elcs_mask1 = (i_loc == 2) & (i_risk_pred == 1) & (i_preterm_pred == 0) & (i_ANC == 1)

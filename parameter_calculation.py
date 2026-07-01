@@ -111,7 +111,6 @@ P_l45_results = compute_mean_P_l45(P_ANC_values, num_runs=10)
 df_P_l45 = pd.DataFrame(list(P_l45_results.items()), columns=["P_ANC", "Mean_P_l45"])
 
 # Display results
-print(df_P_l45)
 
 
 

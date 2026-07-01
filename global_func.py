@@ -1,6 +1,6 @@
 import random
 import numpy as np
-from scipy.optimize import fsolve, least_squares
+from scipy.optimize import brentq, least_squares
 import math
 import streamlit as st
 from scipy.stats import truncnorm
@@ -11,17 +11,25 @@ def get_P_l45(p_anc, slider_params):
     return slider_params['p_l45_anc_slider'][idx, 1][0][0] if idx[0].size > 0 else None  # Return P_l45 or None if not found
 
 def odds_prob(oddsratio, p_comp, p_expose):
-    def equations(vars):
-        x, y = vars
-        eq1 = x / (1 - x) / (y / (1 - y)) - oddsratio
-        eq2 = p_comp - p_expose * x - (1 - p_expose) * y  #x = P(comp|exposed), y = P(comp|not exposed)
-        return [eq1, eq2]
+    oddsratio = float(oddsratio)
+    p_comp = float(np.clip(p_comp, 0, 1))
+    p_expose = float(np.clip(p_expose, 0, 1))
+    if oddsratio <= 0:
+        raise ValueError("oddsratio must be positive")
 
-    initial_guess = [0.5, 0.5]  # Initial guess for x and y
-    solution = fsolve(equations, initial_guess)
-    solution[0] = round(np.clip(solution[0], 0, 1), 2)
-    solution[1] = round(np.clip(solution[1], 0, 1), 2)
-    return solution #solution[0] = P(comp|exposed), solution[1] = P(comp|not exposed)
+    def exposed_probability(p_unexposed):
+        return oddsratio * p_unexposed / (1 + (oddsratio - 1) * p_unexposed)
+
+    def marginal_error(p_unexposed):
+        p_exposed = exposed_probability(p_unexposed)
+        return p_expose * p_exposed + (1 - p_expose) * p_unexposed - p_comp
+
+    if p_comp in (0.0, 1.0):
+        p_unexposed = p_comp
+    else:
+        p_unexposed = brentq(marginal_error, 0.0, 1.0)
+    p_exposed = exposed_probability(p_unexposed)
+    return np.round(np.clip([p_exposed, p_unexposed], 0, 1), 2)
 
 def GA_assign_kenya(param, n, P):
     n["GA"] = param["GA_distribution"]
@@ -372,9 +380,13 @@ def labor_calculator(n_lb, n_cs, param, flags):
     L23_LBs = n_lb[1]
     L4_LBs = n_lb[2]
     L5_LBs = n_lb[3]
-    Avg_L23_LBs = L23_LBs / param['num_L2/3']
-    Avg_L4_LBs = L4_LBs / param['num_L4']
-    Avg_L5_LBs = L5_LBs / param['num_L5']
+
+    def average_births_per_facility(births, facility_count):
+        return births / facility_count if facility_count > 0 else 0.0
+
+    Avg_L23_LBs = average_births_per_facility(L23_LBs, param['num_L2/3'])
+    Avg_L4_LBs = average_births_per_facility(L4_LBs, param['num_L4'])
+    Avg_L5_LBs = average_births_per_facility(L5_LBs, param['num_L5'])
 
     # Surgical staff calculation
     surgical_l23 = (param['surgical_needed_below_thres'] * param['num_L2/3'] if Avg_L23_LBs < param['Ave_LBs_thres']
@@ -435,10 +447,13 @@ def compute_scaled_density_index(d_surgical, d_nurses, surgical_weight, scaled_f
     d_surgical_weighted = d_surgical * surgical_weight
 
     # Compute the harmonic mean-based density index with weighted surgical staff
-    quality_adjusted = np.where(
-        (d_surgical_weighted > 0) & (d_nurses > 0),
-        (2 * d_surgical_weighted * d_nurses) / (d_surgical_weighted + d_nurses),
-        0
+    numerator = 2 * d_surgical_weighted * d_nurses
+    denominator = d_surgical_weighted + d_nurses
+    quality_adjusted = np.divide(
+        numerator,
+        denominator,
+        out=np.zeros_like(numerator, dtype=float),
+        where=(d_surgical_weighted > 0) & (d_nurses > 0) & (denominator != 0),
     )
 
     scaled_index = quality_adjusted * scaled_factor
@@ -577,12 +592,23 @@ def fetal_sensor_calculator(track, param, i, flags, rng):
     fetal_sensor = {}
 
     # Calculate high-risk and low-risk pregancies in each facility level
-    highrisk_perday_perl23 = math.ceil(track['HighRisk_Track'][i][1] / 30 / param['num_L2/3'])
-    highrisk_perday_perl4 = math.ceil(track['HighRisk_Track'][i][2] / 30 / param['num_L4'])
-    highrisk_perday_perl5 = math.ceil(track['HighRisk_Track'][i][3] / 30 / param['num_L5'])
-    lowrisk_perday_perl23 = math.ceil((track['LB_Track'][i][1] - track['HighRisk_Track'][i][1]) / 30 / param['num_L2/3'])
-    lowrisk_perday_perl4 = math.ceil((track['LB_Track'][i][2] - track['HighRisk_Track'][i][2]) / 30 / param['num_L4'])
-    lowrisk_perday_perl5 = math.ceil((track['LB_Track'][i][3] - track['HighRisk_Track'][i][3]) / 30 / param['num_L5'])
+    def per_day_per_facility(total, facility_count):
+        if facility_count <= 0:
+            return 0
+        return math.ceil(max(float(total), 0.0) / 30 / facility_count)
+
+    highrisk_perday_perl23 = per_day_per_facility(track['HighRisk_Track'][i][1], param['num_L2/3'])
+    highrisk_perday_perl4 = per_day_per_facility(track['HighRisk_Track'][i][2], param['num_L4'])
+    highrisk_perday_perl5 = per_day_per_facility(track['HighRisk_Track'][i][3], param['num_L5'])
+    lowrisk_perday_perl23 = per_day_per_facility(
+        track['LB_Track'][i][1] - track['HighRisk_Track'][i][1], param['num_L2/3']
+    )
+    lowrisk_perday_perl4 = per_day_per_facility(
+        track['LB_Track'][i][2] - track['HighRisk_Track'][i][2], param['num_L4']
+    )
+    lowrisk_perday_perl5 = per_day_per_facility(
+        track['LB_Track'][i][3] - track['HighRisk_Track'][i][3], param['num_L5']
+    )
 
     # Calculate the number of fetal dopplers needed
     def doppler_usage_time(lowrisks_perday):
@@ -792,15 +818,15 @@ def generate_negative_experience_heard(
     """
 
     # Initialize CHV IDs
-    total_CHV_linked_mothers = round(n_CHV * mothers_per_CHV)
+    n_CHV = int(n_CHV)
+    total_CHV_linked_mothers = min(num_mothers, round(n_CHV * mothers_per_CHV))
     CHV_IDs = np.full(num_mothers, -1, dtype=int)  # -1 means no CHV
 
     # Randomly assign CHV IDs
     perm_mothers = rng.permutation(num_mothers)
     linked_mother_indices = perm_mothers[:total_CHV_linked_mothers]
 
-    CHV_assignments = np.tile(np.arange(n_CHV), int(np.ceil(mothers_per_CHV)))
-    CHV_assignments = CHV_assignments[:total_CHV_linked_mothers]
+    CHV_assignments = np.resize(np.arange(n_CHV), total_CHV_linked_mothers)
     rng.shuffle(CHV_assignments)
 
     CHV_IDs[linked_mother_indices] = CHV_assignments
@@ -839,4 +865,3 @@ def generate_negative_experience_heard(
     negative_experience_heard[spread_success_mask] = 1
 
     return negative_experience_heard, CHV_IDs, CHV_negative_experience, CHV_memory_age
-
