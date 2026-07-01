@@ -418,8 +418,8 @@ def shifting_live_births_vectorized(individual_outcomes, param, i, track, flags,
         ##-------------------Parameter initialization-------------------##
         i_loc = individual_outcomes['i_loc'].values
         i_class = individual_outcomes['i_class'].values
-        i_self_referral = individual_outcomes['i_self_referral'].values
-        i_free_referral = individual_outcomes['i_free_referral'].values
+        i_self_referral = individual_outcomes['i_self_referral'].values.copy()
+        i_free_referral = individual_outcomes['i_free_referral'].values.copy()
         num_mothers = i_loc.shape[0]
         LB_base = track["LB_Track"][0]
         Facility_Capacity = track['Facility_Capacity_Track'][i, 0]

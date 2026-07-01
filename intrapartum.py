@@ -10,6 +10,10 @@ from global_func import (P_Prolonged, P_Prolonged_vectorized, P_Sepsis_vectorize
                          intrapartum_prediction, comp_OL_type, comp_severe, emergency_transfer_comps, preterm_complication, SI_reduction)
 
 
+# Fixed order matching the 'pulse_indicator_targets' list in parameters.py / array_constants sheet.
+PULSE_INDICATOR_ORDER = ["p_pph", "p_aph", "p_OL", "p_ruptured_uterus", "p_eclampsia", "p_mat_sepsis"]
+
+
 def select_pulse_target(indicator_values, indicator_targets, indicator_threshold):
     targeted_indicator = None
     max_gap_ratio = 0.0
@@ -454,7 +458,7 @@ def intrapartum_effect_vectorized(track, flags, param, i, individual_outcomes, r
     # PULSE acts after complications are observed and before downstream transfer/severity logic.
     targeted_indicator = None
     if flags.get("flag_pulse", 0):
-        indicator_targets = param.get("pulse_indicator_targets", {})
+        indicator_targets = dict(zip(PULSE_INDICATOR_ORDER, param.get("pulse_indicator_targets", [])))
         indicator_values = {
             "p_pph": np.mean(i_pph),
             "p_aph": np.mean(i_aph),

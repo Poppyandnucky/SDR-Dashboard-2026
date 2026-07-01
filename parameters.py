@@ -4,10 +4,11 @@ import random
 from global_func import sample_from_ci, odds_prob, comps_riskstatus_vs_lowrisk, comp2_comp1_anemia, P_RDS
 import streamlit as st
 
+FQA_PULSE_MODIFIER_MEDIUM = 0.2  # baseline PULSE amplification when FQA is also active
 FQA_PULSE_MODIFIER_OPTIONS = {
-    "Low": 0.1,
-    "Medium": 0.2,
-    "High": 0.3,
+    "Low": FQA_PULSE_MODIFIER_MEDIUM * 0.5,
+    "Medium": FQA_PULSE_MODIFIER_MEDIUM,
+    "High": FQA_PULSE_MODIFIER_MEDIUM * 1.5,
 }
 
 def get_slider_params():
@@ -281,14 +282,15 @@ def get_parameters(rng = None):
         'fqa_pulse_modifier_level': 'Medium',
         'fqa_pulse_modifier': FQA_PULSE_MODIFIER_OPTIONS['Medium'],
         'pulse_indicator_threshold': 0.013,
-        'pulse_indicator_targets': {
-            'p_pph': 0.007372925,
-            'p_aph': 0.004540962,
-            'p_OL': 0.01120199,
-            'p_ruptured_uterus': 0.0003560327,
-            'p_eclampsia': 0.001979122,
-            'p_mat_sepsis': 0.0005203555,
-        },
+        # order: p_pph, p_aph, p_OL, p_ruptured_uterus, p_eclampsia, p_mat_sepsis (see PULSE_INDICATOR_ORDER in intrapartum.py)
+        'pulse_indicator_targets': [
+            0.007372925,
+            0.004540962,
+            0.01120199,
+            0.0003560327,
+            0.001979122,
+            0.0005203555,
+        ],
         'sen_risk_trad_target': 0.95, ## under case where mothers recognize danger signs
         'spec_risk_trad_target': 0.631,
         'p_move_home_base': 0.3,
@@ -443,9 +445,9 @@ def reset_inputs(param, n_months):
     track['LB_Track'][0,:] = track['LB']
     track['ANC_Track'][0,:] = np.repeat(ANC, 4)
     track['HighRisk_Track'][0,:] = np.repeat(highrisk, 4)
-    track['Facility_Capacity_Track'][0, 0] = 34777 / 12
+    track['Facility_Capacity_Track'][0, 0] = param['Capacity']
     track['Referral_Capacity_Track'][0, 0] = 0
-    track['Num_Exp_L45_Track'][0, 0] = (20709 + 5126) / 12
+    track['Num_Exp_L45_Track'][0, 0] = param['base_LB'][2] + param['base_LB'][3]
     track['Constraint_Ratio_Track'][0, 0] = 1
     track['CS_Capacity_Track'][0, 0] = param["p_cs_capacity"][3]
 
