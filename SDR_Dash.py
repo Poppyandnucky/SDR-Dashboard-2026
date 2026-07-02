@@ -1194,18 +1194,8 @@ def render_prompts():
         i_flags["flag_emt"] = 1 if emt_int else 0
         st.session_state["flag_emt"] = int(emt_int)
 
-    if emt_int:
-        emt_default = int(st.session_state.get("emt_participation", 100))
-        emt_val = st.slider(
-            "Emergency vehicle capacity",
-            0, 100, emt_default, 5,
-            format="%d%%",
-            key="emt_participation"
-        )
-        i_HSS["emt_participation"] = emt_val / 100.0
-        # st.session_state["emt_participation"] = emt_val
-    else:
-        i_HSS["emt_participation"] = 0.0
+    i_HSS["emt_participation"] = 1.0 if emt_int else 0.0
+    if not emt_int:
         i_HSS["emt_intensity"] = 0.0
 
     apply_momish_facility_delivery(
