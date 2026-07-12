@@ -176,9 +176,32 @@ def _sampled_params(wb: ParameterWorkbook, rng: np.random.Generator) -> dict[str
     return params
 
 
-def _intervention_params(wb: ParameterWorkbook, rng: np.random.Generator) -> dict[str, Any]:
+def _intervention_params(wb: ParameterWorkbook, rng: np.random.Generator, county: str) -> dict[str, Any]:
+    """Load intervention-level parameters, preferring the row for this county.
+
+    Some parameters (e.g. mentors_implementation_index) have one row per county
+    instead of a single universal row. Grouping by parameter_name and always
+    keeping the last row silently picked whichever county happened to be listed
+    last in the sheet, regardless of the county actually requested. Now: use the
+    row for `county` when one exists, otherwise fall back to the last row for
+    that parameter_name (covers universal "All" rows and counties without their
+    own row).
+    """
     rows = wb.sheet("interv_params")
-    return {row["parameter_name"]: _sample_or_value(row, rng) for _, row in rows.iterrows() if not _is_missing(row.get("parameter_name")) and not _is_missing(row.get("value"))}
+    rows = rows.dropna(subset=["parameter_name", "value"])
+    county_clean = _clean_county(county)
+
+    params: dict[str, Any] = {}
+    for name, group in rows.groupby("parameter_name", sort=False):
+        row = None
+        if "county" in group.columns:
+            county_match = group[group["county"].astype(str).str.strip().str.lower() == county_clean]
+            if not county_match.empty:
+                row = county_match.iloc[0]
+        if row is None:
+            row = group.iloc[-1]
+        params[str(name)] = _sample_or_value(row, rng)
+    return params
 
 
 def _constants(wb: ParameterWorkbook) -> dict[str, Any]:
@@ -410,7 +433,7 @@ def _build_params(
     param.update(_constants(wb))
     param.update(_array_constants(wb))
     param.update(_sampled_params(wb, rng))
-    param.update(_intervention_params(wb, rng))
+    param.update(_intervention_params(wb, rng, county))
     param["cost_dict"] = _cost_dict(wb)
     param["DW"] = _disability_weights(wb, rng)
 
@@ -438,6 +461,31 @@ def _build_params(
         for key, value in fallback.items():
             if key not in param:
                 param[key] = copy.deepcopy(value)
+
+    # Legacy baseline values that are still required by unconditional model
+    # pathways. Workbook/county values take precedence whenever present.
+    required_defaults = {
+        "n_CHV": 420 * 12,
+        "PT_scale": 0.8250540888309176,
+        # Kakamega Phase 2 reference values. County multipliers scale all PPH
+        # and sepsis pathways relative to this calibrated reference structure.
+        "pph_incidence_multiplier": 1.0,
+        "sepsis_incidence_multiplier": 1.0,
+        "p_pph_other_reference": 0.0100,
+        "p_mat_sepsis_other_reference": 0.0356,
+        "S_pph_bundle": np.zeros(4, dtype=float),
+        "p_NM_home": 0.235,
+        "weight_facility_neo": 3.15,
+        "p_elec_CS|highrisk_us": 0.35,
+        "p_elec_CS|preterm_us": 0.7799,
+        "p_cs_capacity_sdr": np.array([0, 0, 0.1215, 0.1215], dtype=float),
+        "p_cs_capacity_sensor": np.array([0, 0.0568, 0.1215, 0.1215], dtype=float),
+        "p_cs_capacity_sdr_sensor": np.array([0, 0, 0.1215, 0.1215], dtype=float),
+        "transfer_delay_shift_2plus": 0.60,
+        "transfer_delay_shift_1_2": 0.40,
+    }
+    for key, default in required_defaults.items():
+        param.setdefault(key, default)
 
     # Derived convenience values.
     if "base_LB" in param:
@@ -590,6 +638,25 @@ def calculate_derived_parameters(param: dict[str, Any]) -> dict[str, Any]:
 
     param["eclampsia_highrisk_anemia"] = comp2_comp1_anemia(param["eclampsia_highrisk"], param["or_anemia_eclampsia"])
     param["eclampsia_lowrisk_anemia"] = comp2_comp1_anemia(param["eclampsia_lowrisk"], param["or_anemia_eclampsia"])
+
+    # Scale PPH/sepsis incidence pathways by the county-specific multiplier,
+    # relative to the Kakamega Phase 2 calibrated reference structure.
+    pph_multiplier = float(param.get("pph_incidence_multiplier", 1.0))
+    sepsis_multiplier = float(param.get("sepsis_incidence_multiplier", 1.0))
+
+    def scaled_probability(probability, multiplier):
+        return float(np.clip(float(probability) * multiplier, 0.0, 1.0))
+
+    param["p_pph_OL"] = scaled_probability(param["p_pph_OL"], pph_multiplier)
+    param["p_pph_elective_CS"] = scaled_probability(param["p_pph_elective_CS"], pph_multiplier)
+    param["p_pph_emergency_CS"] = scaled_probability(param["p_pph_emergency_CS"], pph_multiplier)
+    param["p_pph_other"] = scaled_probability(param["p_pph_other_reference"], pph_multiplier)
+
+    param["p_mat_sepsis_OL"] = scaled_probability(param["p_mat_sepsis_OL"], sepsis_multiplier)
+    param["p_mat_sepsis_elective_CS"] = scaled_probability(param["p_mat_sepsis_elective_CS"], sepsis_multiplier)
+    param["p_mat_sepsis_emergency_CS"] = scaled_probability(param["p_mat_sepsis_emergency_CS"], sepsis_multiplier)
+    param["p_mat_sepsis_other"] = scaled_probability(param["p_mat_sepsis_other_reference"], sepsis_multiplier)
+
     param["pph_OL_anemia"] = comp2_comp1_anemia(param["p_pph_OL"], param["or_anemia_pph"])
     param["mat_sepsis_OL_anemia"] = comp2_comp1_anemia(param["p_mat_sepsis_OL"], param["or_anemia_sepsis"])
     param["pph_elective_CS_anemia"] = comp2_comp1_anemia(param["p_pph_elective_CS"], param["or_anemia_pph"])

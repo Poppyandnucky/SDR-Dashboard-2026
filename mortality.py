@@ -126,7 +126,7 @@ def f_MM_vectorized(track, param, flags, i, MC, M, NC, individual_outcomes, rng)
     #Maternal Deaths - different weight version
     death_cause = np.full(num_mothers, "none", dtype=object)
 
-    # Blood tracking: attenuate PPH/APH death weights (dashboard: flag_blood, blood_participation)
+    #  tracking: attenuate PPH/APH death weights (dashboard: flag_blood, blood_participation)
     flag_blood_tracking = float(
         flags.get("flag_blood_tracking", flags.get("flag_blood", 0))
     )

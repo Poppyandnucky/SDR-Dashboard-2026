@@ -106,7 +106,9 @@ HSS_CAPACITY_MISMATCH = {
     "Aggressive": 42.5,
 }
 PROMPTS_FIDELITY_PRESET = {"Low": 0.60, "High": 0.80}
-MENTORS_FIDELITY_PRESET = {"Low": 0.60, "High": 0.80}
+# Fixed implementation-index values for the non-"Current" fidelity levels.
+# These replace the county's Excel-read index outright; they are not multipliers.
+MENTORS_FIDELITY_OVERRIDE = {"Low": 0.5, "High": 0.95}
 FQA_PULSE_MODIFIER_LEVELS = list(FQA_PULSE_MODIFIER_OPTIONS.keys())
 
 
@@ -115,6 +117,21 @@ def fqa_pulse_modifier_default_index():
     if level not in FQA_PULSE_MODIFIER_LEVELS:
         level = "Medium"
     return FQA_PULSE_MODIFIER_LEVELS.index(level)
+
+
+def get_mentor_implementation_index(fidelity_choice):
+    """Current reads mentors_implementation_index from SDR Parameters for the
+    selected county. Low/High are fixed values (MENTORS_FIDELITY_OVERRIDE),
+    independent of the Excel-read value."""
+    if fidelity_choice in MENTORS_FIDELITY_OVERRIDE:
+        return MENTORS_FIDELITY_OVERRIDE[fidelity_choice]
+
+    try:
+        param_sample = get_parameters(rng=np.random.default_rng(0), county=selected_county)
+        param_sample = calculate_derived_parameters(param_sample)
+        return float(np.clip(param_sample.get("mentors_implementation_index", 0.0), 0.0, 1.0))
+    except Exception:
+        return 0.0
 
 
 def render_hss_preset():
@@ -339,18 +356,15 @@ def render_prompts_preset():
     st.session_state["flag_MENTOR"] = int(mentor_on)
     if mentor_on:
         fid_key = "Low" if mentor_fidelity.startswith("Low") else "High"
-        i_HSS["mentor_adoption"] = 0.70
-        i_HSS["mentor_attendance"] = 0.70
-        i_HSS["mentor_fidelity"] = MENTORS_FIDELITY_PRESET[fid_key]
-        st.session_state["mentor_adoption"] = 70
-        st.session_state["mentor_attendance"] = 70
-        st.session_state["mentor_fidelity"] = int(MENTORS_FIDELITY_PRESET[fid_key] * 100)
+        mentor_index = get_mentor_implementation_index(fid_key)
+        i_HSS["mentor_implementation_index"] = mentor_index
+        st.session_state["mentor_implementation_index"] = mentor_index
     else:
-        i_HSS["mentor_adoption"] = 0.0
-        i_HSS["mentor_attendance"] = 0.0
-        i_HSS["mentor_fidelity"] = 0.0
+        i_HSS["mentor_implementation_index"] = 0.0
+        st.session_state["mentor_implementation_index"] = 0.0
 
     st.markdown("**Other MOMISH programs**")
+
     o_col1, o_col2, o_col3, o_col4 = st.columns(4)
     with o_col1:
         pulse_on = st.checkbox("PULSE", value=False, key="preset_pulse_on")
@@ -624,7 +638,7 @@ def render_hss(preset_demand_scenario, preset_supply_scenario):
             labor_value = 0
             equipment_value = 0
             refer_value = 0
-            transfer_value = slider_params['t_l23_l45_notsevere_slider']
+            transfer_value = round(slider_params['t_l23_l45_notsevere_slider'])
 
         col2_1, col2_2 = st.columns(2)
         with col2_1:
@@ -752,7 +766,7 @@ def render_hss(preset_demand_scenario, preset_supply_scenario):
         with col2_16:
             if transferint:
                 i_flags['flag_transfer'] = 1
-                i_HSS["P_transfer"] = st.slider('% emergency transfer', min_value=slider_params['t_l23_l45_notsevere_slider'], max_value=100, step=10,
+                i_HSS["P_transfer"] = st.slider('% emergency transfer', min_value=round(slider_params['t_l23_l45_notsevere_slider']), max_value=100, step=10,
                                                  value=transfer_value,
                                                  format="%d%%", help="% complications can be transferred\n\n"
                                                       "Value = 50 means 50% of complications can be transferred from L2/3 to L4/5 facilities")
@@ -772,9 +786,8 @@ def sync_param_momish_from_hss(i_param, i_HSS):
     if i_HSS.get("fqa_pulse_modifier") is not None:
         i_param["fqa_pulse_modifier_level"] = i_HSS.get("fqa_pulse_modifier_level", "Medium")
         i_param["fqa_pulse_modifier"] = float(i_HSS["fqa_pulse_modifier"])
-    for _k in ("mentor_adoption", "mentor_attendance", "mentor_fidelity"):
-        if _k in i_HSS:
-            i_param[_k] = float(i_HSS[_k])
+    if i_HSS.get("mentor_implementation_index") is not None:
+        i_param["mentors_implementation_index"] = float(i_HSS["mentor_implementation_index"])
 
 
 def apply_momish_facility_delivery(i_flags, i_HSS, slider_params, choice_key, intervention_selection):
@@ -1021,82 +1034,29 @@ def render_prompts():
         st.session_state["flag_MENTOR"] = int(mentor_on)
 
     if mentor_on:
-        col7, col8 = st.columns(2)
 
-        with col7:
-            adoption_default = int(st.session_state.get("mentor_adoption", 70))
-            adoption_val = st.slider(
-                "Adoption of MENTORS",
-                0, 100, adoption_default, 2,
-                format="%d%%",
-                key="mentor_adoption_slider"
-            )
-            i_HSS["mentor_adoption"] = adoption_val / 100.0
-            st.session_state["mentor_adoption"] = adoption_val
-
-        with col8:
-            attendance_default = int(st.session_state.get("mentor_attendance", 70))
-            attendance_val = st.slider(
-                "On-site attendance of MENTORS sessions",
-                0, 100, attendance_default, 2,
-                format="%d%%",
-                key="mentor_attendance_slider"
-            )
-            i_HSS["mentor_attendance"] = attendance_val / 100.0
-            st.session_state["mentor_attendance"] = attendance_val
-
-        col_m_s, col_m_f = st.columns(2)
-        mentor_fidelity_options = ["Default", "Low", "High"]
+        mentor_fidelity_options = ["Current", "Low", "High"]
         mentor_fidelity_choice_default = st.session_state.get(
-            "mentor_session_fidelity_bundle", "Default"
+            "mentor_session_fidelity_bundle", "Current"
         )
         if mentor_fidelity_choice_default not in mentor_fidelity_options:
-            mentor_fidelity_choice_default = "Default"
+            mentor_fidelity_choice_default = "Current"
 
-        bundle_prev_key = "mentor_session_fidelity_bundle_prev"
-        if "mentor_fidelity_slider" not in st.session_state:
-            st.session_state["mentor_fidelity_slider"] = 0
+        mentor_fidelity_choice = st.selectbox(
+            "MENTORS implementation level",
+            options=mentor_fidelity_options,
+            index=mentor_fidelity_options.index(mentor_fidelity_choice_default),
+            key="mentor_session_fidelity_bundle_select",
+            help="Choose the MENTORS implementation level. The selected value is passed to the model as a single implementation index.",
+        )
+        st.session_state["mentor_session_fidelity_bundle"] = mentor_fidelity_choice
 
-        mentor_fidelity_bundle_map = {
-            "Default": 70,
-            "Low": 60,
-            "High": 80,
-        }
-
-        with col_m_s:
-            mentor_fidelity_choice = st.selectbox(
-                "MENTORS session fidelity — scenario",
-                options=mentor_fidelity_options,
-                index=mentor_fidelity_options.index(mentor_fidelity_choice_default),
-                key="mentor_session_fidelity_bundle_select",
-                help="Choosing a scenario presets the fidelity slider on the right; you can still drag the slider.",
-            )
-            st.session_state["mentor_session_fidelity_bundle"] = mentor_fidelity_choice
-
-        preset_pct = mentor_fidelity_bundle_map[mentor_fidelity_choice]
-        _prev_m = st.session_state.get(bundle_prev_key)
-        if _prev_m is None:
-            st.session_state[bundle_prev_key] = mentor_fidelity_choice
-        elif _prev_m != mentor_fidelity_choice:
-            st.session_state["mentor_fidelity_slider"] = preset_pct
-            st.session_state[bundle_prev_key] = mentor_fidelity_choice
-
-        with col_m_f:
-            fidelity_val = st.slider(
-                "Fidelity in delivering MENTORS sessions",
-                min_value=0,
-                max_value=100,
-                step=2,
-                format="%d%%",
-                key="mentor_fidelity_slider",
-            )
-        i_HSS["mentor_fidelity"] = fidelity_val / 100.0
-        st.session_state["mentor_fidelity"] = fidelity_val
-
+        mentor_index = get_mentor_implementation_index(mentor_fidelity_choice)
+        i_HSS["mentor_implementation_index"] = mentor_index
+        st.session_state["mentor_implementation_index"] = mentor_index
     else:
-        i_HSS["mentor_adoption"] = 0.0
-        i_HSS["mentor_attendance"] = 0.0
-        i_HSS["mentor_fidelity"] = 0.0
+        i_HSS["mentor_implementation_index"] = 0.0
+        st.session_state["mentor_implementation_index"] = 0.0
 
     # ==========================================================
     # BLOCK 3 — SMS

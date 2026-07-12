@@ -25,12 +25,14 @@ def pulse_effect(
     if targeted_indicator != indicator_of_interest or not flags.get("flag_pulse", 0):
         return current_value
 
-    pulse_influence_strength = float(param.get("pulse_influence_strength", 0.17))
-    fqa_pulse_modifier = float(param.get("fqa_pulse_modifier", 0.2))
-    pulse_coverage = float(param.get("HSS", {}).get("pulse_coverage", 1.0))
-    flag_fqa = float(flags.get("flag_fqa", 0))
+    pulse_influence_strength = float(param["pulse_influence_strength"])
+    fqa_pulse_modifier = float(param["fqa_pulse_modifier"])
+    # pulse_coverage = float(param.get("HSS", {}).get("pulse_coverage", 1.0))
+    pulse_implementation_index = float(param["pulse_implementation_index"])
+    # flag_fqa = float(flags.get("flag_fqa", 0))
+    fqa_implementation_index = float(param["fqa_implementation_index"])
     pulse_influence_strength_effective = np.clip(
-        pulse_coverage * pulse_influence_strength * (1 + flag_fqa * fqa_pulse_modifier),
+        pulse_implementation_index * pulse_influence_strength * (1 + fqa_implementation_index * fqa_pulse_modifier),
         0,
         1,
     )
@@ -351,12 +353,9 @@ def f_ANC_LB_effect_vectorized(track, LB_base, param, flags, i, int_period, rng)
     if flags['flag_performance']:
         P_knowledge[2] = param["HSS"]["knowledge"]
         P_knowledge[3] = param["HSS"]["knowledge"]
-    # MENTORS: same mechanism as intrapartum.initialize_intra_params (dashboard keys live under param["HSS"])
+    # MENTORS: use the parameter-level implementation index from SDR Parameters.
     if flags.get("flag_MENTOR"):
-        adoption_rate = clip01(float(param["HSS"].get("mentor_adoption", param.get("mentor_adoption", 0.0))))
-        attendance_rate = clip01(float(param["HSS"].get("mentor_attendance", param.get("mentor_attendance", 0.0))))
-        fidelity_rate = clip01(float(param["HSS"].get("mentor_fidelity", param.get("mentor_fidelity", 0.0))))
-        mentors_coverage = adoption_rate * attendance_rate * fidelity_rate
+        mentors_coverage = clip01(float(param.get("mentors_implementation_index", 0.0)))
         mentors_knowledge_target = float(param.get("mentors_knowledge_target", 1.0))
         P_knowledge[1:4] = np.clip(
             P_knowledge[1:4]
