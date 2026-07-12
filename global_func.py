@@ -723,7 +723,6 @@ def reset_HSS(slider_params):
     HSS['CHV_memory'] = "Always Forget"  # Default memory model for CHVs
     HSS['tau_decay'] = 6
     HSS['adoption_prompts'] = 0.0
-    HSS['mentor_implementation_index'] = 0.0
     HSS['chv_engagement'] = 0.0
     HSS['prompts_effect'] = 0.0
     HSS['pulse_coverage'] = 0.0
@@ -796,7 +795,11 @@ def generate_negative_experience_heard(
     """
 
     # Initialize CHV IDs
-    total_CHV_linked_mothers = round(n_CHV * mothers_per_CHV)
+    # Clamped to num_mothers: county-wide CHV counts can imply more linked
+    # mothers than are actually in a given month's cohort (e.g. smaller
+    # counties/months), which would otherwise desync the length of
+    # linked_mother_indices (bounded by num_mothers) from CHV_assignments.
+    total_CHV_linked_mothers = min(round(n_CHV * mothers_per_CHV), num_mothers)
     CHV_IDs = np.full(num_mothers, -1, dtype=int)  # -1 means no CHV
 
     # Randomly assign CHV IDs

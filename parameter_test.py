@@ -1,11 +1,11 @@
 import numpy as np
-from parameters import get_parameters as get_old_parameters
+# from parameters import get_parameters as get_old_parameters
 from parameter_loader import get_parameters as get_new_parameters
 
 rng1 = np.random.default_rng(123)
 rng2 = np.random.default_rng(123)
 
-old = get_old_parameters(rng=rng1)
+# old = get_old_parameters(rng=rng1)
 new = get_new_parameters(county="kakamega", rng=rng2)
 
 ignore = []  # add intentionally changed params here

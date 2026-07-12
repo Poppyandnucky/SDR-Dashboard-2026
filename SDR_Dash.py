@@ -18,6 +18,11 @@ from parameter_loader import (
 )
 from model_run import run_model_dash
 from global_func import reset_flags, reset_E, reset_HSS, reset_S, get_P_l45
+from debug_report import build_parameter_debug_report
+
+# Set to False to disable the parameter debug report feature entirely.
+ENABLE_PARAM_DEBUG_REPORT = True
+
 st.set_page_config(layout="wide")
 selected_plot = None
 
@@ -105,10 +110,12 @@ HSS_CAPACITY_MISMATCH = {
     "Moderate": 25.0,
     "Aggressive": 42.5,
 }
-PROMPTS_FIDELITY_PRESET = {"Low": 0.60, "High": 0.80}
+PROMPTS_FIDELITY_PRESET = {"Moderate": 0.60, "High": 0.80}
 # Fixed implementation-index values for the non-"Current" fidelity levels.
 # These replace the county's Excel-read index outright; they are not multipliers.
-MENTORS_FIDELITY_OVERRIDE = {"Low": 0.5, "High": 0.95}
+MENTORS_FIDELITY_OVERRIDE = {"Moderate": 0.5, "High": 0.95}
+PULSE_FIDELITY_OVERRIDE = {"Moderate": 0.5, "High": 0.95}
+FQA_FIDELITY_OVERRIDE = {"Moderate": 0.5, "High": 0.95}
 FQA_PULSE_MODIFIER_LEVELS = list(FQA_PULSE_MODIFIER_OPTIONS.keys())
 
 
@@ -120,16 +127,22 @@ def fqa_pulse_modifier_default_index():
 
 
 def get_mentor_implementation_index(fidelity_choice):
-    """Current reads mentors_implementation_index from SDR Parameters for the
-    selected county. Low/High are fixed values (MENTORS_FIDELITY_OVERRIDE),
-    independent of the Excel-read value."""
     if fidelity_choice in MENTORS_FIDELITY_OVERRIDE:
         return MENTORS_FIDELITY_OVERRIDE[fidelity_choice]
-
     try:
         param_sample = get_parameters(rng=np.random.default_rng(0), county=selected_county)
         param_sample = calculate_derived_parameters(param_sample)
         return float(np.clip(param_sample.get("mentors_implementation_index", 0.0), 0.0, 1.0))
+    except Exception:
+        return 0.0
+    
+def get_fqa_implementation_index(fidelity_choice):
+    if fidelity_choice in FQA_FIDELITY_PRESET:
+        return FQA_FIDELITY_PRESET[fidelity_choice]
+    try:
+        param_sample = get_parameters(rng=np.random.default_rng(0), county=selected_county)
+        param_sample = calculate_derived_parameters(param_sample)
+        return float(np.clip(param_sample.get("fqa_implementation_index", 0.0), 0.0, 1.0))
     except Exception:
         return 0.0
 
@@ -1548,6 +1561,11 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
             start_time = time.time()  # Record start time
             avg_time_per_run = None  # Will store estimated time per run
 
+            # Parameter debug report snapshots (i_param at two points). In
+            # multiple-run mode only the first run's snapshots are kept.
+            debug_loader_param = None
+            debug_final_param = None
+
             ### MODEL PARAMETERS ###
             n_months = MODEL["n_months"]
             int_period = MODEL["int_period"]
@@ -1577,6 +1595,8 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
 
                 i_param = get_parameters(rng=np.random.default_rng(base_seed), county=selected_county)
                 i_param = calculate_derived_parameters(i_param)
+                if ENABLE_PARAM_DEBUG_REPORT:
+                    debug_loader_param = copy.deepcopy(i_param)
                 # base_seed = np.random.default_rng().integers(low=0, high=1e6, size=1)[0]
                 # rng_param = np.random.default_rng(base_seed)
 
@@ -1597,6 +1617,8 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
                     sync_param_momish_from_hss(b_param, b_HSS)
                 i_param.update({"E": i_E, "S": i_S, "HSS": i_HSS})
                 sync_param_momish_from_hss(i_param, i_HSS)
+                if ENABLE_PARAM_DEBUG_REPORT:
+                    debug_final_param = copy.deepcopy(i_param)
 
                 # rng_clone = np.random.default_rng(base_seed)
                 # i_param = get_parameters(rng = rng_clone)
@@ -1758,8 +1780,12 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
                     param_rng = np.random.default_rng(monthly_seeds_for_this_run[0])
                     i_param = get_parameters(rng=param_rng, county=selected_county)
                     i_param = calculate_derived_parameters(i_param)
+                    if ENABLE_PARAM_DEBUG_REPORT and run_index == 0:
+                        debug_loader_param = copy.deepcopy(i_param)
                     i_param.update({"E": i_E, "S": i_S, "HSS": i_HSS})
                     sync_param_momish_from_hss(i_param, i_HSS)
+                    if ENABLE_PARAM_DEBUG_REPORT and run_index == 0:
+                        debug_final_param = copy.deepcopy(i_param)
 
                     # Pass the exact same ARRAY of monthly seeds
                     i_df_i, i_ind_outcomes_i, _ = run_model_dash(i_param, i_flags, n_months, int_period, base_seed=monthly_seeds_for_this_run)
@@ -1846,6 +1872,15 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
             st.session_state.n_runs = MODEL["n_runs"]
             st.session_state.model_finished = True
 
+            if ENABLE_PARAM_DEBUG_REPORT and debug_loader_param is not None and debug_final_param is not None:
+                st.session_state.param_debug_report = build_parameter_debug_report(
+                    debug_loader_param,
+                    debug_final_param,
+                    county=selected_county,
+                    scenario=st.session_state.get("target_label", "Intervention"),
+                    flags=i_flags,
+                )
+
             # Success message with total runtime
             st.success(f"🎉 Model execution completed! Total runtime: {total_minutes:.1f} minutes.")
     if  st.session_state.model_finished == True:
@@ -1875,6 +1910,14 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
                         st.warning("⚠️ Intervention data is not available. Please run the model first.")
                 else:
                     st.warning("⚠️ Please enter a scenario name before downloading the intervention data.")
+
+            if ENABLE_PARAM_DEBUG_REPORT and st.session_state.get("param_debug_report"):
+                st.download_button(
+                    label="🛠️ Download Parameter Debug Report",
+                    data=st.session_state.param_debug_report,
+                    file_name="param_debug_report.txt",
+                    mime="text/plain",
+                )
 
 
 if "b_df" in st.session_state and "i_df" in st.session_state and st.session_state.model_finished:
