@@ -110,10 +110,16 @@ HSS_CAPACITY_MISMATCH = {
     "Moderate": 25.0,
     "Aggressive": 42.5,
 }
-PROMPTS_FIDELITY_PRESET = {"Moderate": 0.60, "High": 0.80}
 # Fixed implementation-index values for the non-"Current" fidelity levels.
 # These replace the county's Excel-read index outright; they are not multipliers.
 MENTORS_FIDELITY_OVERRIDE = {"Moderate": 0.5, "High": 0.95}
+PROMPTS_IMPLEMENTATION_OVERRIDE = {"Moderate": 0.5, "High": 0.95}
+# RR on 4+ ANC applied to the share of mothers reached by PROMPTS (see
+# get_prompts_implementation_index / render_prompts). Fixed at all three
+# levels, including "Current" -- only the implementation index (population
+# coverage) varies with the workbook there.
+PROMPTS_RR_OVERRIDE = {"Current": 1.02, "Moderate": 1.18, "High": 1.35}
+BLOOD_TRACKING_FIDELITY_OVERRIDE = {"Current": 0.25, "Moderate": 0.5, "High": 0.95}
 PULSE_FIDELITY_OVERRIDE = {"Moderate": 0.5, "High": 0.95}
 FQA_FIDELITY_OVERRIDE = {"Moderate": 0.5, "High": 0.95}
 FQA_PULSE_MODIFIER_LEVELS = list(FQA_PULSE_MODIFIER_OPTIONS.keys())
@@ -135,14 +141,39 @@ def get_mentor_implementation_index(fidelity_choice):
         return float(np.clip(param_sample.get("mentors_implementation_index", 0.0), 0.0, 1.0))
     except Exception:
         return 0.0
-    
+
+def get_prompts_implementation_index(fidelity_choice):
+    if fidelity_choice in PROMPTS_IMPLEMENTATION_OVERRIDE:
+        return PROMPTS_IMPLEMENTATION_OVERRIDE[fidelity_choice]
+    try:
+        param_sample = get_parameters(rng=np.random.default_rng(0), county=selected_county)
+        param_sample = calculate_derived_parameters(param_sample)
+        return float(np.clip(param_sample.get("prompts_implementation_index", 0.0), 0.0, 1.0))
+    except Exception:
+        return 0.0
+
+
+def get_blood_tracking_implementation_index(fidelity_choice):
+    return BLOOD_TRACKING_FIDELITY_OVERRIDE.get(fidelity_choice, 0.0)
+
+
 def get_fqa_implementation_index(fidelity_choice):
-    if fidelity_choice in FQA_FIDELITY_PRESET:
-        return FQA_FIDELITY_PRESET[fidelity_choice]
+    if fidelity_choice in FQA_FIDELITY_OVERRIDE:
+        return FQA_FIDELITY_OVERRIDE[fidelity_choice]
     try:
         param_sample = get_parameters(rng=np.random.default_rng(0), county=selected_county)
         param_sample = calculate_derived_parameters(param_sample)
         return float(np.clip(param_sample.get("fqa_implementation_index", 0.0), 0.0, 1.0))
+    except Exception:
+        return 0.0
+
+def get_pulse_implementation_index(fidelity_choice):
+    if fidelity_choice in PULSE_FIDELITY_OVERRIDE:
+        return PULSE_FIDELITY_OVERRIDE[fidelity_choice]
+    try:
+        param_sample = get_parameters(rng=np.random.default_rng(0), county=selected_county)
+        param_sample = calculate_derived_parameters(param_sample)
+        return float(np.clip(param_sample.get("pulse_implementation_index", 0.0), 0.0, 1.0))
     except Exception:
         return 0.0
 
@@ -331,7 +362,7 @@ def render_prompts_preset():
     with p_col2:
         prompts_fidelity = st.radio(
             "PROMPTS fidelity",
-            ["Low Fidelity", "High Fidelity"],
+            ["Moderate Fidelity", "High Fidelity"],
             horizontal=True,
             key="preset_prompts_fidelity",
             disabled=not prompts_on,
@@ -340,17 +371,15 @@ def render_prompts_preset():
     i_flags["flag_PROMPTS"] = 1 if prompts_on else 0
     st.session_state["flag_PROMPTS"] = int(prompts_on)
     if prompts_on:
-        fid_key = "Low" if prompts_fidelity.startswith("Low") else "High"
-        i_HSS["adoption_prompts"] = 1.0
-        i_HSS["chv_engagement"] = 1.0
-        i_HSS["prompts_effect"] = PROMPTS_FIDELITY_PRESET[fid_key]
-        st.session_state["prompts_effect"] = int(PROMPTS_FIDELITY_PRESET[fid_key] * 100)
-        i_HSS["OR_anc4p"] = float(st.session_state.get("prompts_or_anc4p", 1.38))
+        fid_key = "Moderate" if prompts_fidelity.startswith("Moderate") else "High"
+        prompts_index = get_prompts_implementation_index(fid_key)
+        i_HSS["prompts_implementation_index"] = prompts_index
+        i_HSS["prompts_rr_anc4p"] = PROMPTS_RR_OVERRIDE[fid_key]
+        st.session_state["prompts_implementation_index"] = prompts_index
     else:
-        i_HSS["adoption_prompts"] = 0.0
-        i_HSS["chv_engagement"] = 0.0
-        i_HSS["prompts_effect"] = 0.0
-        i_HSS.pop("OR_anc4p", None)
+        i_HSS["prompts_implementation_index"] = 0.0
+        i_HSS["prompts_rr_anc4p"] = 1.0
+        st.session_state["prompts_implementation_index"] = 0.0
 
     st.markdown("**MENTORS**")
     m_col1, m_col2 = st.columns([1, 2])
@@ -359,7 +388,7 @@ def render_prompts_preset():
     with m_col2:
         mentor_fidelity = st.radio(
             "MENTORS fidelity",
-            ["Low Fidelity", "High Fidelity"],
+            ["Moderate Fidelity", "High Fidelity"],
             horizontal=True,
             key="preset_mentor_fidelity",
             disabled=not mentor_on,
@@ -368,7 +397,7 @@ def render_prompts_preset():
     i_flags["flag_MENTOR"] = 1 if mentor_on else 0
     st.session_state["flag_MENTOR"] = int(mentor_on)
     if mentor_on:
-        fid_key = "Low" if mentor_fidelity.startswith("Low") else "High"
+        fid_key = "Moderate" if mentor_fidelity.startswith("Moderate") else "High"
         mentor_index = get_mentor_implementation_index(fid_key)
         i_HSS["mentor_implementation_index"] = mentor_index
         st.session_state["mentor_implementation_index"] = mentor_index
@@ -378,23 +407,52 @@ def render_prompts_preset():
 
     st.markdown("**Other MOMISH programs**")
 
-    o_col1, o_col2, o_col3, o_col4 = st.columns(4)
-    with o_col1:
-        pulse_on = st.checkbox("PULSE", value=False, key="preset_pulse_on")
-    with o_col2:
-        fqa_on = st.checkbox("FQA", value=False, key="preset_fqa_on")
-    with o_col3:
-        blood_on = st.checkbox("Blood tracking", value=False, key="preset_blood_on")
-    with o_col4:
-        emt_on = st.checkbox("Referral systems & EMT training", value=False, key="preset_emt_on")
+    p_col1, p_col2 = st.columns([1, 2])
+    with p_col1:
+        pulse_on = st.checkbox("Enable PULSE", value=False, key="preset_pulse_on")
+    with p_col2:
+        pulse_fidelity = st.radio(
+            "PULSE fidelity",
+            ["Moderate Fidelity", "High Fidelity"],
+            horizontal=True,
+            key="preset_pulse_fidelity",
+            disabled=not pulse_on,
+        )
 
     i_flags["flag_pulse"] = 1 if pulse_on else 0
-    i_flags["flag_fqa"] = 1 if fqa_on else 0
     st.session_state["flag_pulse"] = int(pulse_on)
+    if pulse_on:
+        fid_key = "Moderate" if pulse_fidelity.startswith("Moderate") else "High"
+        pulse_index = get_pulse_implementation_index(fid_key)
+        i_HSS["pulse_implementation_index"] = pulse_index
+        st.session_state["pulse_implementation_index"] = pulse_index
+    else:
+        i_HSS["pulse_implementation_index"] = 0.0
+        st.session_state["pulse_implementation_index"] = 0.0
+
+    f_col1, f_col2 = st.columns([1, 2])
+    with f_col1:
+        fqa_on = st.checkbox("Enable FQA", value=False, key="preset_fqa_on")
+    with f_col2:
+        fqa_fidelity = st.radio(
+            "FQA fidelity",
+            ["Moderate Fidelity", "High Fidelity"],
+            horizontal=True,
+            key="preset_fqa_fidelity",
+            disabled=not fqa_on,
+        )
+
+    i_flags["flag_fqa"] = 1 if fqa_on else 0
     st.session_state["flag_fqa"] = int(fqa_on)
-    i_HSS["pulse_coverage"] = 1.0 if pulse_on else 0.0
-    if not pulse_on:
-        i_HSS["pulse_effectiveness"] = 0.0
+    if fqa_on:
+        fid_key = "Moderate" if fqa_fidelity.startswith("Moderate") else "High"
+        fqa_index = get_fqa_implementation_index(fid_key)
+        i_HSS["fqa_implementation_index"] = fqa_index
+        st.session_state["fqa_implementation_index"] = fqa_index
+    else:
+        i_HSS["fqa_implementation_index"] = 0.0
+        st.session_state["fqa_implementation_index"] = 0.0
+
     selected_fqa_pulse_level = st.selectbox(
         "FQA amplification of PULSE effect",
         options=FQA_PULSE_MODIFIER_LEVELS,
@@ -405,11 +463,36 @@ def render_prompts_preset():
     i_HSS["fqa_pulse_modifier"] = FQA_PULSE_MODIFIER_OPTIONS[selected_fqa_pulse_level]
     st.session_state["fqa_pulse_modifier_level"] = selected_fqa_pulse_level
 
+    bl_col1, bl_col2 = st.columns([1, 2])
+    with bl_col1:
+        blood_on = st.checkbox("Enable Blood tracking", value=False, key="preset_blood_on")
+    with bl_col2:
+        blood_fidelity = st.radio(
+            "Blood tracking fidelity",
+            ["Current Fidelity", "Moderate Fidelity", "High Fidelity"],
+            horizontal=True,
+            key="preset_blood_fidelity",
+            disabled=not blood_on,
+        )
+
+    emt_on = st.checkbox("Referral systems & EMT training", value=False, key="preset_emt_on")
+
     i_flags["flag_blood"] = 1 if blood_on else 0
     i_flags["flag_blood_tracking"] = i_flags["flag_blood"]
     st.session_state["flag_blood"] = int(blood_on)
-    i_HSS["blood_participation"] = 1.0 if blood_on else 0.0
-    i_HSS["blood_tracking_slider"] = i_HSS["blood_participation"]
+    if blood_on:
+        if blood_fidelity.startswith("Current"):
+            fid_key = "Current"
+        elif blood_fidelity.startswith("Moderate"):
+            fid_key = "Moderate"
+        else:
+            fid_key = "High"
+        blood_index = get_blood_tracking_implementation_index(fid_key)
+        i_HSS["blood_adoption"] = blood_index
+        st.session_state["blood_adoption"] = blood_index
+    else:
+        i_HSS["blood_adoption"] = 0.0
+        st.session_state["blood_adoption"] = 0.0
 
     i_flags["flag_emt"] = 1 if emt_on else 0
     st.session_state["flag_emt"] = int(emt_on)
@@ -791,16 +874,19 @@ def render_hss(preset_demand_scenario, preset_supply_scenario):
 
 def sync_param_momish_from_hss(i_param, i_HSS):
     """Align top-level param keys with dashboard i_HSS (LB_effect + intrapartum may read either)."""
-    i_param["intervention_fidelity"] = float(
-        i_HSS.get("prompts_effect", i_param.get("intervention_fidelity", 0.87))
-    )
-    if i_HSS.get("OR_anc4p") is not None:
-        i_param["OR_anc4p"] = float(i_HSS["OR_anc4p"])
+    if i_HSS.get("prompts_implementation_index") is not None:
+        i_param["prompts_implementation_index"] = float(i_HSS["prompts_implementation_index"])
+    if i_HSS.get("prompts_rr_anc4p") is not None:
+        i_param["prompts_rr_anc4p"] = float(i_HSS["prompts_rr_anc4p"])
     if i_HSS.get("fqa_pulse_modifier") is not None:
         i_param["fqa_pulse_modifier_level"] = i_HSS.get("fqa_pulse_modifier_level", "Medium")
         i_param["fqa_pulse_modifier"] = float(i_HSS["fqa_pulse_modifier"])
     if i_HSS.get("mentor_implementation_index") is not None:
         i_param["mentors_implementation_index"] = float(i_HSS["mentor_implementation_index"])
+    if i_HSS.get("pulse_implementation_index") is not None:
+        i_param["pulse_implementation_index"] = float(i_HSS["pulse_implementation_index"])
+    if i_HSS.get("fqa_implementation_index") is not None:
+        i_param["fqa_implementation_index"] = float(i_HSS["fqa_implementation_index"])
 
 
 def apply_momish_facility_delivery(i_flags, i_HSS, slider_params, choice_key, intervention_selection):
@@ -933,102 +1019,31 @@ def render_prompts():
     st.session_state["flag_PROMPTS"] = int(prompts_enabled)
 
     if prompts_enabled:
-        colP3, colP4 = st.columns(2)
-
-        with colP3:
-            adoption_default = int(st.session_state.get("adoption_prompts", 100))
-            adoption_val = st.slider(
-                "PROMPTS adoption",
-                min_value=0, max_value=100, step=2,
-                value=adoption_default,
-                format="%d%%",
-                help="Program adoption level.",
-                key="prompts_adoption"
-            )
-            i_HSS["adoption_prompts"] = adoption_val / 100.0
-            st.session_state["adoption_prompts"] = adoption_val
-
-        with colP4:
-            engage_default = int(st.session_state.get("chv_engagement", 100))
-            engage_val = st.slider(
-                "CHV engagement (PROMPTS)",
-                min_value=0, max_value=100, step=2,
-                value=engage_default,
-                format="%d%%",
-                help="CHV engagement level used only inside PROMPTS.",
-                key="prompts_engagement"
-            )
-            i_HSS["chv_engagement"] = engage_val / 100.0
-            st.session_state["chv_engagement"] = engage_val
-
-        col_if_s, col_if_f = st.columns(2)
-        prompts_if_bundle_options = ["Default", "Low", "High"]
-        prompts_if_default = st.session_state.get("prompts_intervention_fidelity_bundle", "Default")
-        if prompts_if_default not in prompts_if_bundle_options:
-            prompts_if_default = "Default"
-
-        prompts_if_prev_key = "prompts_intervention_fidelity_bundle_prev"
-        if "prompts_effect_slider" not in st.session_state:
-            # Start from 0; presets apply only after the user picks/changes scenario
-            st.session_state["prompts_effect_slider"] = 0
-
-        prompts_if_bundle_map = {
-            "Default": 70,
-            "Low": 60,
-            "High": 80,
-        }
-
-        with col_if_s:
-            prompts_if_bundle = st.selectbox(
-                "PROMPTS intervention fidelity — scenario",
-                options=prompts_if_bundle_options,
-                index=prompts_if_bundle_options.index(prompts_if_default),
-                key="prompts_intervention_fidelity_bundle_select",
-                help="Choosing a scenario presets the slider on the right; you can still drag the slider.",
-            )
-            st.session_state["prompts_intervention_fidelity_bundle"] = prompts_if_bundle
-
-        preset_if = prompts_if_bundle_map[prompts_if_bundle]
-        _prev_if = st.session_state.get(prompts_if_prev_key)
-        if _prev_if is None:
-            st.session_state[prompts_if_prev_key] = prompts_if_bundle
-        elif _prev_if != prompts_if_bundle:
-            st.session_state["prompts_effect_slider"] = preset_if
-            st.session_state[prompts_if_prev_key] = prompts_if_bundle
-
-        with col_if_f:
-            prompts_effect_val = st.slider(
-                "Intervention fidelity",
-                min_value=0,
-                max_value=100,
-                step=2,
-                format="%d%%",
-                help="Effectiveness of PROMPTS in increasing intention to deliver at L4/5.",
-                key="prompts_effect_slider",
-            )
-        i_HSS["prompts_effect"] = prompts_effect_val / 100.0
-        st.session_state["prompts_effect"] = prompts_effect_val
-
-        if "prompts_or_anc4p" not in st.session_state:
-            st.session_state["prompts_or_anc4p"] = 1.38
-        st.session_state["prompts_or_anc4p"] = max(
-            1.15, min(1.44, float(st.session_state["prompts_or_anc4p"]))
+        prompts_fidelity_options = ["Current", "Moderate", "High"]
+        prompts_fidelity_choice_default = st.session_state.get(
+            "prompts_implementation_level", "Current"
         )
-        or_anc4p_val = st.slider(
-            "PROMPTS effect on 4+ ANC (OR)",
-            min_value=1.15,
-            max_value=1.44,
-            step=0.01,
-            format="%.2f",
-            help="Odds ratio for 4+ ANC when PROMPTS is on (LB_effect).",
-            key="prompts_or_anc4p",
+        if prompts_fidelity_choice_default not in prompts_fidelity_options:
+            prompts_fidelity_choice_default = "Current"
+
+        prompts_fidelity_choice = st.selectbox(
+            "PROMPTS implementation level",
+            options=prompts_fidelity_options,
+            index=prompts_fidelity_options.index(prompts_fidelity_choice_default),
+            key="prompts_implementation_level_select",
+            help="Choose the PROMPTS implementation level. The selected value is passed to the model "
+                 "as an implementation index (share of mothers reached) plus a matching RR on 4+ ANC.",
         )
-        i_HSS["OR_anc4p"] = float(or_anc4p_val)
+        st.session_state["prompts_implementation_level"] = prompts_fidelity_choice
+
+        prompts_index = get_prompts_implementation_index(prompts_fidelity_choice)
+        i_HSS["prompts_implementation_index"] = prompts_index
+        i_HSS["prompts_rr_anc4p"] = PROMPTS_RR_OVERRIDE[prompts_fidelity_choice]
+        st.session_state["prompts_implementation_index"] = prompts_index
     else:
-        i_HSS["adoption_prompts"] = 0.0
-        i_HSS["chv_engagement"] = 0.0
-        i_HSS["prompts_effect"] = 0.0
-        i_HSS.pop("OR_anc4p", None)
+        i_HSS["prompts_implementation_index"] = 0.0
+        i_HSS["prompts_rr_anc4p"] = 1.0
+        st.session_state["prompts_implementation_index"] = 0.0
 
     # ==========================================================
     # BLOCK 2 — MENTORS
@@ -1048,7 +1063,7 @@ def render_prompts():
 
     if mentor_on:
 
-        mentor_fidelity_options = ["Current", "Low", "High"]
+        mentor_fidelity_options = ["Current", "Moderate", "High"]
         mentor_fidelity_choice_default = st.session_state.get(
             "mentor_session_fidelity_bundle", "Current"
         )
@@ -1096,17 +1111,52 @@ def render_prompts():
     st.session_state["flag_fqa"] = int(fqa_int)
 
     if pulse_int:
-        pulse_default = int(st.session_state.get("pulse_coverage", 100))
-        pulse_val = st.slider(
-            "Adoption of PULSE",
-            0, 100, pulse_default, 5,
-            format="%d%%",
-            key="pulse_coverage"
+        pulse_fidelity_options = ["Current", "Moderate", "High"]
+        pulse_fidelity_choice_default = st.session_state.get(
+            "pulse_implementation_level", "Current"
         )
-        i_HSS["pulse_coverage"] = pulse_val / 100.0
+        if pulse_fidelity_choice_default not in pulse_fidelity_options:
+            pulse_fidelity_choice_default = "Current"
+
+        pulse_fidelity_choice = st.selectbox(
+            "PULSE implementation level",
+            options=pulse_fidelity_options,
+            index=pulse_fidelity_options.index(pulse_fidelity_choice_default),
+            key="pulse_implementation_level_select",
+            help="Choose the PULSE implementation level. The selected value is passed to the model as a single implementation index.",
+        )
+        st.session_state["pulse_implementation_level"] = pulse_fidelity_choice
+
+        pulse_index = get_pulse_implementation_index(pulse_fidelity_choice)
+        i_HSS["pulse_implementation_index"] = pulse_index
+        st.session_state["pulse_implementation_index"] = pulse_index
     else:
-        i_HSS["pulse_coverage"] = 0.0
-        i_HSS["pulse_effectiveness"] = 0.0
+        i_HSS["pulse_implementation_index"] = 0.0
+        st.session_state["pulse_implementation_index"] = 0.0
+
+    if fqa_int:
+        fqa_fidelity_options = ["Current", "Moderate", "High"]
+        fqa_fidelity_choice_default = st.session_state.get(
+            "fqa_implementation_level", "Current"
+        )
+        if fqa_fidelity_choice_default not in fqa_fidelity_options:
+            fqa_fidelity_choice_default = "Current"
+
+        fqa_fidelity_choice = st.selectbox(
+            "FQA implementation level",
+            options=fqa_fidelity_options,
+            index=fqa_fidelity_options.index(fqa_fidelity_choice_default),
+            key="fqa_implementation_level_select",
+            help="Choose the FQA implementation level. The selected value is passed to the model as a single implementation index.",
+        )
+        st.session_state["fqa_implementation_level"] = fqa_fidelity_choice
+
+        fqa_index = get_fqa_implementation_index(fqa_fidelity_choice)
+        i_HSS["fqa_implementation_index"] = fqa_index
+        st.session_state["fqa_implementation_index"] = fqa_index
+    else:
+        i_HSS["fqa_implementation_index"] = 0.0
+        st.session_state["fqa_implementation_index"] = 0.0
 
     selected_fqa_pulse_level = st.selectbox(
         "FQA amplification of PULSE effect",
@@ -1136,21 +1186,28 @@ def render_prompts():
         st.session_state["flag_blood"] = int(blood_int)
 
     if blood_int:
-        blood_default = int(st.session_state.get("blood_participation", 100))
-        blood_val = st.slider(
-            "Adoption of Blood Tracking System",
-            0, 100, blood_default, 5,
-            format="%d%%",
-            key="blood_participation",
-            help="Scales PPH/APH maternal death weights in mortality; effect capped at 13.3%.",
+        blood_fidelity_options = ["Current", "Moderate", "High"]
+        blood_fidelity_choice_default = st.session_state.get(
+            "blood_implementation_level", "Current"
         )
-        blood_frac = blood_val / 100.0
-        i_HSS["blood_participation"] = blood_frac
-        i_HSS["blood_tracking_slider"] = blood_frac
+        if blood_fidelity_choice_default not in blood_fidelity_options:
+            blood_fidelity_choice_default = "Current"
+
+        blood_fidelity_choice = st.selectbox(
+            "Blood tracking implementation level",
+            options=blood_fidelity_options,
+            index=blood_fidelity_options.index(blood_fidelity_choice_default),
+            key="blood_implementation_level_select",
+            help="Current = 0.25, Moderate = 0.5, High = 0.95. Scales PPH/APH maternal death weights in mortality.",
+        )
+        st.session_state["blood_implementation_level"] = blood_fidelity_choice
+
+        blood_index = get_blood_tracking_implementation_index(blood_fidelity_choice)
+        i_HSS["blood_adoption"] = blood_index
+        st.session_state["blood_adoption"] = blood_index
     else:
-        i_HSS["blood_participation"] = 0.0
-        i_HSS["blood_tracking_slider"] = 0.0
-        i_HSS["blood_intensity"] = 0.0
+        i_HSS["blood_adoption"] = 0.0
+        st.session_state["blood_adoption"] = 0.0
 
     # ==========================================================
     # BLOCK 5 — Referral Systems & EMT Training INTERVENTION

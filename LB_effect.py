@@ -118,32 +118,18 @@ def f_ANC_LB_effect_vectorized(track, LB_base, param, flags, i, int_period, rng)
     else:
         P_ANC = P_ANC_base
 
-    # ------------------- PROMPTS BLOCK A: Increase 4+ANC via engagement ------------------- #
+    # ------------------- PROMPTS BLOCK A: Increase 4+ANC via RR on the covered share ------------------- #
     if flag_PROMPTS:
-        # dashboard / baseline constants (safe defaults)
-        adoption_prompts = clip01(param["HSS"].get("adoption_prompts", 1.0))
-        chv_engagement = clip01(param["HSS"].get("chv_engagement", 1.0))
-        phone_ownership = clip01(param.get("phone_ownership", 0.89))
-        # Dashboard writes the slider as HSS["prompts_effect"]; legacy name is top-level intervention_fidelity
-        intervention_fidelity = clip01(
-            param["HSS"].get("prompts_effect", param.get("intervention_fidelity", 0.87))
-        )
+        # implementation_index = share of mothers reached by PROMPTS (population coverage).
+        # That share gets the full scenario RR on 4+ ANC; the rest keep their baseline
+        # probability -- the index is a coverage weight, not a scaling factor on the RR.
+        implementation_index = clip01(param.get("prompts_implementation_index", 0.0))
+        prompts_rr_anc4p = float(param.get("prompts_rr_anc4p", 1.0))
 
-        # clip CHV engagement for probability usage
-        chv_engagement = clip01(chv_engagement)
+        P_ANC_treated = clip01(P_ANC * prompts_rr_anc4p)
+        P_ANC = clip01((1 - implementation_index) * P_ANC + implementation_index * P_ANC_treated)
 
-        # participation and effective engagement
-        P_participation = clip01(adoption_prompts * chv_engagement * phone_ownership)
-        engagement_level = clip01(P_participation * intervention_fidelity)
-
-        # map engagement to effective OR on ANC4+
-        OR_anc4p = float(param.get("OR_anc4p", 1.50))
-        # anc4p_eff = 1.0 + (OR_anc4p - 1.0) * engagement_level
-        OR_anc4p_eff = np.exp(engagement_level * np.log(OR_anc4p))
-
-        # apply OR update to system-level P_ANC
-        P_ANC = odds_update(P_ANC, OR_anc4p_eff)
-
+        engagement_level = implementation_index
     else:
         engagement_level = 0.0
 
