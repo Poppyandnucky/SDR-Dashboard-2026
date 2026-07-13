@@ -83,7 +83,8 @@ def apply_fqa_effect(P, flags, param):
         return P
 
     fqa_knowledge_improve = float(param.get("fqa_knowledge_improve", 0.043))
-    P["knowledge"] = np.clip(P["knowledge"] + fqa_knowledge_improve, 0, 1)
+    fqa_implementation_index = float(param.get("fqa_implementation_index", 0.0))
+    P["knowledge"] = np.clip(P["knowledge"] + fqa_implementation_index * fqa_knowledge_improve, 0, 1)
 
     return P
 
@@ -229,17 +230,8 @@ def initialize_intra_params(individual_outcomes, track, flags, param, i, rng):
 
     # MENTORS intervention (HSS dict + optional top-level copies from sync_param_momish_from_hss)
     if flags.get("flag_MENTOR"):
-        adoption_rate = np.clip(
-            float(param["HSS"].get("mentor_adoption", param.get("mentor_adoption", 0.0))), 0.0, 1.0
-        )
-        attendance_rate = np.clip(
-            float(param["HSS"].get("mentor_attendance", param.get("mentor_attendance", 0.0))), 0.0, 1.0
-        )
-        fidelity_rate = np.clip(
-            float(param["HSS"].get("mentor_fidelity", param.get("mentor_fidelity", 0.0))), 0.0, 1.0
-        )
 
-        mentors_coverage = adoption_rate * attendance_rate * fidelity_rate
+        mentors_coverage = param["mentors_implementation_index"]
         mentors_knowledge_target = float(param.get("mentors_knowledge_target", 1.0))
 
         P["knowledge"][1:4] = np.clip(

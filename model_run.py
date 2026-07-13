@@ -3,7 +3,7 @@ import pandas as pd
 import random
 import time
 import streamlit as st
-from parameters import reset_inputs
+from parameter_loader import reset_inputs
 from LB_effect import f_LB_effect_vectorized
 from mortality import f_MM_vectorized
 from global_func import labor_calculator, fetal_sensor_calculator, DALY_calculator_vectorized

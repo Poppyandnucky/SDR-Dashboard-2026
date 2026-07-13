@@ -8,11 +8,34 @@ import time
 import copy
 import matplotlib.pyplot as plt
 import seaborn as sns
-from parameters import FQA_PULSE_MODIFIER_OPTIONS, get_parameters, get_slider_params, calculate_derived_parameters
+from parameter_loader import (
+    get_parameters,
+    calculate_derived_parameters,
+    get_available_counties,
+    get_slider_params,
+    get_fqa_pulse_modifier_options,
+    DEFAULT_COUNTY,
+)
 from model_run import run_model_dash
 from global_func import reset_flags, reset_E, reset_HSS, reset_S, get_P_l45
+from debug_report import build_parameter_debug_report
+
+# Set to False to disable the parameter debug report feature entirely.
+ENABLE_PARAM_DEBUG_REPORT = True
+
 st.set_page_config(layout="wide")
 selected_plot = None
+
+FQA_PULSE_MODIFIER_OPTIONS = get_fqa_pulse_modifier_options()
+
+county_options = get_available_counties()
+if DEFAULT_COUNTY not in county_options:
+    county_options = [DEFAULT_COUNTY] + county_options
+selected_county = st.selectbox(
+    "County",
+    county_options,
+    index=county_options.index(DEFAULT_COUNTY),
+)
 
 MODEL = {
     "imple_time": 3,
@@ -87,8 +110,18 @@ HSS_CAPACITY_MISMATCH = {
     "Moderate": 25.0,
     "Aggressive": 42.5,
 }
-PROMPTS_FIDELITY_PRESET = {"Low": 0.60, "High": 0.80}
-MENTORS_FIDELITY_PRESET = {"Low": 0.60, "High": 0.80}
+# Fixed implementation-index values for the non-"Current" fidelity levels.
+# These replace the county's Excel-read index outright; they are not multipliers.
+MENTORS_FIDELITY_OVERRIDE = {"Moderate": 0.5, "High": 0.95}
+PROMPTS_IMPLEMENTATION_OVERRIDE = {"Moderate": 0.5, "High": 0.95}
+# RR on 4+ ANC applied to the share of mothers reached by PROMPTS (see
+# get_prompts_implementation_index / render_prompts). Fixed at all three
+# levels, including "Current" -- only the implementation index (population
+# coverage) varies with the workbook there.
+PROMPTS_RR_OVERRIDE = {"Current": 1.02, "Moderate": 1.18, "High": 1.35}
+BLOOD_TRACKING_FIDELITY_OVERRIDE = {"Current": 0.25, "Moderate": 0.5, "High": 0.95}
+PULSE_FIDELITY_OVERRIDE = {"Moderate": 0.5, "High": 0.95}
+FQA_FIDELITY_OVERRIDE = {"Moderate": 0.5, "High": 0.95}
 FQA_PULSE_MODIFIER_LEVELS = list(FQA_PULSE_MODIFIER_OPTIONS.keys())
 
 
@@ -97,6 +130,52 @@ def fqa_pulse_modifier_default_index():
     if level not in FQA_PULSE_MODIFIER_LEVELS:
         level = "Medium"
     return FQA_PULSE_MODIFIER_LEVELS.index(level)
+
+
+def get_mentor_implementation_index(fidelity_choice):
+    if fidelity_choice in MENTORS_FIDELITY_OVERRIDE:
+        return MENTORS_FIDELITY_OVERRIDE[fidelity_choice]
+    try:
+        param_sample = get_parameters(rng=np.random.default_rng(0), county=selected_county)
+        param_sample = calculate_derived_parameters(param_sample)
+        return float(np.clip(param_sample.get("mentors_implementation_index", 0.0), 0.0, 1.0))
+    except Exception:
+        return 0.0
+
+def get_prompts_implementation_index(fidelity_choice):
+    if fidelity_choice in PROMPTS_IMPLEMENTATION_OVERRIDE:
+        return PROMPTS_IMPLEMENTATION_OVERRIDE[fidelity_choice]
+    try:
+        param_sample = get_parameters(rng=np.random.default_rng(0), county=selected_county)
+        param_sample = calculate_derived_parameters(param_sample)
+        return float(np.clip(param_sample.get("prompts_implementation_index", 0.0), 0.0, 1.0))
+    except Exception:
+        return 0.0
+
+
+def get_blood_tracking_implementation_index(fidelity_choice):
+    return BLOOD_TRACKING_FIDELITY_OVERRIDE.get(fidelity_choice, 0.0)
+
+
+def get_fqa_implementation_index(fidelity_choice):
+    if fidelity_choice in FQA_FIDELITY_OVERRIDE:
+        return FQA_FIDELITY_OVERRIDE[fidelity_choice]
+    try:
+        param_sample = get_parameters(rng=np.random.default_rng(0), county=selected_county)
+        param_sample = calculate_derived_parameters(param_sample)
+        return float(np.clip(param_sample.get("fqa_implementation_index", 0.0), 0.0, 1.0))
+    except Exception:
+        return 0.0
+
+def get_pulse_implementation_index(fidelity_choice):
+    if fidelity_choice in PULSE_FIDELITY_OVERRIDE:
+        return PULSE_FIDELITY_OVERRIDE[fidelity_choice]
+    try:
+        param_sample = get_parameters(rng=np.random.default_rng(0), county=selected_county)
+        param_sample = calculate_derived_parameters(param_sample)
+        return float(np.clip(param_sample.get("pulse_implementation_index", 0.0), 0.0, 1.0))
+    except Exception:
+        return 0.0
 
 
 def render_hss_preset():
@@ -283,7 +362,7 @@ def render_prompts_preset():
     with p_col2:
         prompts_fidelity = st.radio(
             "PROMPTS fidelity",
-            ["Low Fidelity", "High Fidelity"],
+            ["Moderate Fidelity", "High Fidelity"],
             horizontal=True,
             key="preset_prompts_fidelity",
             disabled=not prompts_on,
@@ -292,17 +371,15 @@ def render_prompts_preset():
     i_flags["flag_PROMPTS"] = 1 if prompts_on else 0
     st.session_state["flag_PROMPTS"] = int(prompts_on)
     if prompts_on:
-        fid_key = "Low" if prompts_fidelity.startswith("Low") else "High"
-        i_HSS["adoption_prompts"] = 1.0
-        i_HSS["chv_engagement"] = 1.0
-        i_HSS["prompts_effect"] = PROMPTS_FIDELITY_PRESET[fid_key]
-        st.session_state["prompts_effect"] = int(PROMPTS_FIDELITY_PRESET[fid_key] * 100)
-        i_HSS["OR_anc4p"] = float(st.session_state.get("prompts_or_anc4p", 1.38))
+        fid_key = "Moderate" if prompts_fidelity.startswith("Moderate") else "High"
+        prompts_index = get_prompts_implementation_index(fid_key)
+        i_HSS["prompts_implementation_index"] = prompts_index
+        i_HSS["prompts_rr_anc4p"] = PROMPTS_RR_OVERRIDE[fid_key]
+        st.session_state["prompts_implementation_index"] = prompts_index
     else:
-        i_HSS["adoption_prompts"] = 0.0
-        i_HSS["chv_engagement"] = 0.0
-        i_HSS["prompts_effect"] = 0.0
-        i_HSS.pop("OR_anc4p", None)
+        i_HSS["prompts_implementation_index"] = 0.0
+        i_HSS["prompts_rr_anc4p"] = 1.0
+        st.session_state["prompts_implementation_index"] = 0.0
 
     st.markdown("**MENTORS**")
     m_col1, m_col2 = st.columns([1, 2])
@@ -311,7 +388,7 @@ def render_prompts_preset():
     with m_col2:
         mentor_fidelity = st.radio(
             "MENTORS fidelity",
-            ["Low Fidelity", "High Fidelity"],
+            ["Moderate Fidelity", "High Fidelity"],
             horizontal=True,
             key="preset_mentor_fidelity",
             disabled=not mentor_on,
@@ -320,36 +397,62 @@ def render_prompts_preset():
     i_flags["flag_MENTOR"] = 1 if mentor_on else 0
     st.session_state["flag_MENTOR"] = int(mentor_on)
     if mentor_on:
-        fid_key = "Low" if mentor_fidelity.startswith("Low") else "High"
-        i_HSS["mentor_adoption"] = 0.70
-        i_HSS["mentor_attendance"] = 0.70
-        i_HSS["mentor_fidelity"] = MENTORS_FIDELITY_PRESET[fid_key]
-        st.session_state["mentor_adoption"] = 70
-        st.session_state["mentor_attendance"] = 70
-        st.session_state["mentor_fidelity"] = int(MENTORS_FIDELITY_PRESET[fid_key] * 100)
+        fid_key = "Moderate" if mentor_fidelity.startswith("Moderate") else "High"
+        mentor_index = get_mentor_implementation_index(fid_key)
+        i_HSS["mentor_implementation_index"] = mentor_index
+        st.session_state["mentor_implementation_index"] = mentor_index
     else:
-        i_HSS["mentor_adoption"] = 0.0
-        i_HSS["mentor_attendance"] = 0.0
-        i_HSS["mentor_fidelity"] = 0.0
+        i_HSS["mentor_implementation_index"] = 0.0
+        st.session_state["mentor_implementation_index"] = 0.0
 
     st.markdown("**Other MOMISH programs**")
-    o_col1, o_col2, o_col3, o_col4 = st.columns(4)
-    with o_col1:
-        pulse_on = st.checkbox("PULSE", value=False, key="preset_pulse_on")
-    with o_col2:
-        fqa_on = st.checkbox("FQA", value=False, key="preset_fqa_on")
-    with o_col3:
-        blood_on = st.checkbox("Blood tracking", value=False, key="preset_blood_on")
-    with o_col4:
-        emt_on = st.checkbox("Referral systems & EMT training", value=False, key="preset_emt_on")
+
+    p_col1, p_col2 = st.columns([1, 2])
+    with p_col1:
+        pulse_on = st.checkbox("Enable PULSE", value=False, key="preset_pulse_on")
+    with p_col2:
+        pulse_fidelity = st.radio(
+            "PULSE fidelity",
+            ["Moderate Fidelity", "High Fidelity"],
+            horizontal=True,
+            key="preset_pulse_fidelity",
+            disabled=not pulse_on,
+        )
 
     i_flags["flag_pulse"] = 1 if pulse_on else 0
-    i_flags["flag_fqa"] = 1 if fqa_on else 0
     st.session_state["flag_pulse"] = int(pulse_on)
+    if pulse_on:
+        fid_key = "Moderate" if pulse_fidelity.startswith("Moderate") else "High"
+        pulse_index = get_pulse_implementation_index(fid_key)
+        i_HSS["pulse_implementation_index"] = pulse_index
+        st.session_state["pulse_implementation_index"] = pulse_index
+    else:
+        i_HSS["pulse_implementation_index"] = 0.0
+        st.session_state["pulse_implementation_index"] = 0.0
+
+    f_col1, f_col2 = st.columns([1, 2])
+    with f_col1:
+        fqa_on = st.checkbox("Enable FQA", value=False, key="preset_fqa_on")
+    with f_col2:
+        fqa_fidelity = st.radio(
+            "FQA fidelity",
+            ["Moderate Fidelity", "High Fidelity"],
+            horizontal=True,
+            key="preset_fqa_fidelity",
+            disabled=not fqa_on,
+        )
+
+    i_flags["flag_fqa"] = 1 if fqa_on else 0
     st.session_state["flag_fqa"] = int(fqa_on)
-    i_HSS["pulse_coverage"] = 1.0 if pulse_on else 0.0
-    if not pulse_on:
-        i_HSS["pulse_effectiveness"] = 0.0
+    if fqa_on:
+        fid_key = "Moderate" if fqa_fidelity.startswith("Moderate") else "High"
+        fqa_index = get_fqa_implementation_index(fid_key)
+        i_HSS["fqa_implementation_index"] = fqa_index
+        st.session_state["fqa_implementation_index"] = fqa_index
+    else:
+        i_HSS["fqa_implementation_index"] = 0.0
+        st.session_state["fqa_implementation_index"] = 0.0
+
     selected_fqa_pulse_level = st.selectbox(
         "FQA amplification of PULSE effect",
         options=FQA_PULSE_MODIFIER_LEVELS,
@@ -360,11 +463,36 @@ def render_prompts_preset():
     i_HSS["fqa_pulse_modifier"] = FQA_PULSE_MODIFIER_OPTIONS[selected_fqa_pulse_level]
     st.session_state["fqa_pulse_modifier_level"] = selected_fqa_pulse_level
 
+    bl_col1, bl_col2 = st.columns([1, 2])
+    with bl_col1:
+        blood_on = st.checkbox("Enable Blood tracking", value=False, key="preset_blood_on")
+    with bl_col2:
+        blood_fidelity = st.radio(
+            "Blood tracking fidelity",
+            ["Current Fidelity", "Moderate Fidelity", "High Fidelity"],
+            horizontal=True,
+            key="preset_blood_fidelity",
+            disabled=not blood_on,
+        )
+
+    emt_on = st.checkbox("Referral systems & EMT training", value=False, key="preset_emt_on")
+
     i_flags["flag_blood"] = 1 if blood_on else 0
     i_flags["flag_blood_tracking"] = i_flags["flag_blood"]
     st.session_state["flag_blood"] = int(blood_on)
-    i_HSS["blood_participation"] = 1.0 if blood_on else 0.0
-    i_HSS["blood_tracking_slider"] = i_HSS["blood_participation"]
+    if blood_on:
+        if blood_fidelity.startswith("Current"):
+            fid_key = "Current"
+        elif blood_fidelity.startswith("Moderate"):
+            fid_key = "Moderate"
+        else:
+            fid_key = "High"
+        blood_index = get_blood_tracking_implementation_index(fid_key)
+        i_HSS["blood_adoption"] = blood_index
+        st.session_state["blood_adoption"] = blood_index
+    else:
+        i_HSS["blood_adoption"] = 0.0
+        st.session_state["blood_adoption"] = 0.0
 
     i_flags["flag_emt"] = 1 if emt_on else 0
     st.session_state["flag_emt"] = int(emt_on)
@@ -606,7 +734,7 @@ def render_hss(preset_demand_scenario, preset_supply_scenario):
             labor_value = 0
             equipment_value = 0
             refer_value = 0
-            transfer_value = slider_params['t_l23_l45_notsevere_slider']
+            transfer_value = round(slider_params['t_l23_l45_notsevere_slider'])
 
         col2_1, col2_2 = st.columns(2)
         with col2_1:
@@ -734,7 +862,7 @@ def render_hss(preset_demand_scenario, preset_supply_scenario):
         with col2_16:
             if transferint:
                 i_flags['flag_transfer'] = 1
-                i_HSS["P_transfer"] = st.slider('% emergency transfer', min_value=slider_params['t_l23_l45_notsevere_slider'], max_value=100, step=10,
+                i_HSS["P_transfer"] = st.slider('% emergency transfer', min_value=round(slider_params['t_l23_l45_notsevere_slider']), max_value=100, step=10,
                                                  value=transfer_value,
                                                  format="%d%%", help="% complications can be transferred\n\n"
                                                       "Value = 50 means 50% of complications can be transferred from L2/3 to L4/5 facilities")
@@ -746,17 +874,19 @@ def render_hss(preset_demand_scenario, preset_supply_scenario):
 
 def sync_param_momish_from_hss(i_param, i_HSS):
     """Align top-level param keys with dashboard i_HSS (LB_effect + intrapartum may read either)."""
-    i_param["intervention_fidelity"] = float(
-        i_HSS.get("prompts_effect", i_param.get("intervention_fidelity", 0.87))
-    )
-    if i_HSS.get("OR_anc4p") is not None:
-        i_param["OR_anc4p"] = float(i_HSS["OR_anc4p"])
+    if i_HSS.get("prompts_implementation_index") is not None:
+        i_param["prompts_implementation_index"] = float(i_HSS["prompts_implementation_index"])
+    if i_HSS.get("prompts_rr_anc4p") is not None:
+        i_param["prompts_rr_anc4p"] = float(i_HSS["prompts_rr_anc4p"])
     if i_HSS.get("fqa_pulse_modifier") is not None:
         i_param["fqa_pulse_modifier_level"] = i_HSS.get("fqa_pulse_modifier_level", "Medium")
         i_param["fqa_pulse_modifier"] = float(i_HSS["fqa_pulse_modifier"])
-    for _k in ("mentor_adoption", "mentor_attendance", "mentor_fidelity"):
-        if _k in i_HSS:
-            i_param[_k] = float(i_HSS[_k])
+    if i_HSS.get("mentor_implementation_index") is not None:
+        i_param["mentors_implementation_index"] = float(i_HSS["mentor_implementation_index"])
+    if i_HSS.get("pulse_implementation_index") is not None:
+        i_param["pulse_implementation_index"] = float(i_HSS["pulse_implementation_index"])
+    if i_HSS.get("fqa_implementation_index") is not None:
+        i_param["fqa_implementation_index"] = float(i_HSS["fqa_implementation_index"])
 
 
 def apply_momish_facility_delivery(i_flags, i_HSS, slider_params, choice_key, intervention_selection):
@@ -889,102 +1019,31 @@ def render_prompts():
     st.session_state["flag_PROMPTS"] = int(prompts_enabled)
 
     if prompts_enabled:
-        colP3, colP4 = st.columns(2)
-
-        with colP3:
-            adoption_default = int(st.session_state.get("adoption_prompts", 100))
-            adoption_val = st.slider(
-                "PROMPTS adoption",
-                min_value=0, max_value=100, step=2,
-                value=adoption_default,
-                format="%d%%",
-                help="Program adoption level.",
-                key="prompts_adoption"
-            )
-            i_HSS["adoption_prompts"] = adoption_val / 100.0
-            st.session_state["adoption_prompts"] = adoption_val
-
-        with colP4:
-            engage_default = int(st.session_state.get("chv_engagement", 100))
-            engage_val = st.slider(
-                "CHV engagement (PROMPTS)",
-                min_value=0, max_value=100, step=2,
-                value=engage_default,
-                format="%d%%",
-                help="CHV engagement level used only inside PROMPTS.",
-                key="prompts_engagement"
-            )
-            i_HSS["chv_engagement"] = engage_val / 100.0
-            st.session_state["chv_engagement"] = engage_val
-
-        col_if_s, col_if_f = st.columns(2)
-        prompts_if_bundle_options = ["Default", "Low", "High"]
-        prompts_if_default = st.session_state.get("prompts_intervention_fidelity_bundle", "Default")
-        if prompts_if_default not in prompts_if_bundle_options:
-            prompts_if_default = "Default"
-
-        prompts_if_prev_key = "prompts_intervention_fidelity_bundle_prev"
-        if "prompts_effect_slider" not in st.session_state:
-            # Start from 0; presets apply only after the user picks/changes scenario
-            st.session_state["prompts_effect_slider"] = 0
-
-        prompts_if_bundle_map = {
-            "Default": 70,
-            "Low": 60,
-            "High": 80,
-        }
-
-        with col_if_s:
-            prompts_if_bundle = st.selectbox(
-                "PROMPTS intervention fidelity — scenario",
-                options=prompts_if_bundle_options,
-                index=prompts_if_bundle_options.index(prompts_if_default),
-                key="prompts_intervention_fidelity_bundle_select",
-                help="Choosing a scenario presets the slider on the right; you can still drag the slider.",
-            )
-            st.session_state["prompts_intervention_fidelity_bundle"] = prompts_if_bundle
-
-        preset_if = prompts_if_bundle_map[prompts_if_bundle]
-        _prev_if = st.session_state.get(prompts_if_prev_key)
-        if _prev_if is None:
-            st.session_state[prompts_if_prev_key] = prompts_if_bundle
-        elif _prev_if != prompts_if_bundle:
-            st.session_state["prompts_effect_slider"] = preset_if
-            st.session_state[prompts_if_prev_key] = prompts_if_bundle
-
-        with col_if_f:
-            prompts_effect_val = st.slider(
-                "Intervention fidelity",
-                min_value=0,
-                max_value=100,
-                step=2,
-                format="%d%%",
-                help="Effectiveness of PROMPTS in increasing intention to deliver at L4/5.",
-                key="prompts_effect_slider",
-            )
-        i_HSS["prompts_effect"] = prompts_effect_val / 100.0
-        st.session_state["prompts_effect"] = prompts_effect_val
-
-        if "prompts_or_anc4p" not in st.session_state:
-            st.session_state["prompts_or_anc4p"] = 1.38
-        st.session_state["prompts_or_anc4p"] = max(
-            1.15, min(1.44, float(st.session_state["prompts_or_anc4p"]))
+        prompts_fidelity_options = ["Current", "Moderate", "High"]
+        prompts_fidelity_choice_default = st.session_state.get(
+            "prompts_implementation_level", "Current"
         )
-        or_anc4p_val = st.slider(
-            "PROMPTS effect on 4+ ANC (OR)",
-            min_value=1.15,
-            max_value=1.44,
-            step=0.01,
-            format="%.2f",
-            help="Odds ratio for 4+ ANC when PROMPTS is on (LB_effect).",
-            key="prompts_or_anc4p",
+        if prompts_fidelity_choice_default not in prompts_fidelity_options:
+            prompts_fidelity_choice_default = "Current"
+
+        prompts_fidelity_choice = st.selectbox(
+            "PROMPTS implementation level",
+            options=prompts_fidelity_options,
+            index=prompts_fidelity_options.index(prompts_fidelity_choice_default),
+            key="prompts_implementation_level_select",
+            help="Choose the PROMPTS implementation level. The selected value is passed to the model "
+                 "as an implementation index (share of mothers reached) plus a matching RR on 4+ ANC.",
         )
-        i_HSS["OR_anc4p"] = float(or_anc4p_val)
+        st.session_state["prompts_implementation_level"] = prompts_fidelity_choice
+
+        prompts_index = get_prompts_implementation_index(prompts_fidelity_choice)
+        i_HSS["prompts_implementation_index"] = prompts_index
+        i_HSS["prompts_rr_anc4p"] = PROMPTS_RR_OVERRIDE[prompts_fidelity_choice]
+        st.session_state["prompts_implementation_index"] = prompts_index
     else:
-        i_HSS["adoption_prompts"] = 0.0
-        i_HSS["chv_engagement"] = 0.0
-        i_HSS["prompts_effect"] = 0.0
-        i_HSS.pop("OR_anc4p", None)
+        i_HSS["prompts_implementation_index"] = 0.0
+        i_HSS["prompts_rr_anc4p"] = 1.0
+        st.session_state["prompts_implementation_index"] = 0.0
 
     # ==========================================================
     # BLOCK 2 — MENTORS
@@ -1003,82 +1062,29 @@ def render_prompts():
         st.session_state["flag_MENTOR"] = int(mentor_on)
 
     if mentor_on:
-        col7, col8 = st.columns(2)
 
-        with col7:
-            adoption_default = int(st.session_state.get("mentor_adoption", 70))
-            adoption_val = st.slider(
-                "Adoption of MENTORS",
-                0, 100, adoption_default, 2,
-                format="%d%%",
-                key="mentor_adoption_slider"
-            )
-            i_HSS["mentor_adoption"] = adoption_val / 100.0
-            st.session_state["mentor_adoption"] = adoption_val
-
-        with col8:
-            attendance_default = int(st.session_state.get("mentor_attendance", 70))
-            attendance_val = st.slider(
-                "On-site attendance of MENTORS sessions",
-                0, 100, attendance_default, 2,
-                format="%d%%",
-                key="mentor_attendance_slider"
-            )
-            i_HSS["mentor_attendance"] = attendance_val / 100.0
-            st.session_state["mentor_attendance"] = attendance_val
-
-        col_m_s, col_m_f = st.columns(2)
-        mentor_fidelity_options = ["Default", "Low", "High"]
+        mentor_fidelity_options = ["Current", "Moderate", "High"]
         mentor_fidelity_choice_default = st.session_state.get(
-            "mentor_session_fidelity_bundle", "Default"
+            "mentor_session_fidelity_bundle", "Current"
         )
         if mentor_fidelity_choice_default not in mentor_fidelity_options:
-            mentor_fidelity_choice_default = "Default"
+            mentor_fidelity_choice_default = "Current"
 
-        bundle_prev_key = "mentor_session_fidelity_bundle_prev"
-        if "mentor_fidelity_slider" not in st.session_state:
-            st.session_state["mentor_fidelity_slider"] = 0
+        mentor_fidelity_choice = st.selectbox(
+            "MENTORS implementation level",
+            options=mentor_fidelity_options,
+            index=mentor_fidelity_options.index(mentor_fidelity_choice_default),
+            key="mentor_session_fidelity_bundle_select",
+            help="Choose the MENTORS implementation level. The selected value is passed to the model as a single implementation index.",
+        )
+        st.session_state["mentor_session_fidelity_bundle"] = mentor_fidelity_choice
 
-        mentor_fidelity_bundle_map = {
-            "Default": 70,
-            "Low": 60,
-            "High": 80,
-        }
-
-        with col_m_s:
-            mentor_fidelity_choice = st.selectbox(
-                "MENTORS session fidelity — scenario",
-                options=mentor_fidelity_options,
-                index=mentor_fidelity_options.index(mentor_fidelity_choice_default),
-                key="mentor_session_fidelity_bundle_select",
-                help="Choosing a scenario presets the fidelity slider on the right; you can still drag the slider.",
-            )
-            st.session_state["mentor_session_fidelity_bundle"] = mentor_fidelity_choice
-
-        preset_pct = mentor_fidelity_bundle_map[mentor_fidelity_choice]
-        _prev_m = st.session_state.get(bundle_prev_key)
-        if _prev_m is None:
-            st.session_state[bundle_prev_key] = mentor_fidelity_choice
-        elif _prev_m != mentor_fidelity_choice:
-            st.session_state["mentor_fidelity_slider"] = preset_pct
-            st.session_state[bundle_prev_key] = mentor_fidelity_choice
-
-        with col_m_f:
-            fidelity_val = st.slider(
-                "Fidelity in delivering MENTORS sessions",
-                min_value=0,
-                max_value=100,
-                step=2,
-                format="%d%%",
-                key="mentor_fidelity_slider",
-            )
-        i_HSS["mentor_fidelity"] = fidelity_val / 100.0
-        st.session_state["mentor_fidelity"] = fidelity_val
-
+        mentor_index = get_mentor_implementation_index(mentor_fidelity_choice)
+        i_HSS["mentor_implementation_index"] = mentor_index
+        st.session_state["mentor_implementation_index"] = mentor_index
     else:
-        i_HSS["mentor_adoption"] = 0.0
-        i_HSS["mentor_attendance"] = 0.0
-        i_HSS["mentor_fidelity"] = 0.0
+        i_HSS["mentor_implementation_index"] = 0.0
+        st.session_state["mentor_implementation_index"] = 0.0
 
     # ==========================================================
     # BLOCK 3 — SMS
@@ -1105,17 +1111,52 @@ def render_prompts():
     st.session_state["flag_fqa"] = int(fqa_int)
 
     if pulse_int:
-        pulse_default = int(st.session_state.get("pulse_coverage", 100))
-        pulse_val = st.slider(
-            "Adoption of PULSE",
-            0, 100, pulse_default, 5,
-            format="%d%%",
-            key="pulse_coverage"
+        pulse_fidelity_options = ["Current", "Moderate", "High"]
+        pulse_fidelity_choice_default = st.session_state.get(
+            "pulse_implementation_level", "Current"
         )
-        i_HSS["pulse_coverage"] = pulse_val / 100.0
+        if pulse_fidelity_choice_default not in pulse_fidelity_options:
+            pulse_fidelity_choice_default = "Current"
+
+        pulse_fidelity_choice = st.selectbox(
+            "PULSE implementation level",
+            options=pulse_fidelity_options,
+            index=pulse_fidelity_options.index(pulse_fidelity_choice_default),
+            key="pulse_implementation_level_select",
+            help="Choose the PULSE implementation level. The selected value is passed to the model as a single implementation index.",
+        )
+        st.session_state["pulse_implementation_level"] = pulse_fidelity_choice
+
+        pulse_index = get_pulse_implementation_index(pulse_fidelity_choice)
+        i_HSS["pulse_implementation_index"] = pulse_index
+        st.session_state["pulse_implementation_index"] = pulse_index
     else:
-        i_HSS["pulse_coverage"] = 0.0
-        i_HSS["pulse_effectiveness"] = 0.0
+        i_HSS["pulse_implementation_index"] = 0.0
+        st.session_state["pulse_implementation_index"] = 0.0
+
+    if fqa_int:
+        fqa_fidelity_options = ["Current", "Moderate", "High"]
+        fqa_fidelity_choice_default = st.session_state.get(
+            "fqa_implementation_level", "Current"
+        )
+        if fqa_fidelity_choice_default not in fqa_fidelity_options:
+            fqa_fidelity_choice_default = "Current"
+
+        fqa_fidelity_choice = st.selectbox(
+            "FQA implementation level",
+            options=fqa_fidelity_options,
+            index=fqa_fidelity_options.index(fqa_fidelity_choice_default),
+            key="fqa_implementation_level_select",
+            help="Choose the FQA implementation level. The selected value is passed to the model as a single implementation index.",
+        )
+        st.session_state["fqa_implementation_level"] = fqa_fidelity_choice
+
+        fqa_index = get_fqa_implementation_index(fqa_fidelity_choice)
+        i_HSS["fqa_implementation_index"] = fqa_index
+        st.session_state["fqa_implementation_index"] = fqa_index
+    else:
+        i_HSS["fqa_implementation_index"] = 0.0
+        st.session_state["fqa_implementation_index"] = 0.0
 
     selected_fqa_pulse_level = st.selectbox(
         "FQA amplification of PULSE effect",
@@ -1145,21 +1186,28 @@ def render_prompts():
         st.session_state["flag_blood"] = int(blood_int)
 
     if blood_int:
-        blood_default = int(st.session_state.get("blood_participation", 100))
-        blood_val = st.slider(
-            "Adoption of Blood Tracking System",
-            0, 100, blood_default, 5,
-            format="%d%%",
-            key="blood_participation",
-            help="Scales PPH/APH maternal death weights in mortality; effect capped at 13.3%.",
+        blood_fidelity_options = ["Current", "Moderate", "High"]
+        blood_fidelity_choice_default = st.session_state.get(
+            "blood_implementation_level", "Current"
         )
-        blood_frac = blood_val / 100.0
-        i_HSS["blood_participation"] = blood_frac
-        i_HSS["blood_tracking_slider"] = blood_frac
+        if blood_fidelity_choice_default not in blood_fidelity_options:
+            blood_fidelity_choice_default = "Current"
+
+        blood_fidelity_choice = st.selectbox(
+            "Blood tracking implementation level",
+            options=blood_fidelity_options,
+            index=blood_fidelity_options.index(blood_fidelity_choice_default),
+            key="blood_implementation_level_select",
+            help="Current = 0.25, Moderate = 0.5, High = 0.95. Scales PPH/APH maternal death weights in mortality.",
+        )
+        st.session_state["blood_implementation_level"] = blood_fidelity_choice
+
+        blood_index = get_blood_tracking_implementation_index(blood_fidelity_choice)
+        i_HSS["blood_adoption"] = blood_index
+        st.session_state["blood_adoption"] = blood_index
     else:
-        i_HSS["blood_participation"] = 0.0
-        i_HSS["blood_tracking_slider"] = 0.0
-        i_HSS["blood_intensity"] = 0.0
+        i_HSS["blood_adoption"] = 0.0
+        st.session_state["blood_adoption"] = 0.0
 
     # ==========================================================
     # BLOCK 5 — Referral Systems & EMT Training INTERVENTION
@@ -1176,18 +1224,8 @@ def render_prompts():
         i_flags["flag_emt"] = 1 if emt_int else 0
         st.session_state["flag_emt"] = int(emt_int)
 
-    if emt_int:
-        emt_default = int(st.session_state.get("emt_participation", 100))
-        emt_val = st.slider(
-            "Emergency vehicle capacity",
-            0, 100, emt_default, 5,
-            format="%d%%",
-            key="emt_participation"
-        )
-        i_HSS["emt_participation"] = emt_val / 100.0
-        # st.session_state["emt_participation"] = emt_val
-    else:
-        i_HSS["emt_participation"] = 0.0
+    i_HSS["emt_participation"] = 1.0 if emt_int else 0.0
+    if not emt_int:
         i_HSS["emt_intensity"] = 0.0
 
     apply_momish_facility_delivery(
@@ -1580,6 +1618,11 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
             start_time = time.time()  # Record start time
             avg_time_per_run = None  # Will store estimated time per run
 
+            # Parameter debug report snapshots (i_param at two points). In
+            # multiple-run mode only the first run's snapshots are kept.
+            debug_loader_param = None
+            debug_final_param = None
+
             ### MODEL PARAMETERS ###
             n_months = MODEL["n_months"]
             int_period = MODEL["int_period"]
@@ -1604,11 +1647,13 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
                 master_rng = np.random.default_rng(base_seed)
                 base_seeds = master_rng.integers(low=0, high=1e6, size=num_seeds)
 
-                b_param = get_parameters(rng=np.random.default_rng(base_seed))
+                b_param = get_parameters(rng=np.random.default_rng(base_seed), county=selected_county)
                 b_param = calculate_derived_parameters(b_param)
 
-                i_param = get_parameters(rng=np.random.default_rng(base_seed))
+                i_param = get_parameters(rng=np.random.default_rng(base_seed), county=selected_county)
                 i_param = calculate_derived_parameters(i_param)
+                if ENABLE_PARAM_DEBUG_REPORT:
+                    debug_loader_param = copy.deepcopy(i_param)
                 # base_seed = np.random.default_rng().integers(low=0, high=1e6, size=1)[0]
                 # rng_param = np.random.default_rng(base_seed)
 
@@ -1629,6 +1674,8 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
                     sync_param_momish_from_hss(b_param, b_HSS)
                 i_param.update({"E": i_E, "S": i_S, "HSS": i_HSS})
                 sync_param_momish_from_hss(i_param, i_HSS)
+                if ENABLE_PARAM_DEBUG_REPORT:
+                    debug_final_param = copy.deepcopy(i_param)
 
                 # rng_clone = np.random.default_rng(base_seed)
                 # i_param = get_parameters(rng = rng_clone)
@@ -1658,7 +1705,7 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
                 # In A/B mode, also run plain baseline once for column comparison
                 if compare_two_interventions:
                     status.text("⏳ Running Plain Baseline for A/B column comparison...")
-                    base_param = get_parameters(rng=np.random.default_rng(base_seed))
+                    base_param = get_parameters(rng=np.random.default_rng(base_seed), county=selected_county)
                     base_param = calculate_derived_parameters(base_param)
                     base_flags = reset_flags()
                     base_HSS = reset_HSS(slider_params)
@@ -1689,88 +1736,90 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
                 # --- BASELINE RUNS ---
                 # seeds = np.random.default_rng(2025).integers(low=0, high=1e6, size=total_runs * n_months)
 
-                # Initialize Baseline Model Once if not stored
-                if st.session_state.b_df_multiple is None or compare_two_interventions:
-                    status.text("⏳ Running Reference Model for Multiple Runs...")
+                # Always rerun the baseline on every "Run Model" click (single-run mode
+                # already does this unconditionally above) so that changing settings that
+                # aren't tracked in current_config -- e.g. the selected county -- can never
+                # leave a stale cached baseline in place.
+                status.text("⏳ Running Reference Model for Multiple Runs...")
 
-                    temp_b_df = []  # Store results in list before concatenating (better performance)
-                    temp_b_ind_outcomes = []
+                temp_b_df = []  # Store results in list before concatenating (better performance)
+                temp_b_ind_outcomes = []
 
-                    #for i in range(total_runs):
-                    for run_index in range(total_runs):
-                        iter_start_time = time.time()
+                #for i in range(total_runs):
+                for run_index in range(total_runs):
+                    iter_start_time = time.time()
 
-                        # Reset flags and initialize parameters for each run
-                        monthly_seeds_for_this_run = run_seeds_matrix[run_index]
-                        # Use the VERY FIRST seed of this run's sequence to generate parameters
-                        param_rng = np.random.default_rng(monthly_seeds_for_this_run[0])
-                        b_param = get_parameters(rng=param_rng)
-                        b_param = calculate_derived_parameters(b_param)
-                        
-                        b_flags, b_HSS, b_S, b_E = reset_flags(), reset_HSS(slider_params), reset_S(slider_params), reset_E()
-                        if compare_two_interventions and st.session_state.dual_first_config is not None:
-                            b_flags = copy.deepcopy(st.session_state.dual_first_config["flags"])
-                            b_E = copy.deepcopy(st.session_state.dual_first_config["E"])
-                            b_S = copy.deepcopy(st.session_state.dual_first_config["S"])
-                            b_HSS = copy.deepcopy(st.session_state.dual_first_config["HSS"])
-                        b_param.update({"E": b_E, "S": b_S, "HSS": b_HSS})
-                        if compare_two_interventions:
-                            sync_param_momish_from_hss(b_param, b_HSS)
+                    # Reset flags and initialize parameters for each run
+                    monthly_seeds_for_this_run = run_seeds_matrix[run_index]
+                    # Use the VERY FIRST seed of this run's sequence to generate parameters
+                    param_rng = np.random.default_rng(monthly_seeds_for_this_run[0])
+                    b_param = get_parameters(rng=param_rng, county=selected_county)
+                    b_param = calculate_derived_parameters(b_param)
 
-                        # Pass the ARRAY of monthly seeds to run_model_dash
-                        b_df_i, b_ind_outcomes_i, _ = run_model_dash(b_param, b_flags, n_months, int_period, base_seed=monthly_seeds_for_this_run)
-                        
-                        b_df_i["Run"] = run_index + 1
-                        b_ind_outcomes_i["Run"] = run_index + 1
-                        b_ind_outcomes_i["Scenario"] = st.session_state.reference_label if compare_two_interventions else "Baseline"
-                        temp_b_df.append(b_df_i)
-                        temp_b_ind_outcomes.append(b_ind_outcomes_i)
+                    b_flags, b_HSS, b_S, b_E = reset_flags(), reset_HSS(slider_params), reset_S(slider_params), reset_E()
+                    if compare_two_interventions and st.session_state.dual_first_config is not None:
+                        b_flags = copy.deepcopy(st.session_state.dual_first_config["flags"])
+                        b_E = copy.deepcopy(st.session_state.dual_first_config["E"])
+                        b_S = copy.deepcopy(st.session_state.dual_first_config["S"])
+                        b_HSS = copy.deepcopy(st.session_state.dual_first_config["HSS"])
+                    b_param.update({"E": b_E, "S": b_S, "HSS": b_HSS})
+                    if compare_two_interventions:
+                        sync_param_momish_from_hss(b_param, b_HSS)
 
-                        # rng_param = np.random.default_rng(base_seed)
-                        # b_param = get_parameters(rng = rng_param)
-                        # b_param = calculate_derived_parameters(b_param)
-                        # #st.text(b_param)
-                        # b_flags, b_HSS, b_S, b_E = reset_flags(), reset_HSS(slider_params), reset_S(slider_params), reset_E()
-                        # b_param.update({"E": b_E, "S": b_S, "HSS": b_HSS})
+                    # Pass the ARRAY of monthly seeds to run_model_dash
+                    b_df_i, b_ind_outcomes_i, _ = run_model_dash(b_param, b_flags, n_months, int_period, base_seed=monthly_seeds_for_this_run)
 
-                        # # Run baseline model only once per iteration
-                        # rng_model = np.random.default_rng(base_seed)
-                        # b_df_i, b_ind_outcomes_i, _ = run_model_dash(b_param, b_flags, n_months, int_period, base_seed = base_seeds)
-                        # #b_df_i, b_ind_outcomes_i, _ = run_model_dash(b_param, b_flags, n_months, int_period,
-                        #                                          rng=None)
-                        # Time tracking & progress update
-                        iter_time_taken = time.time() - iter_start_time
-                        avg_time_per_run = iter_time_taken if avg_time_per_run is None else (
-                                                                                                        avg_time_per_run * run_index + iter_time_taken) / (
-                                                                                                        run_index + 1)
-                        remaining_time = avg_time_per_run * (total_runs - (run_index + 1))
-                        progress_bar.progress((run_index + 1) / total_runs)
-                        status.text(f"⏳ Running Reference Model... {run_index + 1}/{total_runs} runs completed. "
-                                    f"Estimated time left: {remaining_time / 60:.1f} min.")
-                        # st.text(f"CPU usage: {psutil.cpu_percent()}%")
-                        # usage_per_core = psutil.cpu_percent(percpu=True)
-                        # for i, usage in enumerate(usage_per_core):
-                        #     st.text(f"Core {i}: {usage}%")
-                        #
-                        # def print_resource_usage(interval=1, repeat=10):
-                        #     process = psutil.Process(os.getpid())
-                        #
-                        #     for i in range(repeat):
-                        #         cpu = psutil.cpu_percent(interval=interval)
-                        #         mem_info = process.memory_info()
-                        #         mem_mb = mem_info.rss / (1024 ** 2)  # Convert bytes to MB
-                        #
-                        #         st.text(f"[{i + 1}] CPU Usage: {cpu:.1f}% | Memory Usage: {mem_mb:.2f} MB")
-                        #
-                        # print_resource_usage()
+                    b_df_i["Run"] = run_index + 1
+                    b_ind_outcomes_i["Run"] = run_index + 1
+                    b_ind_outcomes_i["Scenario"] = st.session_state.reference_label if compare_two_interventions else "Baseline"
+                    temp_b_df.append(b_df_i)
+                    temp_b_ind_outcomes.append(b_ind_outcomes_i)
 
-                    # Store final baseline results in session state
-                    st.session_state.b_df_multiple = pd.concat(temp_b_df, ignore_index=True)
-                    st.session_state.b_ind_outcomes = pd.concat(temp_b_ind_outcomes, ignore_index=True)
+                    # rng_param = np.random.default_rng(base_seed)
+                    # b_param = get_parameters(rng = rng_param)
+                    # b_param = calculate_derived_parameters(b_param)
+                    # #st.text(b_param)
+                    # b_flags, b_HSS, b_S, b_E = reset_flags(), reset_HSS(slider_params), reset_S(slider_params), reset_E()
+                    # b_param.update({"E": b_E, "S": b_S, "HSS": b_HSS})
 
-                    status.text("✅ Reference Model Completed!")
+                    # # Run baseline model only once per iteration
+                    # rng_model = np.random.default_rng(base_seed)
+                    # b_df_i, b_ind_outcomes_i, _ = run_model_dash(b_param, b_flags, n_months, int_period, base_seed = base_seeds)
+                    # #b_df_i, b_ind_outcomes_i, _ = run_model_dash(b_param, b_flags, n_months, int_period,
+                    #                                          rng=None)
+                    # Time tracking & progress update
+                    iter_time_taken = time.time() - iter_start_time
+                    avg_time_per_run = iter_time_taken if avg_time_per_run is None else (
+                                                                                                    avg_time_per_run * run_index + iter_time_taken) / (
+                                                                                                    run_index + 1)
+                    remaining_time = avg_time_per_run * (total_runs - (run_index + 1))
+                    progress_bar.progress((run_index + 1) / total_runs)
+                    status.text(f"⏳ Running Reference Model... {run_index + 1}/{total_runs} runs completed. "
+                                f"Estimated time left: {remaining_time / 60:.1f} min.")
+                    # st.text(f"CPU usage: {psutil.cpu_percent()}%")
+                    # usage_per_core = psutil.cpu_percent(percpu=True)
+                    # for i, usage in enumerate(usage_per_core):
+                    #     st.text(f"Core {i}: {usage}%")
+                    #
+                    # def print_resource_usage(interval=1, repeat=10):
+                    #     process = psutil.Process(os.getpid())
+                    #
+                    #     for i in range(repeat):
+                    #         cpu = psutil.cpu_percent(interval=interval)
+                    #         mem_info = process.memory_info()
+                    #         mem_mb = mem_info.rss / (1024 ** 2)  # Convert bytes to MB
+                    #
+                    #         st.text(f"[{i + 1}] CPU Usage: {cpu:.1f}% | Memory Usage: {mem_mb:.2f} MB")
+                    #
+                    # print_resource_usage()
 
-                # Retrieve cached baseline results
+                # Store final baseline results in session state
+                st.session_state.b_df_multiple = pd.concat(temp_b_df, ignore_index=True)
+                st.session_state.b_ind_outcomes = pd.concat(temp_b_ind_outcomes, ignore_index=True)
+
+                status.text("✅ Reference Model Completed!")
+
+                # Retrieve baseline results just computed above
                 b_df = st.session_state.b_df_multiple
                 b_ind_outcomes = st.session_state.b_ind_outcomes
 
@@ -1786,10 +1835,14 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
 
                     # Use the exact same seed to generate identical starting parameters
                     param_rng = np.random.default_rng(monthly_seeds_for_this_run[0])
-                    i_param = get_parameters(rng=param_rng)
+                    i_param = get_parameters(rng=param_rng, county=selected_county)
                     i_param = calculate_derived_parameters(i_param)
+                    if ENABLE_PARAM_DEBUG_REPORT and run_index == 0:
+                        debug_loader_param = copy.deepcopy(i_param)
                     i_param.update({"E": i_E, "S": i_S, "HSS": i_HSS})
                     sync_param_momish_from_hss(i_param, i_HSS)
+                    if ENABLE_PARAM_DEBUG_REPORT and run_index == 0:
+                        debug_final_param = copy.deepcopy(i_param)
 
                     # Pass the exact same ARRAY of monthly seeds
                     i_df_i, i_ind_outcomes_i, _ = run_model_dash(i_param, i_flags, n_months, int_period, base_seed=monthly_seeds_for_this_run)
@@ -1841,7 +1894,7 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
                     for run_index in range(total_runs):
                         monthly_seeds_for_this_run = run_seeds_matrix[run_index]
                         param_rng = np.random.default_rng(monthly_seeds_for_this_run[0])
-                        base_param = get_parameters(rng=param_rng)
+                        base_param = get_parameters(rng=param_rng, county=selected_county)
                         base_param = calculate_derived_parameters(base_param)
                         base_flags = reset_flags()
                         base_HSS = reset_HSS(slider_params)
@@ -1876,6 +1929,15 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
             st.session_state.n_runs = MODEL["n_runs"]
             st.session_state.model_finished = True
 
+            if ENABLE_PARAM_DEBUG_REPORT and debug_loader_param is not None and debug_final_param is not None:
+                st.session_state.param_debug_report = build_parameter_debug_report(
+                    debug_loader_param,
+                    debug_final_param,
+                    county=selected_county,
+                    scenario=st.session_state.get("target_label", "Intervention"),
+                    flags=i_flags,
+                )
+
             # Success message with total runtime
             st.success(f"🎉 Model execution completed! Total runtime: {total_minutes:.1f} minutes.")
     if  st.session_state.model_finished == True:
@@ -1905,6 +1967,14 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
                         st.warning("⚠️ Intervention data is not available. Please run the model first.")
                 else:
                     st.warning("⚠️ Please enter a scenario name before downloading the intervention data.")
+
+            if ENABLE_PARAM_DEBUG_REPORT and st.session_state.get("param_debug_report"):
+                st.download_button(
+                    label="🛠️ Download Parameter Debug Report",
+                    data=st.session_state.param_debug_report,
+                    file_name="param_debug_report.txt",
+                    mime="text/plain",
+                )
 
 
 if "b_df" in st.session_state and "i_df" in st.session_state and st.session_state.model_finished:
@@ -4607,7 +4677,7 @@ if run_clicked:
             monthly_seeds = run_seeds_matrix[run_index]
             param_rng = np.random.default_rng(monthly_seeds[0])
 
-            sc_param = get_parameters(rng=param_rng)
+            sc_param = get_parameters(rng=param_rng, county=selected_county)
             sc_param = calculate_derived_parameters(sc_param)
             sc_param.update({"E": copy.deepcopy(i_E), "S": copy.deepcopy(i_S), "HSS": copy.deepcopy(i_HSS)})
             sync_param_momish_from_hss(sc_param, i_HSS)

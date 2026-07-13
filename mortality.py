@@ -126,25 +126,13 @@ def f_MM_vectorized(track, param, flags, i, MC, M, NC, individual_outcomes, rng)
     #Maternal Deaths - different weight version
     death_cause = np.full(num_mothers, "none", dtype=object)
 
-    # Blood tracking: attenuate PPH/APH death weights (dashboard: flag_blood, blood_participation)
+    #  tracking: attenuate PPH/APH death weights (dashboard: flag_blood, blood_adoption)
     flag_blood_tracking = float(
         flags.get("flag_blood_tracking", flags.get("flag_blood", 0))
     )
-    blood_tracking_slider = float(
-        np.clip(
-            param.get("HSS", {}).get(
-                "blood_tracking_slider",
-                param.get("HSS", {}).get("blood_participation", 0.0),
-            ),
-            0.0,
-            1.0,
-        )
-    )
-    blood_ub = float(param.get("blood_tracking_upper_bound", 0.133))
-    blood_mult = min(
-        1.0,
-        1.0 - flag_blood_tracking * min(blood_tracking_slider, blood_ub),
-    )
+
+    blood_adoption = float(param.get("HSS", {}).get("blood_adoption", 0.0))
+    blood_mult = 1.0 - flag_blood_tracking * blood_adoption
 
     # Complication risk weights (constant across locations)
     comp_names = ["pph", "sepsis", "eclampsia", "ol", "other", "aph"]

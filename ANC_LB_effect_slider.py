@@ -1,6 +1,6 @@
 import random
 import numpy as np
-from parameters import get_parameters
+# from parameters import get_parameters
 from global_func import odds_prob
 import streamlit as st
 
