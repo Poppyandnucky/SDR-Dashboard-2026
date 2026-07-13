@@ -1,0 +1,655 @@
+Kakamega: completed 1/200 matched runs
+Kakamega: completed 10/200 matched runs
+Kakamega: completed 20/200 matched runs
+Kakamega: completed 30/200 matched runs
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+Kakamega: completed 40/200 matched runs
+Kakamega: completed 50/200 matched runs
+Kakamega: completed 60/200 matched runs
+Kakamega: completed 70/200 matched runs
+Kakamega: completed 80/200 matched runs
+Kakamega: completed 90/200 matched runs
+Kakamega: completed 100/200 matched runs
+Kakamega: completed 110/200 matched runs
+Kakamega: completed 120/200 matched runs
+Kakamega: completed 130/200 matched runs
+Kakamega: completed 140/200 matched runs
+Kakamega: completed 150/200 matched runs
+Kakamega: completed 160/200 matched runs
+Kakamega: completed 170/200 matched runs
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last five Jacobian evaluations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last five Jacobian evaluations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last five Jacobian evaluations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last five Jacobian evaluations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last five Jacobian evaluations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last five Jacobian evaluations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last five Jacobian evaluations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last five Jacobian evaluations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last five Jacobian evaluations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last five Jacobian evaluations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last five Jacobian evaluations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last five Jacobian evaluations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last five Jacobian evaluations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last five Jacobian evaluations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last five Jacobian evaluations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last five Jacobian evaluations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last five Jacobian evaluations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last five Jacobian evaluations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last five Jacobian evaluations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last five Jacobian evaluations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last five Jacobian evaluations.
+  solution = fsolve(equations, initial_guess)
+Kakamega: completed 180/200 matched runs
+Kakamega: completed 190/200 matched runs
+Kakamega: completed 200/200 matched runs
+Kakamega results written to /Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/scenario_comparison_results_kakamega
+Mombasa: completed 1/200 matched runs
+Mombasa: completed 10/200 matched runs
+Mombasa: completed 20/200 matched runs
+Mombasa: completed 30/200 matched runs
+Mombasa: completed 40/200 matched runs
+Mombasa: completed 50/200 matched runs
+Mombasa: completed 60/200 matched runs
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+Mombasa: completed 70/200 matched runs
+Mombasa: completed 80/200 matched runs
+Mombasa: completed 90/200 matched runs
+Mombasa: completed 100/200 matched runs
+Mombasa: completed 110/200 matched runs
+Mombasa: completed 120/200 matched runs
+Mombasa: completed 130/200 matched runs
+Mombasa: completed 140/200 matched runs
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+Mombasa: completed 150/200 matched runs
+Mombasa: completed 160/200 matched runs
+Mombasa: completed 170/200 matched runs
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+Mombasa: completed 180/200 matched runs
+Mombasa: completed 190/200 matched runs
+Mombasa: completed 200/200 matched runs
+Mombasa results written to /Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/scenario_comparison_results_mombasa
+Makueni: completed 1/200 matched runs
+Makueni: completed 10/200 matched runs
+Makueni: completed 20/200 matched runs
+Makueni: completed 30/200 matched runs
+Makueni: completed 40/200 matched runs
+Makueni: completed 50/200 matched runs
+Makueni: completed 60/200 matched runs
+Makueni: completed 70/200 matched runs
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+Makueni: completed 80/200 matched runs
+Makueni: completed 90/200 matched runs
+Makueni: completed 100/200 matched runs
+Makueni: completed 110/200 matched runs
+Makueni: completed 120/200 matched runs
+Makueni: completed 130/200 matched runs
+Makueni: completed 140/200 matched runs
+Makueni: completed 150/200 matched runs
+Makueni: completed 160/200 matched runs
+Makueni: completed 170/200 matched runs
+Makueni: completed 180/200 matched runs
+Makueni: completed 190/200 matched runs
+Makueni: completed 200/200 matched runs
+Makueni results written to /Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/scenario_comparison_results_makueni
+Kisii: completed 1/200 matched runs
+Kisii: completed 10/200 matched runs
+Kisii: completed 20/200 matched runs
+Kisii: completed 30/200 matched runs
+Kisii: completed 40/200 matched runs
+Kisii: completed 50/200 matched runs
+Kisii: completed 60/200 matched runs
+Kisii: completed 70/200 matched runs
+Kisii: completed 80/200 matched runs
+Kisii: completed 90/200 matched runs
+Kisii: completed 100/200 matched runs
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+Kisii: completed 110/200 matched runs
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+Kisii: completed 120/200 matched runs
+Kisii: completed 130/200 matched runs
+Kisii: completed 140/200 matched runs
+Kisii: completed 150/200 matched runs
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+/Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/global_func.py:21: RuntimeWarning: The iteration is not making good progress, as measured by the 
+  improvement from the last ten iterations.
+  solution = fsolve(equations, initial_guess)
+Kisii: completed 160/200 matched runs
+Kisii: completed 170/200 matched runs
+Kisii: completed 180/200 matched runs
+Kisii: completed 190/200 matched runs
+Kisii: completed 200/200 matched runs
+Kisii results written to /Users/meibinchen/Documents/GitHub/SDR-Dashboard-2026/scenario_comparison_results_kisii

@@ -1,0 +1,26 @@
+scenario,intervention,level,description
+mentors_base,MENTORS,base,No HSS; MENTORS off
+mentors_current,MENTORS,current,County-specific current implementation index; all single interventions on
+mentors_moderate,MENTORS,moderate,50% implementation index; all single interventions on
+mentors_high,MENTORS,high,95% implementation index; all single interventions on
+prompts_base,PROMPTS,base,All off
+prompts_current,PROMPTS,current,County-specific current implementation index; 1.02 RR effectiveness
+prompts_moderate,PROMPTS,moderate,50% implementation index; 1.18 RR effectiveness
+prompts_high,PROMPTS,high,95% implementation index; 1.35 RR effectiveness
+prompts_high_shift,PROMPTS,high_shift,PROMPTS high plus conservative delivery shift and matched facility expansion
+blood_base,Blood,base,All off
+blood_current,Blood,current,Blood tracking on; 25% adoption
+blood_moderate,Blood,moderate,Blood tracking on; 50% adoption
+blood_high,Blood,high,Blood tracking on; 95% adoption
+referral_base,Referral,base,All off
+referral_current,Referral,current,County-specific current implementation index; 1 hour delay shift
+referral_moderate,Referral,moderate,50% implementation index; 1 hour delay shift
+referral_high,Referral,high,95% implementation index; 1 hour delay shift
+pulse_base,PULSE,base,All off
+pulse_current,PULSE,current,County-specific current implementation index
+pulse_moderate,PULSE,moderate,50% implementation index
+pulse_high,PULSE,high,95% implementation index
+fqa_base,FQA,base,PULSE current; FQA off; all single interventions on
+fqa_current,FQA,current,County-specific current FQA index; PULSE current; all single interventions on; 10% amplification
+fqa_moderate,FQA,moderate,50% FQA implementation index; PULSE current; all single interventions on; 10% amplification
+fqa_high,FQA,high,95% FQA implementation index; PULSE current; all single interventions on; 30% amplification

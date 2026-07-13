@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 import parameter_loader
-from global_func import reset_E, reset_HSS, reset_S, reset_flags
+from global_func import get_P_l45, reset_E, reset_HSS, reset_S, reset_flags
 from model_run import run_model_dash
 from parameter_loader import calculate_derived_parameters, get_parameters, get_slider_params
 
@@ -20,31 +20,94 @@ COUNTIES = ["kakamega", "mombasa", "makueni", "kisii"]
 N_MONTHS = 36
 N_RUNS = 200
 BASE_SEED = 4200
+ENABLED_SINGLE_INTERVENTION_SUPPLY = 0.95
+PROMPTS_HIGH_SENS_TRAD = 0.95
 
 
 def clip01(value):
     return float(np.clip(value, 0.0, 1.0))
 
 
+CURRENT_IMPLEMENTATION_INDEX = {
+    "prompts": {
+        "kakamega": 0.0,
+        "kisii": 0.151,
+        "mombasa": 0.187,
+        "makueni": 0.116,
+    },
+    "mentors": {
+        "kakamega": 0.0,
+        "kisii": 0.0713,
+        "mombasa": 0.0583,
+        "makueni": 0.1099,
+    },
+    "referral": {
+        "kakamega": 0.0,
+        "kisii": 0.0,
+        "mombasa": 0.18,
+        "makueni": 0.0,
+    },
+    "pulse": {
+        "kakamega": 0.0,
+        "kisii": 0.0455,
+        "mombasa": 0.0126,
+        "makueni": 0.003,
+    },
+    "fqa": {
+        "kakamega": 0.0,
+        "kisii": 0.0165,
+        "mombasa": 0.0067,
+        "makueni": 0.0296,
+    },
+}
+
+
+IMPLEMENTATION_INDEX_BY_LEVEL = {
+    "moderate": 0.50,
+    "high": 0.95,
+}
+
+
+PROMPTS_RR_BY_LEVEL = {
+    "current": 1.02,
+    "moderate": 1.18,
+    "high": 1.35,
+}
+
+
+BLOOD_ADOPTION_BY_LEVEL = {
+    "current": 0.25,
+    "moderate": 0.50,
+    "high": 0.95,
+}
+
+
 SCENARIOS = [
     {"scenario": "mentors_base", "intervention": "MENTORS", "level": "base", "description": "No HSS; MENTORS off"},
-    {"scenario": "mentors_current", "intervention": "MENTORS", "level": "current", "description": "MENTORS on; adoption/attendance 70%; fidelity 60%; all single interventions on; no HSS"},
-    {"scenario": "mentors_high", "intervention": "MENTORS", "level": "high", "description": "MENTORS on; adoption/attendance 100%; fidelity 80%; all single interventions on; no HSS"},
+    {"scenario": "mentors_current", "intervention": "MENTORS", "level": "current", "description": "County-specific current implementation index; all single interventions on"},
+    {"scenario": "mentors_moderate", "intervention": "MENTORS", "level": "moderate", "description": "50% implementation index; all single interventions on"},
+    {"scenario": "mentors_high", "intervention": "MENTORS", "level": "high", "description": "95% implementation index; all single interventions on"},
     {"scenario": "prompts_base", "intervention": "PROMPTS", "level": "base", "description": "All off"},
-    {"scenario": "prompts_current", "intervention": "PROMPTS", "level": "current", "description": "PROMPTS only; adoption/engagement 100%; fidelity 60%; ANC OR 1.38; no other HSS changes"},
-    {"scenario": "prompts_high", "intervention": "PROMPTS", "level": "high", "description": "PROMPTS only; adoption/engagement 100%; fidelity 80%; ANC OR 1.44; no other HSS changes"},
+    {"scenario": "prompts_current", "intervention": "PROMPTS", "level": "current", "description": "County-specific current implementation index; 1.02 RR effectiveness"},
+    {"scenario": "prompts_moderate", "intervention": "PROMPTS", "level": "moderate", "description": "50% implementation index; 1.18 RR effectiveness"},
+    {"scenario": "prompts_high", "intervention": "PROMPTS", "level": "high", "description": "95% implementation index; 1.35 RR effectiveness"},
+    {"scenario": "prompts_high_shift", "intervention": "PROMPTS", "level": "high_shift", "description": "PROMPTS high plus conservative delivery shift and matched facility expansion"},
     {"scenario": "blood_base", "intervention": "Blood", "level": "base", "description": "All off"},
-    {"scenario": "blood_current", "intervention": "Blood", "level": "current", "description": "Blood tracking on; 50% adoption"},
-    {"scenario": "blood_high", "intervention": "Blood", "level": "high", "description": "Blood tracking on; 100% adoption"},
+    {"scenario": "blood_current", "intervention": "Blood", "level": "current", "description": "Blood tracking on; 25% adoption"},
+    {"scenario": "blood_moderate", "intervention": "Blood", "level": "moderate", "description": "Blood tracking on; 50% adoption"},
+    {"scenario": "blood_high", "intervention": "Blood", "level": "high", "description": "Blood tracking on; 95% adoption"},
     {"scenario": "referral_base", "intervention": "Referral", "level": "base", "description": "All off"},
-    {"scenario": "referral_current", "intervention": "Referral", "level": "current", "description": "Emergency transfer delay intervention; 50% vehicle coverage"},
-    {"scenario": "referral_high", "intervention": "Referral", "level": "high", "description": "Emergency transfer delay intervention; 100% vehicle coverage"},
+    {"scenario": "referral_current", "intervention": "Referral", "level": "current", "description": "County-specific current implementation index; 1 hour delay shift"},
+    {"scenario": "referral_moderate", "intervention": "Referral", "level": "moderate", "description": "50% implementation index; 1 hour delay shift"},
+    {"scenario": "referral_high", "intervention": "Referral", "level": "high", "description": "95% implementation index; 1 hour delay shift"},
     {"scenario": "pulse_base", "intervention": "PULSE", "level": "base", "description": "All off"},
-    {"scenario": "pulse_current", "intervention": "PULSE", "level": "current", "description": "PULSE on; 50% adoption"},
-    {"scenario": "pulse_high", "intervention": "PULSE", "level": "high", "description": "PULSE on; 100% adoption"},
-    {"scenario": "fqa_pulse_base", "intervention": "FQA + PULSE", "level": "base", "description": "PULSE at 50%; FQA off; all single interventions on"},
-    {"scenario": "fqa_pulse_current", "intervention": "FQA + PULSE", "level": "current", "description": "PULSE at 50%; all single interventions on; FQA on with low amplification (10%)"},
-    {"scenario": "fqa_pulse_high", "intervention": "FQA + PULSE", "level": "high", "description": "PULSE at 50%; all single interventions on; FQA on with high amplification (30%)"},
+    {"scenario": "pulse_current", "intervention": "PULSE", "level": "current", "description": "County-specific current implementation index"},
+    {"scenario": "pulse_moderate", "intervention": "PULSE", "level": "moderate", "description": "50% implementation index"},
+    {"scenario": "pulse_high", "intervention": "PULSE", "level": "high", "description": "95% implementation index"},
+    {"scenario": "fqa_base", "intervention": "FQA", "level": "base", "description": "PULSE current; FQA off; all single interventions on"},
+    {"scenario": "fqa_current", "intervention": "FQA", "level": "current", "description": "County-specific current FQA index; PULSE current; all single interventions on; 10% amplification"},
+    {"scenario": "fqa_moderate", "intervention": "FQA", "level": "moderate", "description": "50% FQA implementation index; PULSE current; all single interventions on; 10% amplification"},
+    {"scenario": "fqa_high", "intervention": "FQA", "level": "high", "description": "95% FQA implementation index; PULSE current; all single interventions on; 30% amplification"},
 ]
 
 
@@ -58,88 +121,126 @@ def enable_single_interventions(param, flags):
     }
     for flag, supply in treatment_flags.items():
         flags[flag] = 1
-        param["S"][supply] = 1.0
+        param["S"][supply] = ENABLED_SINGLE_INTERVENTION_SUPPLY
 
 
-def configure_scenario(name, param, flags):
+def apply_prompts_sensitivity(param, implementation_index):
+    baseline = float(param["sen_risk_trad"])
+    scale = clip01(implementation_index / IMPLEMENTATION_INDEX_BY_LEVEL["high"])
+    effective_sensitivity = baseline + (PROMPTS_HIGH_SENS_TRAD - baseline) * scale
+    param["sen_risk_trad"] = clip01(effective_sensitivity)
+    param["sen_risk_trad_target"] = param["sen_risk_trad"]
+
+
+def current_implementation(intervention, county):
+    return CURRENT_IMPLEMENTATION_INDEX[intervention].get(county, 0.0)
+
+
+def implementation_for_level(intervention, level, county):
+    if level == "current":
+        return current_implementation(intervention, county)
+    return IMPLEMENTATION_INDEX_BY_LEVEL[level]
+
+
+def configure_conservative_shift(param, flags, slider_params):
+    flags["flag_CHV"] = 1
+    flags["flag_ANC"] = 1
+    flags["flag_LB"] = 1
+    flags["flag_capacity"] = 1
+
+    param["HSS"]["P_ANC"] = 0.70
+    p_l45_exp = get_P_l45(param["HSS"]["P_ANC"], slider_params)
+    min_l45 = p_l45_exp if p_l45_exp is not None else 0.0
+    param["HSS"]["P_L45"] = max(min_l45, 0.53)
+    param["HSS"]["CHV_memory"] = "Logistic Decay"
+    param["HSS"]["tau_decay"] = 6
+    param["HSS"]["capacity_added"] = 0.25
+
+
+def configure_scenario(name, param, flags, slider_params=None):
     hss = param["HSS"]
+    county = param.get("county", "kakamega")
 
-    if name.endswith("_base") and not name.startswith("fqa_pulse"):
+    if name.endswith("_base") and not name.startswith("fqa_"):
+        if name == "fqa_base":
+            flags["flag_pulse"] = 1
+            pulse_index = current_implementation("pulse", county)
+            hss["pulse_implementation_index"] = pulse_index
+            hss["fqa_implementation_index"] = 0.0
+            param["pulse_implementation_index"] = pulse_index
+            param["fqa_implementation_index"] = 0.0
+            enable_single_interventions(param, flags)
         return
 
-    if name in {"mentors_current", "mentors_high"}:
-        high = name.endswith("_high")
-        adoption = 1.0 if high else 0.70
-        attendance = 1.0 if high else 0.70
-        fidelity = 0.80 if high else 0.60
-        implementation_index = clip01(adoption * attendance * fidelity)
+    if name.startswith("mentors_"):
+        level = name.removeprefix("mentors_")
+        implementation_index = implementation_for_level("mentors", level, county)
         flags["flag_MENTOR"] = 1
         hss.update({
-            "mentor_adoption": adoption,
-            "mentor_attendance": attendance,
-            "mentor_fidelity": fidelity,
             "mentor_implementation_index": implementation_index,
         })
         param["mentors_implementation_index"] = implementation_index
         enable_single_interventions(param, flags)
         return
 
-    if name in {"prompts_current", "prompts_high"}:
-        high = name.endswith("_high")
-        implementation_index = 0.80 if high else 0.60
-        prompts_rr_anc4p = 1.44 if high else 1.38
+    if name.startswith("prompts_"):
+        level = "high" if name == "prompts_high_shift" else name.removeprefix("prompts_")
+        implementation_index = implementation_for_level("prompts", level, county)
+        prompts_rr_anc4p = PROMPTS_RR_BY_LEVEL[level]
         flags["flag_PROMPTS"] = 1
         hss.update({
-            "adoption_prompts": 1.0,
-            "chv_engagement": 1.0,
-            "prompts_effect": implementation_index,
             "prompts_implementation_index": implementation_index,
             "prompts_rr_anc4p": prompts_rr_anc4p,
         })
         param["prompts_implementation_index"] = implementation_index
         param["prompts_rr_anc4p"] = prompts_rr_anc4p
+        apply_prompts_sensitivity(param, implementation_index)
+        if name == "prompts_high_shift":
+            if slider_params is None:
+                raise ValueError("slider_params is required for prompts_high_shift")
+            configure_conservative_shift(param, flags, slider_params)
         return
 
-    if name in {"blood_current", "blood_high"}:
-        adoption = 1.0 if name.endswith("_high") else 0.50
+    if name.startswith("blood_"):
+        level = name.removeprefix("blood_")
+        adoption = BLOOD_ADOPTION_BY_LEVEL[level]
         flags["flag_blood"] = 1
         flags["flag_blood_tracking"] = 1
-        hss["blood_participation"] = adoption
-        hss["blood_tracking_slider"] = adoption
         hss["blood_adoption"] = adoption
         return
 
-    if name in {"referral_current", "referral_high"}:
+    if name.startswith("referral_"):
+        level = name.removeprefix("referral_")
         flags["flag_transfer"] = 1
-        hss["P_transfer"] = 1.0 if name.endswith("_high") else 0.50
+        hss["P_transfer"] = implementation_for_level("referral", level, county)
         return
 
-    if name in {"pulse_current", "pulse_high"}:
-        implementation_index = 1.0 if name.endswith("_high") else 0.50
+    if name.startswith("pulse_"):
+        level = name.removeprefix("pulse_")
+        implementation_index = implementation_for_level("pulse", level, county)
         flags["flag_pulse"] = 1
-        hss["pulse_coverage"] = implementation_index
         hss["pulse_implementation_index"] = implementation_index
         hss["fqa_implementation_index"] = 0.0
         param["pulse_implementation_index"] = implementation_index
         param["fqa_implementation_index"] = 0.0
         return
 
-    if name.startswith("fqa_pulse_"):
-        pulse_implementation_index = 0.50
+    if name.startswith("fqa_"):
+        level = name.removeprefix("fqa_")
+        pulse_implementation_index = current_implementation("pulse", county)
         flags["flag_pulse"] = 1
-        hss["pulse_coverage"] = pulse_implementation_index
         hss["pulse_implementation_index"] = pulse_implementation_index
         param["pulse_implementation_index"] = pulse_implementation_index
         enable_single_interventions(param, flags)
-        if name != "fqa_pulse_base":
+        if level != "base":
             flags["flag_fqa"] = 1
-            high = name.endswith("_high")
-            fqa_pulse_modifier = 0.30 if high else 0.10
-            hss["fqa_pulse_modifier_level"] = "High" if high else "Low"
+            fqa_implementation_index = implementation_for_level("fqa", level, county)
+            fqa_pulse_modifier = 0.30 if level == "high" else 0.10
+            hss["fqa_pulse_modifier_level"] = "High" if level == "high" else "Low"
             hss["fqa_pulse_modifier"] = fqa_pulse_modifier
-            hss["fqa_implementation_index"] = 1.0
+            hss["fqa_implementation_index"] = fqa_implementation_index
             param["fqa_pulse_modifier"] = fqa_pulse_modifier
-            param["fqa_implementation_index"] = 1.0
+            param["fqa_implementation_index"] = fqa_implementation_index
         else:
             hss["fqa_implementation_index"] = 0.0
             param["fqa_implementation_index"] = 0.0
@@ -270,7 +371,7 @@ def run_scenarios(county):
             scenario = scenario_def["scenario"]
             is_standard_base = (
                 scenario_def["level"] == "base"
-                and scenario_def["intervention"] != "FQA + PULSE"
+                and scenario_def["intervention"] != "FQA"
             )
             if is_standard_base and overall_baseline_summary is not None:
                 scenario_summary = overall_baseline_summary.copy()
@@ -286,7 +387,7 @@ def run_scenarios(county):
                     "HSS": reset_HSS(slider_params),
                 })
                 flags = reset_flags()
-                configure_scenario(scenario, param, flags)
+                configure_scenario(scenario, param, flags, slider_params)
                 _, individuals, _ = run_model_dash(
                     param,
                     flags,

@@ -1,0 +1,19 @@
+scenario,intervention,level,description
+mentors_base,MENTORS,base,No HSS; MENTORS off
+mentors_current,MENTORS,current,MENTORS on; conservative HSS; adoption/attendance 70%; fidelity 60%
+mentors_high,MENTORS,high,MENTORS on; aggressive HSS; adoption/attendance 100%; fidelity 80%
+prompts_base,PROMPTS,base,All off
+prompts_current,PROMPTS,current,PROMPTS on; conservative HSS; adoption/engagement 100%; fidelity 60%; ANC OR 1.38
+prompts_high,PROMPTS,high,PROMPTS on; aggressive HSS; adoption/engagement 100%; fidelity 80%; ANC OR 1.44
+blood_base,Blood,base,All off
+blood_current,Blood,current,Blood tracking on; 50% adoption
+blood_high,Blood,high,Blood tracking on; 100% adoption
+referral_base,Referral,base,All off
+referral_current,Referral,current,Emergency transfer delay intervention; 50% vehicle coverage
+referral_high,Referral,high,Emergency transfer delay intervention; 100% vehicle coverage
+pulse_base,PULSE,base,All off
+pulse_current,PULSE,current,PULSE on; 50% adoption
+pulse_high,PULSE,high,PULSE on; 100% adoption
+fqa_pulse_base,FQA + PULSE,base,PULSE at 50%; FQA off; all single interventions on
+fqa_pulse_current,FQA + PULSE,current,PULSE at 50%; all single interventions on; FQA on with low amplification (10%)
+fqa_pulse_high,FQA + PULSE,high,PULSE at 50%; all single interventions on; FQA on with high amplification (30%)
