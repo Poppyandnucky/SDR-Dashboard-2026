@@ -2,3 +2,4 @@ Calibration/
 .venv/
 __pycache__/
 .DS_Store
+scenario_comparison_results*
