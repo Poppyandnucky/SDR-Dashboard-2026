@@ -305,7 +305,7 @@ def f_ANC_LB_effect_vectorized(track, LB_base, param, flags, i, int_period, rng)
 
     #Reallocate mothers if overcapacity
     n_l45 = np.count_nonzero(i_loc == 2)
-    exceed_lb = max(n_l45 - Capacity, 0)
+    exceed_lb = int(max(n_l45 - Capacity, 0))
     shuffled_all = rng.permutation(num_mothers)   # shuffle all mother indices
     l45_indices = np.where(i_loc == 2)[0]         # identify L4/5 mothers
     shuffled_l45 = shuffled_all[np.isin(shuffled_all, l45_indices)]  # filter only those in L4/5 from the shuffled list
@@ -313,7 +313,6 @@ def f_ANC_LB_effect_vectorized(track, LB_base, param, flags, i, int_period, rng)
     mask_relocate_l23 = np.zeros(num_mothers, dtype=bool)            # apply relocation
     mask_relocate_l23[relocate_indices] = True
     i_loc[mask_relocate_l23] = 1
-    print(exceed_lb, np.sum(mask_relocate_l23), np.sum(i_loc == 2))
 
     ##-------------------Elective C-section Decision----------------------##
     elcs_mask1 = (i_loc == 2) & (i_risk_pred == 1) & (i_preterm_pred == 0) & (i_ANC == 1)

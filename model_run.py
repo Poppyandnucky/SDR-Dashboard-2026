@@ -39,7 +39,6 @@ def run_model_dash(param, flags, n_months, int_period, base_seed = None):
     for i in range(n_months):
         if i >= 0:
             if base_seed is not None:
-                print(base_seed)
                 rng = np.random.default_rng(base_seed[i])
 
             #Updating features due to intervention changes
@@ -134,9 +133,20 @@ def run_model_dash(param, flags, n_months, int_period, base_seed = None):
             df.loc[i, 'Surgical_needed'] = np.array(labor['surgical'][1:])
             df.loc[i, 'Nurse_needed'] = np.array(labor['nurse'][1:])
             df.loc[i, 'Anesthetist_needed'] = np.array(labor['anesthetist'][1:])
-            df.loc[i, 'Surgical_ratio'] = df.loc[i, 'Surgical_actual'] / df.loc[i, 'Surgical_needed']
-            df.loc[i, 'Nurse_ratio'] = df.loc[i, 'Nurse_actual'] / df.loc[i, 'Nurse_needed']
-            df.loc[i, 'Anesthetist_ratio'] = df.loc[i, 'Anesthetist_actual'] / df.loc[i, 'Anesthetist_needed']
+            def staffing_ratio(actual, needed):
+                actual = np.asarray(actual, dtype=float)
+                needed = np.asarray(needed, dtype=float)
+                return np.divide(actual, needed, out=np.zeros_like(actual), where=needed != 0)
+
+            df.loc[i, 'Surgical_ratio'] = staffing_ratio(
+                df.loc[i, 'Surgical_actual'], df.loc[i, 'Surgical_needed']
+            )
+            df.loc[i, 'Nurse_ratio'] = staffing_ratio(
+                df.loc[i, 'Nurse_actual'], df.loc[i, 'Nurse_needed']
+            )
+            df.loc[i, 'Anesthetist_ratio'] = staffing_ratio(
+                df.loc[i, 'Anesthetist_actual'], df.loc[i, 'Anesthetist_needed']
+            )
 
             # calculate number of sensors and sensor ratio
             sensors = fetal_sensor_calculator(track, param, i, flags, rng)

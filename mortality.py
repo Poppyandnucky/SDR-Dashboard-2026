@@ -4,13 +4,37 @@ from global_func import baseline_p_death, P_intervention
 import streamlit as st
 
 
-def assign_transfer_delay_categories(param, rng, num_mothers, transfer_mask, i_loc):
+def apply_transfer_delay_intervention(delay_probs, coverage, shift_2plus, shift_1_2):
+    """Shift covered transfers down one delay category without changing transfer count."""
+    p_lt1, p_1_2, p_2plus = np.asarray(delay_probs, dtype=float)
+    coverage = np.clip(float(coverage), 0.0, 1.0)
+    shift_2plus = np.clip(float(shift_2plus), 0.0, 1.0)
+    shift_1_2 = np.clip(float(shift_1_2), 0.0, 1.0)
+
+    move_2plus_to_1_2 = coverage * shift_2plus * p_2plus
+    move_1_2_to_lt1 = coverage * shift_1_2 * p_1_2
+    adjusted = np.array([
+        p_lt1 + move_1_2_to_lt1,
+        p_1_2 - move_1_2_to_lt1 + move_2plus_to_1_2,
+        p_2plus - move_2plus_to_1_2,
+    ])
+    return adjusted / adjusted.sum()
+
+
+def assign_transfer_delay_categories(param, flags, rng, num_mothers, transfer_mask, i_loc):
     travel_time_transfer = np.full(num_mothers, -1, dtype=int)  # -1: no transfer, 0: <1h, 1: 1-2h, 2: 2+h
     from_l23_mask = transfer_mask & (i_loc == 1)
     from_l45_mask = transfer_mask & ((i_loc == 2) | (i_loc == 3))
 
     if np.any(from_l23_mask):
         delay_probs_l23 = np.asarray(param["transfer_delay_probs_l23"], dtype=float)
+        if flags.get("flag_transfer", 0):
+            delay_probs_l23 = apply_transfer_delay_intervention(
+                delay_probs_l23,
+                param["HSS"].get("P_transfer", 0.0),
+                param.get("transfer_delay_shift_2plus", 0.60),
+                param.get("transfer_delay_shift_1_2", 0.40),
+            )
         delay_probs_l23 = delay_probs_l23 / delay_probs_l23.sum()
         travel_time_transfer[from_l23_mask] = rng.choice(
             [0, 1, 2],
@@ -19,6 +43,13 @@ def assign_transfer_delay_categories(param, rng, num_mothers, transfer_mask, i_l
         )
     if np.any(from_l45_mask):
         delay_probs_l45 = np.asarray(param["transfer_delay_probs_l45"], dtype=float)
+        if flags.get("flag_transfer", 0):
+            delay_probs_l45 = apply_transfer_delay_intervention(
+                delay_probs_l45,
+                param["HSS"].get("P_transfer", 0.0),
+                param.get("transfer_delay_shift_2plus", 0.60),
+                param.get("transfer_delay_shift_1_2", 0.40),
+            )
         delay_probs_l45 = delay_probs_l45 / delay_probs_l45.sum()
         travel_time_transfer[from_l45_mask] = rng.choice(
             [0, 1, 2],
@@ -172,7 +203,7 @@ def f_MM_vectorized(track, param, flags, i, MC, M, NC, individual_outcomes, rng)
 
     # **Step 4: Apply transfer delay RRs**
     transfer_update_mask = severe_mask & transfer_mask  # Mask for severe cases with emergency transfer
-    travel_time_transfer = assign_transfer_delay_categories(param, rng, num_mothers, transfer_mask, i_loc)
+    travel_time_transfer = assign_transfer_delay_categories(param, flags, rng, num_mothers, transfer_mask, i_loc)
     p_death = apply_transfer_delay_rr(p_death, transfer_update_mask, travel_time_transfer, param)
 
     # **Step 3: Clip Death Probabilities & Assign Maternal Deaths**

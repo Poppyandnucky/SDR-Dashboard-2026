@@ -372,9 +372,12 @@ def labor_calculator(n_lb, n_cs, param, flags):
     L23_LBs = n_lb[1]
     L4_LBs = n_lb[2]
     L5_LBs = n_lb[3]
-    Avg_L23_LBs = L23_LBs / param['num_L2/3']
-    Avg_L4_LBs = L4_LBs / param['num_L4']
-    Avg_L5_LBs = L5_LBs / param['num_L5']
+    def average_births_per_facility(births, facility_count):
+        return births / facility_count if np.isfinite(facility_count) and facility_count > 0 else 0.0
+
+    Avg_L23_LBs = average_births_per_facility(L23_LBs, param['num_L2/3'])
+    Avg_L4_LBs = average_births_per_facility(L4_LBs, param['num_L4'])
+    Avg_L5_LBs = average_births_per_facility(L5_LBs, param['num_L5'])
 
     # Surgical staff calculation
     surgical_l23 = (param['surgical_needed_below_thres'] * param['num_L2/3'] if Avg_L23_LBs < param['Ave_LBs_thres']
@@ -435,10 +438,13 @@ def compute_scaled_density_index(d_surgical, d_nurses, surgical_weight, scaled_f
     d_surgical_weighted = d_surgical * surgical_weight
 
     # Compute the harmonic mean-based density index with weighted surgical staff
-    quality_adjusted = np.where(
-        (d_surgical_weighted > 0) & (d_nurses > 0),
-        (2 * d_surgical_weighted * d_nurses) / (d_surgical_weighted + d_nurses),
-        0
+    numerator = 2 * d_surgical_weighted * d_nurses
+    denominator = d_surgical_weighted + d_nurses
+    quality_adjusted = np.divide(
+        numerator,
+        denominator,
+        out=np.zeros_like(numerator, dtype=float),
+        where=(d_surgical_weighted > 0) & (d_nurses > 0) & (denominator != 0),
     )
 
     scaled_index = quality_adjusted * scaled_factor
@@ -473,10 +479,19 @@ def baseline_p_death(track, M, param, flags, i, n):
     actual_surgical, actual_nurse, actual_anesthetist = labor['actual_surgical'], labor['actual_nurse'], labor[
         'actual_anesthetist']
     n_pop_wt_lb = param['n_population'] * n["LB_L"][1:] / np.sum(n["LB_L"])
-    density_skilled_surgical = np.array(actual_surgical) / n_pop_wt_lb * 100000  # Density of skilled healthcare workers
-    density_skilled_surgical = np.round(density_skilled_surgical)
-    density_skilled_nurse = np.array(actual_nurse) / n_pop_wt_lb * 100000
-    density_skilled_nurse = np.round(density_skilled_nurse)
+
+    def worker_density(actual_staff):
+        actual_staff = np.asarray(actual_staff, dtype=float)
+        density = np.divide(
+            actual_staff,
+            n_pop_wt_lb,
+            out=np.zeros_like(actual_staff),
+            where=n_pop_wt_lb != 0,
+        )
+        return np.round(density * 100000)
+
+    density_skilled_surgical = worker_density(actual_surgical)
+    density_skilled_nurse = worker_density(actual_nurse)
 
     # Compute the scaled quality-adjusted density index
     scaled_density_index = compute_scaled_density_index(density_skilled_surgical, density_skilled_nurse,
@@ -793,6 +808,8 @@ def generate_negative_experience_heard(
     - CHV_IDs: array mapping each mother to their CHV (-1 if no CHV)
     - updated CHV_negative_experience, CHV_memory_age
     """
+
+    n_CHV = int(n_CHV)
 
     # Initialize CHV IDs
     # Clamped to num_mothers: county-wide CHV counts can imply more linked

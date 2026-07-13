@@ -32,6 +32,8 @@ import pandas as pd
 from global_func import (
     sample_from_ci,
     odds_prob,
+    GA_assign_kenya,
+    GA_by_ANC,
     comps_riskstatus_vs_lowrisk,
     comp2_comp1_anemia,
     P_RDS,
@@ -241,6 +243,10 @@ def _county_demographics(wb: ParameterWorkbook, county: str, rng: np.random.Gene
 
 def _county_calibrated(wb: ParameterWorkbook, county: str) -> dict[str, Any]:
     rows = _county_rows(wb, "county_calibrated", county)
+    rows = rows.copy()
+    rows["parameter_name"] = rows["parameter_name"].map(
+        lambda value: value.strip() if isinstance(value, str) else value
+    )
     out: dict[str, Any] = {}
     for name, g in rows.dropna(subset=["parameter_name", "value"]).groupby("parameter_name", sort=False):
         if "index" in g.columns and g["index"].notna().any():
@@ -617,6 +623,14 @@ def get_slider_params(county: str | None = None) -> dict[str, Any]:
 def calculate_derived_parameters(param: dict[str, Any]) -> dict[str, Any]:
     """Keep your existing derived-parameter logic in one reusable place."""
     param = dict(param)  # avoid mutating the input unexpectedly
+
+    # PT_scale is calibrated by county. Regenerate the ANC-specific gestational
+    # age distributions so changing PT_scale affects the simulation.
+    ga_prob = {}
+    ga_counts = {}
+    ga_odds = {}
+    GA_assign_kenya(param, ga_counts, ga_prob)
+    param["GA_anc"], param["GA_noanc"] = GA_by_ANC(param, ga_odds, ga_prob)
 
     param["p_anemia_anc"] = odds_prob(param["or_anc_anemia"], param["p_comp_anemia"], (1 - param["p_ANC_base"]))
     param["severe_highrisk"] = param["p_comp_severe_lowrisk"] * param["RR_comp_severe_highrisk_vs_lowrisk"]

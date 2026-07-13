@@ -148,19 +148,14 @@ def initialize_intra_params(individual_outcomes, track, flags, param, i, rng):
     P["transfer_rate_severe"] = np.zeros((4, 5))
     P["transfer_rate_notsevere"] = np.zeros((4, 5))
     P["transfer_rate_preterm"] = np.zeros((4, 5))
-    flag_transfer = flags['flag_transfer']
-    if flag_transfer:
-        p_transfer_severe = max(param["HSS"]["P_transfer"], param['t_l23_l45_severe'])
-        p_transfer_nonsevere = max(param["HSS"]["P_transfer"], param['t_l23_l45_notsevere'])
-        p_transfer_preterm = max(param["HSS"]["P_transfer"], param['t_l23_l45_preterm'])
-        t_l4_l4_severe = 0  ##Assume in SDR scenario, not need to transfer from L4 to L5
-        t_l4_l5_severe = 0  ##Assume in SDR scenario, not need to transfer from L4 to L5
-    else:
-        p_transfer_severe = param['t_l23_l45_severe']
-        p_transfer_nonsevere = param['t_l23_l45_notsevere']
-        p_transfer_preterm = param['t_l23_l45_preterm']
-        t_l4_l4_severe = param['t_l4_l4_severe']
-        t_l4_l5_severe = param['t_l4_l5_severe']
+    # Emergency-transfer intervention affects travel time, not the probability
+    # or receiving-facility capacity of transfer. Delay effects are applied in
+    # mortality.assign_transfer_delay_categories.
+    p_transfer_severe = param['t_l23_l45_severe']
+    p_transfer_nonsevere = param['t_l23_l45_notsevere']
+    p_transfer_preterm = param['t_l23_l45_preterm']
+    t_l4_l4_severe = param['t_l4_l4_severe']
+    t_l4_l5_severe = param['t_l4_l5_severe']
 
     f_transfer_rates_severe = np.array([
         [0.00, 0.00, 0.00, 0.00],
@@ -252,11 +247,6 @@ def initialize_intra_params(individual_outcomes, track, flags, param, i, rng):
     E["int_sepsis"] = param['E_antibiotics']
     P["MgSO4"] = P_intervention('flag_MgSO4', "MgSO4", 'S_MgSO4', flags, param, S, P)
     P["antibiotics"] = P_intervention('flag_antibiotics', "antibiotics", 'S_antibiotics', flags, param, S, P)
-    print("P['knowledge']", P["knowledge"])
-    print(P["antibiotics"])
-    print("P['MgSO4']", P["MgSO4"])
-    print("P['oxytocin']", P["oxytocin"])
-    print("P['pph_bundle']", P["pph_bundle"])
     # Initialize counters
     MC = {}  # dict to restore maternal complications
     NC = {}  # dict to restore neonatal complications

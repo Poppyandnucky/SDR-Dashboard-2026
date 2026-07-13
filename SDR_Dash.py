@@ -854,8 +854,11 @@ def render_hss(preset_demand_scenario, preset_supply_scenario):
         col2_15, col2_16 = st.columns(2)
         with col2_15:
             if refint:
-                transferint = st.checkbox('Improve emergency transfer', value = update_transfer,
-                                        help="Increasing ambulances for transferring severe complications to L4/5 facilities")
+                transferint = st.checkbox(
+                    'Improve emergency transfer',
+                    value=update_transfer,
+                    help="Reduce transfer delays through improved emergency transport and coordination",
+                )
             else:
                 transferint = 0
 
