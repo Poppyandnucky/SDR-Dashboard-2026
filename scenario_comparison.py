@@ -16,10 +16,14 @@ WORKBOOK_PATH = Path(
     "/Users/meibinchen/Library/CloudStorage/OneDrive-JohnsHopkins/"
     "Kakamega SDR Project/MOMISH interventions/SDR Parameters.xlsx"
 )
-COUNTIES = ["kakamega", "mombasa"]
+COUNTIES = ["kakamega", "mombasa", "makueni", "kisii"]
 N_MONTHS = 36
 N_RUNS = 200
 BASE_SEED = 4200
+
+
+def clip01(value):
+    return float(np.clip(value, 0.0, 1.0))
 
 
 SCENARIOS = [
@@ -65,24 +69,35 @@ def configure_scenario(name, param, flags):
 
     if name in {"mentors_current", "mentors_high"}:
         high = name.endswith("_high")
+        adoption = 1.0 if high else 0.70
+        attendance = 1.0 if high else 0.70
+        fidelity = 0.80 if high else 0.60
+        implementation_index = clip01(adoption * attendance * fidelity)
         flags["flag_MENTOR"] = 1
         hss.update({
-            "mentor_adoption": 1.0 if high else 0.70,
-            "mentor_attendance": 1.0 if high else 0.70,
-            "mentor_fidelity": 0.80 if high else 0.60,
+            "mentor_adoption": adoption,
+            "mentor_attendance": attendance,
+            "mentor_fidelity": fidelity,
+            "mentor_implementation_index": implementation_index,
         })
+        param["mentors_implementation_index"] = implementation_index
         enable_single_interventions(param, flags)
         return
 
     if name in {"prompts_current", "prompts_high"}:
         high = name.endswith("_high")
+        implementation_index = 0.80 if high else 0.60
+        prompts_rr_anc4p = 1.44 if high else 1.38
         flags["flag_PROMPTS"] = 1
         hss.update({
             "adoption_prompts": 1.0,
             "chv_engagement": 1.0,
-            "prompts_effect": 0.80 if high else 0.60,
+            "prompts_effect": implementation_index,
+            "prompts_implementation_index": implementation_index,
+            "prompts_rr_anc4p": prompts_rr_anc4p,
         })
-        param["OR_anc4p"] = 1.44 if high else 1.38
+        param["prompts_implementation_index"] = implementation_index
+        param["prompts_rr_anc4p"] = prompts_rr_anc4p
         return
 
     if name in {"blood_current", "blood_high"}:
@@ -91,6 +106,7 @@ def configure_scenario(name, param, flags):
         flags["flag_blood_tracking"] = 1
         hss["blood_participation"] = adoption
         hss["blood_tracking_slider"] = adoption
+        hss["blood_adoption"] = adoption
         return
 
     if name in {"referral_current", "referral_high"}:
@@ -99,19 +115,34 @@ def configure_scenario(name, param, flags):
         return
 
     if name in {"pulse_current", "pulse_high"}:
+        implementation_index = 1.0 if name.endswith("_high") else 0.50
         flags["flag_pulse"] = 1
-        hss["pulse_coverage"] = 1.0 if name.endswith("_high") else 0.50
+        hss["pulse_coverage"] = implementation_index
+        hss["pulse_implementation_index"] = implementation_index
+        hss["fqa_implementation_index"] = 0.0
+        param["pulse_implementation_index"] = implementation_index
+        param["fqa_implementation_index"] = 0.0
         return
 
     if name.startswith("fqa_pulse_"):
+        pulse_implementation_index = 0.50
         flags["flag_pulse"] = 1
-        hss["pulse_coverage"] = 0.50
+        hss["pulse_coverage"] = pulse_implementation_index
+        hss["pulse_implementation_index"] = pulse_implementation_index
+        param["pulse_implementation_index"] = pulse_implementation_index
         enable_single_interventions(param, flags)
         if name != "fqa_pulse_base":
             flags["flag_fqa"] = 1
             high = name.endswith("_high")
+            fqa_pulse_modifier = 0.30 if high else 0.10
             hss["fqa_pulse_modifier_level"] = "High" if high else "Low"
-            hss["fqa_pulse_modifier"] = 0.30 if high else 0.10
+            hss["fqa_pulse_modifier"] = fqa_pulse_modifier
+            hss["fqa_implementation_index"] = 1.0
+            param["fqa_pulse_modifier"] = fqa_pulse_modifier
+            param["fqa_implementation_index"] = 1.0
+        else:
+            hss["fqa_implementation_index"] = 0.0
+            param["fqa_implementation_index"] = 0.0
         return
 
     raise ValueError(f"Unknown scenario: {name}")
