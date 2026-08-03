@@ -35,6 +35,8 @@ from global_func import (
     comps_riskstatus_vs_lowrisk,
     comp2_comp1_anemia,
     P_RDS,
+    GA_assign_kenya,
+    GA_by_ANC,
 )
 
 FACILITY_ORDER = ["home", "L2/3", "L4", "L5"]
@@ -176,6 +178,19 @@ def _sampled_params(wb: ParameterWorkbook, rng: np.random.Generator) -> dict[str
     return params
 
 
+# "*_implementation_index" parameters describe how much a MOMISH intervention
+# has actually been rolled out in a county. A county with no explicit row for
+# one of these has never had that intervention, i.e. the correct read is 0.0 --
+# never inherit whichever county happens to be listed last in the sheet.
+NO_FALLBACK_INTERV_PARAMS = {
+    "mentors_implementation_index",
+    "prompts_implementation_index",
+    "fqa_implementation_index",
+    "pulse_implementation_index",
+    "referral_implementation_index",
+}
+
+
 def _intervention_params(wb: ParameterWorkbook, rng: np.random.Generator, county: str) -> dict[str, Any]:
     """Load intervention-level parameters, preferring the row for this county.
 
@@ -185,7 +200,8 @@ def _intervention_params(wb: ParameterWorkbook, rng: np.random.Generator, county
     last in the sheet, regardless of the county actually requested. Now: use the
     row for `county` when one exists, otherwise fall back to the last row for
     that parameter_name (covers universal "All" rows and counties without their
-    own row).
+    own row) -- except for NO_FALLBACK_INTERV_PARAMS, which default to 0.0
+    instead of inheriting another county's row.
     """
     rows = wb.sheet("interv_params")
     rows = rows.dropna(subset=["parameter_name", "value"])
@@ -199,6 +215,9 @@ def _intervention_params(wb: ParameterWorkbook, rng: np.random.Generator, county
             if not county_match.empty:
                 row = county_match.iloc[0]
         if row is None:
+            if str(name) in NO_FALLBACK_INTERV_PARAMS:
+                params[str(name)] = 0.0
+                continue
             row = group.iloc[-1]
         params[str(name)] = _sample_or_value(row, rng)
     return params
@@ -241,6 +260,10 @@ def _county_demographics(wb: ParameterWorkbook, county: str, rng: np.random.Gene
 
 def _county_calibrated(wb: ParameterWorkbook, county: str) -> dict[str, Any]:
     rows = _county_rows(wb, "county_calibrated", county)
+    rows = rows.copy()
+    rows["parameter_name"] = rows["parameter_name"].map(
+        lambda value: value.strip() if isinstance(value, str) else value
+    )
     out: dict[str, Any] = {}
     for name, g in rows.dropna(subset=["parameter_name", "value"]).groupby("parameter_name", sort=False):
         if "index" in g.columns and g["index"].notna().any():
@@ -617,6 +640,14 @@ def get_slider_params(county: str | None = None) -> dict[str, Any]:
 def calculate_derived_parameters(param: dict[str, Any]) -> dict[str, Any]:
     """Keep your existing derived-parameter logic in one reusable place."""
     param = dict(param)  # avoid mutating the input unexpectedly
+
+    # PT_scale is calibrated by county. Regenerate the ANC-specific gestational
+    # age distributions so changing PT_scale affects the simulation.
+    ga_prob = {}
+    ga_counts = {}
+    ga_odds = {}
+    GA_assign_kenya(param, ga_counts, ga_prob)
+    param["GA_anc"], param["GA_noanc"] = GA_by_ANC(param, ga_odds, ga_prob)
 
     param["p_anemia_anc"] = odds_prob(param["or_anc_anemia"], param["p_comp_anemia"], (1 - param["p_ANC_base"]))
     param["severe_highrisk"] = param["p_comp_severe_lowrisk"] * param["RR_comp_severe_highrisk_vs_lowrisk"]

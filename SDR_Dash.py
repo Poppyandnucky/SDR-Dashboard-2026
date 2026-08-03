@@ -122,7 +122,15 @@ PROMPTS_RR_OVERRIDE = {"Current": 1.02, "Moderate": 1.18, "High": 1.35}
 BLOOD_TRACKING_FIDELITY_OVERRIDE = {"Current": 0.25, "Moderate": 0.5, "High": 0.95}
 PULSE_FIDELITY_OVERRIDE = {"Moderate": 0.5, "High": 0.95}
 FQA_FIDELITY_OVERRIDE = {"Moderate": 0.5, "High": 0.95}
+# Coverage for the transfer-delay shift (assign_transfer_delay_categories /
+# apply_transfer_delay_intervention in mortality.py). "Current" reads
+# referral_implementation_index for the selected county.
+TRANSFER_FIDELITY_OVERRIDE = {"Moderate": 0.50, "High": 0.95}
 FQA_PULSE_MODIFIER_LEVELS = list(FQA_PULSE_MODIFIER_OPTIONS.keys())
+# Maximum implementation-index boost a fully-implemented PULSE system can lend
+# to the other MOMISH interventions (see sync_param_momish_from_hss).
+PULSE_IMPLEMENTATION_BOOST_OPTIONS = {"Low": 0.25, "Medium": 0.5, "High": 0.75}
+PULSE_IMPLEMENTATION_BOOST_LEVELS = list(PULSE_IMPLEMENTATION_BOOST_OPTIONS.keys())
 
 
 def fqa_pulse_modifier_default_index():
@@ -130,6 +138,13 @@ def fqa_pulse_modifier_default_index():
     if level not in FQA_PULSE_MODIFIER_LEVELS:
         level = "Medium"
     return FQA_PULSE_MODIFIER_LEVELS.index(level)
+
+
+def pulse_implementation_boost_default_index():
+    level = st.session_state.get("pulse_implementation_boost_level", "Medium")
+    if level not in PULSE_IMPLEMENTATION_BOOST_LEVELS:
+        level = "Medium"
+    return PULSE_IMPLEMENTATION_BOOST_LEVELS.index(level)
 
 
 def get_mentor_implementation_index(fidelity_choice):
@@ -155,6 +170,17 @@ def get_prompts_implementation_index(fidelity_choice):
 
 def get_blood_tracking_implementation_index(fidelity_choice):
     return BLOOD_TRACKING_FIDELITY_OVERRIDE.get(fidelity_choice, 0.0)
+
+
+def get_transfer_implementation_index(fidelity_choice):
+    if fidelity_choice in TRANSFER_FIDELITY_OVERRIDE:
+        return TRANSFER_FIDELITY_OVERRIDE[fidelity_choice]
+    try:
+        param_sample = get_parameters(rng=np.random.default_rng(0), county=selected_county)
+        param_sample = calculate_derived_parameters(param_sample)
+        return float(np.clip(param_sample.get("referral_implementation_index", 0.0), 0.0, 1.0))
+    except Exception:
+        return 0.0
 
 
 def get_fqa_implementation_index(fidelity_choice):
@@ -275,22 +301,24 @@ def render_hss_preset():
         i_HSS["labor_ratio"] = labor_pct / 100.0
         i_HSS["sensor_ratio"] = equipment_pct / 100.0
 
-    i_flags["flag_refer"] = 0
-    i_flags["flag_transfer"] = 0
+    i_flags["flag_refer_voucher"] = 0
     i_HSS["P_refer"] = 0
-    i_HSS["P_transfer"] = 0
 
     if enable_network:
         if match_supply:
             refer_pct = 100
-            transfer_pct = 100
         else:
             refer_pct = 50
-            transfer_pct = 80
-        i_flags["flag_refer"] = 1
-        i_flags["flag_transfer"] = 1
+        i_flags["flag_refer_voucher"] = 1
         i_HSS["P_refer"] = refer_pct / 100.0
-        i_HSS["P_transfer"] = transfer_pct / 100.0
+
+        if not st.session_state.get("flag_transfer_capacity", 0):
+            # Rescue Network turns on Transfer & EMT (MOMISH panel) at Current
+            # level by default, but only when it isn't already enabled --
+            # never downgrades a level the user already picked there.
+            st.session_state["flag_transfer_capacity"] = 1
+            st.session_state["preset_transfer_emt_on"] = True
+            st.session_state["preset_transfer_emt_fidelity"] = "Current Fidelity"
 
     i_flags["flag_SDR"] = 1 if (enable_chv or enable_facility or enable_network) else 0
 
@@ -463,6 +491,18 @@ def render_prompts_preset():
     i_HSS["fqa_pulse_modifier"] = FQA_PULSE_MODIFIER_OPTIONS[selected_fqa_pulse_level]
     st.session_state["fqa_pulse_modifier_level"] = selected_fqa_pulse_level
 
+    selected_pulse_boost_level = st.selectbox(
+        "PULSE implementation boost to other MOMISH interventions",
+        options=PULSE_IMPLEMENTATION_BOOST_LEVELS,
+        index=pulse_implementation_boost_default_index(),
+        key="preset_pulse_implementation_boost_level",
+        help="Maximum increase in implementation index a fully-implemented PULSE system "
+             "lends to PROMPTS, MENTORS, and FQA when PULSE is enabled.",
+    )
+    i_HSS["pulse_implementation_boost_level"] = selected_pulse_boost_level
+    i_HSS["pulse_implementation_boost"] = PULSE_IMPLEMENTATION_BOOST_OPTIONS[selected_pulse_boost_level]
+    st.session_state["pulse_implementation_boost_level"] = selected_pulse_boost_level
+
     bl_col1, bl_col2 = st.columns([1, 2])
     with bl_col1:
         blood_on = st.checkbox("Enable Blood tracking", value=False, key="preset_blood_on")
@@ -474,8 +514,6 @@ def render_prompts_preset():
             key="preset_blood_fidelity",
             disabled=not blood_on,
         )
-
-    emt_on = st.checkbox("Referral systems & EMT training", value=False, key="preset_emt_on")
 
     i_flags["flag_blood"] = 1 if blood_on else 0
     i_flags["flag_blood_tracking"] = i_flags["flag_blood"]
@@ -494,11 +532,33 @@ def render_prompts_preset():
         i_HSS["blood_adoption"] = 0.0
         st.session_state["blood_adoption"] = 0.0
 
-    i_flags["flag_emt"] = 1 if emt_on else 0
-    st.session_state["flag_emt"] = int(emt_on)
-    i_HSS["emt_participation"] = 1.0 if emt_on else 0.0
-    if not emt_on:
-        i_HSS["emt_intensity"] = 0.0
+    te_col1, te_col2 = st.columns([1, 2])
+    with te_col1:
+        transfer_emt_on = st.checkbox("Enable Transfer & EMT", value=False, key="preset_transfer_emt_on")
+    with te_col2:
+        transfer_emt_fidelity = st.radio(
+            "Transfer & EMT fidelity",
+            ["Current Fidelity", "Moderate Fidelity", "High Fidelity"],
+            horizontal=True,
+            key="preset_transfer_emt_fidelity",
+            disabled=not transfer_emt_on,
+        )
+
+    i_flags["flag_transfer_capacity"] = 1 if transfer_emt_on else 0
+    st.session_state["flag_transfer_capacity"] = int(transfer_emt_on)
+    if transfer_emt_on:
+        if transfer_emt_fidelity.startswith("Current"):
+            fid_key = "Current"
+        elif transfer_emt_fidelity.startswith("Moderate"):
+            fid_key = "Moderate"
+        else:
+            fid_key = "High"
+        transfer_index = get_transfer_implementation_index(fid_key)
+        i_HSS["referral_implementation_index"] = transfer_index
+        st.session_state["referral_implementation_index"] = transfer_index
+    else:
+        i_HSS["referral_implementation_index"] = 0.0
+        st.session_state["referral_implementation_index"] = 0.0
 
 
 # Function to render HSS interventions
@@ -698,13 +758,11 @@ def render_hss(preset_demand_scenario, preset_supply_scenario):
             upgrade_equipment = 1
             update_transport = 1
             update_refer = 1
-            update_transfer = 1
             performance_value = 100
             capacity_added_value = Capacity_match[preset_demand_scenario]
             labor_value = 100
             equipment_value = 100
             refer_value = 100
-            transfer_value = 100
         elif preset_supply_scenario == "Cannot Meet Demand":
             upgrade_L45_facilities = 1
             upgrade_performance = 1
@@ -713,13 +771,11 @@ def render_hss(preset_demand_scenario, preset_supply_scenario):
             upgrade_equipment = 1
             update_transport = 1
             update_refer = 1
-            update_transfer = 1
             performance_value = 75
             capacity_added_value = Capacity_dismatch[preset_demand_scenario]
             labor_value = 50
             equipment_value = 50
             refer_value = 50
-            transfer_value = 80
         elif preset_supply_scenario is None:
             upgrade_L45_facilities = 0
             upgrade_performance = 0
@@ -728,13 +784,11 @@ def render_hss(preset_demand_scenario, preset_supply_scenario):
             upgrade_equipment = 0
             update_transport = 0
             update_refer = 0
-            update_transfer = 0
             performance_value = round(slider_params['base_knowledge_L45_slider'] * 100)
             capacity_added_value = 0.0
             labor_value = 0
             equipment_value = 0
             refer_value = 0
-            transfer_value = round(slider_params['t_l23_l45_notsevere_slider'])
 
         col2_1, col2_2 = st.columns(2)
         with col2_1:
@@ -843,36 +897,26 @@ def render_hss(preset_demand_scenario, preset_supply_scenario):
                 referint = 0
         with col2_14:
             if referint:
-                i_flags['flag_refer'] = 1
+                i_flags['flag_refer_voucher'] = 1
                 i_HSS["P_refer"] = st.slider("% referral with free taxies/bodas", min_value=0, max_value=100, step=1, value=refer_value,
                                       format="%d%%", help="Value = 100 means 100% of referral can use free taxies/bodas")
                 i_HSS["P_refer"] /= 100
             else:
-                i_flags['flag_refer'] = 0
+                i_flags['flag_refer_voucher'] = 0
                 i_HSS["P_refer"] = 0
 
-        col2_15, col2_16 = st.columns(2)
-        with col2_15:
-            if refint:
-                transferint = st.checkbox('Improve emergency transfer', value = update_transfer,
-                                        help="Increasing ambulances for transferring severe complications to L4/5 facilities")
-            else:
-                transferint = 0
-
-        with col2_16:
-            if transferint:
-                i_flags['flag_transfer'] = 1
-                i_HSS["P_transfer"] = st.slider('% emergency transfer', min_value=round(slider_params['t_l23_l45_notsevere_slider']), max_value=100, step=10,
-                                                 value=transfer_value,
-                                                 format="%d%%", help="% complications can be transferred\n\n"
-                                                      "Value = 50 means 50% of complications can be transferred from L2/3 to L4/5 facilities")
-                i_HSS["P_transfer"] /= 100
-            else:
-                i_flags['flag_transfer'] = 0
-                i_HSS["P_transfer"] = 0
+        if refint and not st.session_state.get("flag_transfer_capacity", 0):
+            # Rescue Network turns on Transfer & EMT (MOMISH panel) at Current
+            # level by default, but only when it isn't already enabled --
+            # never downgrades a level the user already picked there.
+            st.session_state["flag_transfer_capacity"] = 1
+            st.session_state["transfer_emt_enable"] = True
+            st.session_state["transfer_implementation_level"] = "Current"
+            st.session_state["transfer_implementation_level_select"] = "Current"
 
 
-def sync_param_momish_from_hss(i_param, i_HSS):
+
+def sync_param_momish_from_hss(i_param, i_HSS, flags):
     """Align top-level param keys with dashboard i_HSS (LB_effect + intrapartum may read either)."""
     if i_HSS.get("prompts_implementation_index") is not None:
         i_param["prompts_implementation_index"] = float(i_HSS["prompts_implementation_index"])
@@ -887,6 +931,47 @@ def sync_param_momish_from_hss(i_param, i_HSS):
         i_param["pulse_implementation_index"] = float(i_HSS["pulse_implementation_index"])
     if i_HSS.get("fqa_implementation_index") is not None:
         i_param["fqa_implementation_index"] = float(i_HSS["fqa_implementation_index"])
+    if i_HSS.get("pulse_implementation_boost") is not None:
+        i_param["pulse_implementation_boost_level"] = i_HSS.get("pulse_implementation_boost_level", "Medium")
+        i_param["pulse_implementation_boost"] = float(i_HSS["pulse_implementation_boost"])
+    if i_HSS.get("referral_implementation_index") is not None:
+        i_param["referral_implementation_index"] = float(i_HSS["referral_implementation_index"])
+
+    # Snapshot FQA's own implementation index *before* PULSE's cross-boost below.
+    # pulse_effect() (LB_effect.py) reads this snapshot for its own strength
+    # formula -- if it read the boosted value instead, PULSE would indirectly
+    # amplify itself through FQA's fqa_pulse_modifier term, which was
+    # calibrated against FQA's un-boosted level, not a PULSE-inflated one.
+    i_param["fqa_pulse_amplifier_index"] = float(i_param.get("fqa_implementation_index", 0.0))
+
+    # PULSE implementation boost: when PULSE is enabled, it lends some of its
+    # own implementation index to PROMPTS, MENTORS, FQA, and REFERRAL (not
+    # Blood, and not itself). Computed once here rather than inside each
+    # intervention's own per-month block, so none of them need to know PULSE
+    # exists.
+    if flags.get("flag_pulse", 0):
+        pulse_implementation_index = float(i_param.get("pulse_implementation_index", 0.0))
+        pulse_implementation_boost = float(i_param.get("pulse_implementation_boost", 0.0))
+        fqa_pulse_modifier = float(i_param.get("fqa_pulse_modifier", 0.0))
+        flag_fqa = float(flags.get("flag_fqa", 0))
+
+        pulse_implementation_boost_effective = float(np.clip(
+            pulse_implementation_index * pulse_implementation_boost * (1 + flag_fqa * fqa_pulse_modifier),
+            0.0,
+            1.0,
+        ))
+
+        for key in (
+            "prompts_implementation_index",
+            "mentors_implementation_index",
+            "fqa_implementation_index",
+            "referral_implementation_index",
+        ):
+            i_param[key] = float(np.clip(
+                i_param.get(key, 0.0) + pulse_implementation_boost_effective,
+                0.0,
+                1.0,
+            ))
 
 
 def apply_momish_facility_delivery(i_flags, i_HSS, slider_params, choice_key, intervention_selection):
@@ -920,8 +1005,7 @@ def apply_momish_facility_delivery(i_flags, i_HSS, slider_params, choice_key, in
         i_flags["flag_capacity"] = 0
         i_flags["flag_labor"] = 0
         i_flags["flag_equipment"] = 0
-        i_flags["flag_refer"] = 0
-        i_flags["flag_transfer"] = 0
+        i_flags["flag_refer_voucher"] = 0
         i_HSS["P_ANC"] = slider_params["p_ANC_base_slider"]
         i_HSS["P_L45"] = slider_params["base_p_45_slider"]
         i_HSS["knowledge"] = slider_params["base_knowledge_L45_slider"]
@@ -929,7 +1013,6 @@ def apply_momish_facility_delivery(i_flags, i_HSS, slider_params, choice_key, in
         i_HSS["labor_ratio"] = 0
         i_HSS["sensor_ratio"] = 0
         i_HSS["P_refer"] = 0
-        i_HSS["P_transfer"] = 0
         i_HSS["tau_decay"] = 6
         i_HSS["CHV_memory"] = "Always Forget"
         i_HSS["referadded"] = 0
@@ -949,8 +1032,7 @@ def apply_momish_facility_delivery(i_flags, i_HSS, slider_params, choice_key, in
     i_flags["flag_capacity"] = 1
     i_flags["flag_labor"] = 1
     i_flags["flag_equipment"] = 1
-    i_flags["flag_refer"] = 1
-    i_flags["flag_transfer"] = 1
+    i_flags["flag_refer_voucher"] = 1
 
     i_HSS["P_ANC"] = d["P_ANC"] / 100.0
     p_l45_exp = get_P_l45(i_HSS["P_ANC"], slider_params)
@@ -965,7 +1047,6 @@ def apply_momish_facility_delivery(i_flags, i_HSS, slider_params, choice_key, in
     i_HSS["labor_ratio"] = 1.0
     i_HSS["sensor_ratio"] = 1.0
     i_HSS["P_refer"] = 1.0
-    i_HSS["P_transfer"] = 1.0
 
     st.session_state["P_ANC"] = i_HSS["P_ANC"]
     st.session_state["P_L45"] = i_HSS["P_L45"]
@@ -1168,6 +1249,18 @@ def render_prompts():
     i_HSS["fqa_pulse_modifier"] = FQA_PULSE_MODIFIER_OPTIONS[selected_fqa_pulse_level]
     st.session_state["fqa_pulse_modifier_level"] = selected_fqa_pulse_level
 
+    selected_pulse_boost_level = st.selectbox(
+        "PULSE implementation boost to other MOMISH interventions",
+        options=PULSE_IMPLEMENTATION_BOOST_LEVELS,
+        index=pulse_implementation_boost_default_index(),
+        key="pulse_implementation_boost_level_select",
+        help="Maximum increase in implementation index a fully-implemented PULSE system "
+             "lends to PROMPTS, MENTORS, and FQA when PULSE is enabled.",
+    )
+    i_HSS["pulse_implementation_boost_level"] = selected_pulse_boost_level
+    i_HSS["pulse_implementation_boost"] = PULSE_IMPLEMENTATION_BOOST_OPTIONS[selected_pulse_boost_level]
+    st.session_state["pulse_implementation_boost_level"] = selected_pulse_boost_level
+
 
     # ==========================================================
     # BLOCK 4 — BLOOD INTERVENTION
@@ -1210,23 +1303,44 @@ def render_prompts():
         st.session_state["blood_adoption"] = 0.0
 
     # ==========================================================
-    # BLOCK 5 — Referral Systems & EMT Training INTERVENTION
+    # BLOCK 5 — TRANSFER & EMT
     # ==========================================================
-    col15, col16 = st.columns(2)
-    with col15:
-        emt_int = st.toggle(
-            "Referral Systems & EMT Training Intervention",
-            value=bool(st.session_state.get("flag_emt", 0)),
-            key="emt_enable"
+    col17, col18 = st.columns(2)
+    with col17:
+        transfer_emt_on = st.toggle(
+            "Transfer & EMT Intervention",
+            value=bool(st.session_state.get("flag_transfer_capacity", 0)),
+            key="transfer_emt_enable"
         )
 
-    with col16:
-        i_flags["flag_emt"] = 1 if emt_int else 0
-        st.session_state["flag_emt"] = int(emt_int)
+    with col18:
+        i_flags["flag_transfer_capacity"] = 1 if transfer_emt_on else 0
+        st.session_state["flag_transfer_capacity"] = int(transfer_emt_on)
 
-    i_HSS["emt_participation"] = 1.0 if emt_int else 0.0
-    if not emt_int:
-        i_HSS["emt_intensity"] = 0.0
+    if transfer_emt_on:
+        transfer_fidelity_options = ["Current", "Moderate", "High"]
+        transfer_fidelity_choice_default = st.session_state.get(
+            "transfer_implementation_level", "Current"
+        )
+        if transfer_fidelity_choice_default not in transfer_fidelity_options:
+            transfer_fidelity_choice_default = "Current"
+
+        transfer_fidelity_choice = st.selectbox(
+            "Transfer & EMT implementation level",
+            options=transfer_fidelity_options,
+            index=transfer_fidelity_options.index(transfer_fidelity_choice_default),
+            key="transfer_implementation_level_select",
+            help="Choose the Transfer & EMT implementation level. Shifts some transferred "
+                 "mothers one delay category shorter (e.g. 2+h to 1-2h).",
+        )
+        st.session_state["transfer_implementation_level"] = transfer_fidelity_choice
+
+        transfer_index = get_transfer_implementation_index(transfer_fidelity_choice)
+        i_HSS["referral_implementation_index"] = transfer_index
+        st.session_state["referral_implementation_index"] = transfer_index
+    else:
+        i_HSS["referral_implementation_index"] = 0.0
+        st.session_state["referral_implementation_index"] = 0.0
 
     apply_momish_facility_delivery(
         i_flags, i_HSS, slider_params, _facility_choice_key, _intervention
@@ -1671,9 +1785,9 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
 
                 b_param.update({"E": b_E, "S": b_S, "HSS": b_HSS})
                 if compare_two_interventions:
-                    sync_param_momish_from_hss(b_param, b_HSS)
+                    sync_param_momish_from_hss(b_param, b_HSS, b_flags)
                 i_param.update({"E": i_E, "S": i_S, "HSS": i_HSS})
-                sync_param_momish_from_hss(i_param, i_HSS)
+                sync_param_momish_from_hss(i_param, i_HSS, i_flags)
                 if ENABLE_PARAM_DEBUG_REPORT:
                     debug_final_param = copy.deepcopy(i_param)
 
@@ -1764,7 +1878,7 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
                         b_HSS = copy.deepcopy(st.session_state.dual_first_config["HSS"])
                     b_param.update({"E": b_E, "S": b_S, "HSS": b_HSS})
                     if compare_two_interventions:
-                        sync_param_momish_from_hss(b_param, b_HSS)
+                        sync_param_momish_from_hss(b_param, b_HSS, b_flags)
 
                     # Pass the ARRAY of monthly seeds to run_model_dash
                     b_df_i, b_ind_outcomes_i, _ = run_model_dash(b_param, b_flags, n_months, int_period, base_seed=monthly_seeds_for_this_run)
@@ -1840,7 +1954,7 @@ with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expand
                     if ENABLE_PARAM_DEBUG_REPORT and run_index == 0:
                         debug_loader_param = copy.deepcopy(i_param)
                     i_param.update({"E": i_E, "S": i_S, "HSS": i_HSS})
-                    sync_param_momish_from_hss(i_param, i_HSS)
+                    sync_param_momish_from_hss(i_param, i_HSS, i_flags)
                     if ENABLE_PARAM_DEBUG_REPORT and run_index == 0:
                         debug_final_param = copy.deepcopy(i_param)
 
@@ -4680,7 +4794,7 @@ if run_clicked:
             sc_param = get_parameters(rng=param_rng, county=selected_county)
             sc_param = calculate_derived_parameters(sc_param)
             sc_param.update({"E": copy.deepcopy(i_E), "S": copy.deepcopy(i_S), "HSS": copy.deepcopy(i_HSS)})
-            sync_param_momish_from_hss(sc_param, i_HSS)
+            sync_param_momish_from_hss(sc_param, i_HSS, i_flags)
 
             _, ind_outcomes, _ = run_model_dash(
                 sc_param, copy.deepcopy(i_flags), n_months, int_period, base_seed=monthly_seeds,

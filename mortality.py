@@ -4,27 +4,65 @@ from global_func import baseline_p_death, P_intervention
 import streamlit as st
 
 
-def assign_transfer_delay_categories(param, rng, num_mothers, transfer_mask, i_loc):
+def apply_transfer_delay_intervention(delay_probs, coverage, shift_2plus, shift_1_2):
+    """Shift covered transfers down one delay category without changing transfer count."""
+    p_lt1, p_1_2, p_2plus = np.asarray(delay_probs, dtype=float)
+    coverage = np.clip(float(coverage), 0.0, 1.0)
+    shift_2plus = np.clip(float(shift_2plus), 0.0, 1.0)
+    shift_1_2 = np.clip(float(shift_1_2), 0.0, 1.0)
+
+    move_2plus_to_1_2 = coverage * shift_2plus * p_2plus
+    move_1_2_to_lt1 = coverage * shift_1_2 * p_1_2
+    adjusted = np.array([
+        p_lt1 + move_1_2_to_lt1,
+        p_1_2 - move_1_2_to_lt1 + move_2plus_to_1_2,
+        p_2plus - move_2plus_to_1_2,
+    ])
+    return adjusted / adjusted.sum()
+
+
+def assign_transfer_delay_categories(param, flags, rng, num_mothers, transfer_mask, i_loc):
     travel_time_transfer = np.full(num_mothers, -1, dtype=int)  # -1: no transfer, 0: <1h, 1: 1-2h, 2: 2+h
     from_l23_mask = transfer_mask & (i_loc == 1)
     from_l45_mask = transfer_mask & ((i_loc == 2) | (i_loc == 3))
 
-    if np.any(from_l23_mask):
-        delay_probs_l23 = np.asarray(param["transfer_delay_probs_l23"], dtype=float)
-        delay_probs_l23 = delay_probs_l23 / delay_probs_l23.sum()
-        travel_time_transfer[from_l23_mask] = rng.choice(
-            [0, 1, 2],
-            size=np.sum(from_l23_mask),
-            p=delay_probs_l23,
+    delay_probs_l23 = np.asarray(param["transfer_delay_probs_l23"], dtype=float)
+    delay_probs_l45 = np.asarray(param["transfer_delay_probs_l45"], dtype=float)
+    if flags.get("flag_transfer_capacity", 0):
+        delay_probs_l23 = apply_transfer_delay_intervention(
+            delay_probs_l23,
+            param.get("referral_implementation_index", 0.0),
+            param.get("transfer_delay_shift_2plus", 0.60),
+            param.get("transfer_delay_shift_1_2", 0.40),
         )
-    if np.any(from_l45_mask):
-        delay_probs_l45 = np.asarray(param["transfer_delay_probs_l45"], dtype=float)
-        delay_probs_l45 = delay_probs_l45 / delay_probs_l45.sum()
-        travel_time_transfer[from_l45_mask] = rng.choice(
-            [0, 1, 2],
-            size=np.sum(from_l45_mask),
-            p=delay_probs_l45,
+        delay_probs_l45 = apply_transfer_delay_intervention(
+            delay_probs_l45,
+            param.get("referral_implementation_index", 0.0),
+            param.get("transfer_delay_shift_2plus", 0.60),
+            param.get("transfer_delay_shift_1_2", 0.40),
         )
+    delay_probs_l23 = delay_probs_l23 / delay_probs_l23.sum()
+    delay_probs_l45 = delay_probs_l45 / delay_probs_l45.sum()
+
+    # Fixed size=num_mothers (not size=mask.sum()) so this always consumes the
+    # same number of random draws regardless of how many mothers are actually
+    # eligible -- otherwise an intervention that changes transfer eligibility
+    # (including the delay-shift adjustment above) shifts the rng state for
+    # every draw later in the month, for everyone, not just the mothers whose
+    # eligibility or delay category changed.
+    l23_delay_draws = rng.choice(
+        [0, 1, 2],
+        size=num_mothers,
+        p=delay_probs_l23,
+    )
+    l45_delay_draws = rng.choice(
+        [0, 1, 2],
+        size=num_mothers,
+        p=delay_probs_l45,
+    )
+
+    travel_time_transfer[from_l23_mask] = l23_delay_draws[from_l23_mask]
+    travel_time_transfer[from_l45_mask] = l45_delay_draws[from_l45_mask]
 
     return travel_time_transfer
 
@@ -132,7 +170,14 @@ def f_MM_vectorized(track, param, flags, i, MC, M, NC, individual_outcomes, rng)
     )
 
     blood_adoption = float(param.get("HSS", {}).get("blood_adoption", 0.0))
-    blood_mult = 1.0 - flag_blood_tracking * blood_adoption
+
+    # Blood tracking is a facility-based intervention: no effect for home
+    # deliveries (blood_mult == 1.0 there), full effect at facilities.
+    # Per-mother array rather than a mask multiply on comp_risks -- multiplying
+    # comp_risks by a 0/1 home mask would zero out the entire PPH/APH severity
+    # term for home mothers (removing their PPH/APH mortality risk entirely),
+    # not just neutralize the blood effect.
+    blood_mult = np.where(home_mask, 1.0, 1.0 - flag_blood_tracking * blood_adoption)
 
     # Complication risk weights (constant across locations)
     comp_names = ["pph", "sepsis", "eclampsia", "ol", "other", "aph"]
@@ -172,7 +217,7 @@ def f_MM_vectorized(track, param, flags, i, MC, M, NC, individual_outcomes, rng)
 
     # **Step 4: Apply transfer delay RRs**
     transfer_update_mask = severe_mask & transfer_mask  # Mask for severe cases with emergency transfer
-    travel_time_transfer = assign_transfer_delay_categories(param, rng, num_mothers, transfer_mask, i_loc)
+    travel_time_transfer = assign_transfer_delay_categories(param, flags, rng, num_mothers, transfer_mask, i_loc)
     p_death = apply_transfer_delay_rr(p_death, transfer_update_mask, travel_time_transfer, param)
 
     # **Step 3: Clip Death Probabilities & Assign Maternal Deaths**

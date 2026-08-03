@@ -30,7 +30,11 @@ def pulse_effect(
     # pulse_coverage = float(param.get("HSS", {}).get("pulse_coverage", 1.0))
     pulse_implementation_index = float(param["pulse_implementation_index"])
     # flag_fqa = float(flags.get("flag_fqa", 0))
-    fqa_implementation_index = float(param["fqa_implementation_index"])
+    # Pre-boost snapshot (sync_param_momish_from_hss), not the live
+    # fqa_implementation_index -- otherwise PULSE's own strength would be
+    # inflated by its own boost to FQA's implementation index, a circular
+    # amplification the fqa_pulse_modifier term was never calibrated for.
+    fqa_implementation_index = float(param.get("fqa_pulse_amplifier_index", param["fqa_implementation_index"]))
     pulse_influence_strength_effective = np.clip(
         pulse_implementation_index * pulse_influence_strength * (1 + fqa_implementation_index * fqa_pulse_modifier),
         0,
@@ -123,13 +127,13 @@ def f_ANC_LB_effect_vectorized(track, LB_base, param, flags, i, int_period, rng)
         # implementation_index = share of mothers reached by PROMPTS (population coverage).
         # That share gets the full scenario RR on 4+ ANC; the rest keep their baseline
         # probability -- the index is a coverage weight, not a scaling factor on the RR.
-        implementation_index = clip01(param.get("prompts_implementation_index", 0.0))
+        prompts_implementation_index = clip01(param.get("prompts_implementation_index", 0.0))
         prompts_rr_anc4p = float(param.get("prompts_rr_anc4p", 1.0))
 
         P_ANC_treated = clip01(P_ANC * prompts_rr_anc4p)
-        P_ANC = clip01((1 - implementation_index) * P_ANC + implementation_index * P_ANC_treated)
+        P_ANC = clip01((1 - prompts_implementation_index) * P_ANC + prompts_implementation_index * P_ANC_treated)
 
-        engagement_level = implementation_index
+        engagement_level = prompts_implementation_index
     else:
         engagement_level = 0.0
 
@@ -305,7 +309,7 @@ def f_ANC_LB_effect_vectorized(track, LB_base, param, flags, i, int_period, rng)
 
     #Reallocate mothers if overcapacity
     n_l45 = np.count_nonzero(i_loc == 2)
-    exceed_lb = max(n_l45 - Capacity, 0)
+    exceed_lb = int(max(n_l45 - Capacity, 0))
     shuffled_all = rng.permutation(num_mothers)   # shuffle all mother indices
     l45_indices = np.where(i_loc == 2)[0]         # identify L4/5 mothers
     shuffled_l45 = shuffled_all[np.isin(shuffled_all, l45_indices)]  # filter only those in L4/5 from the shuffled list
@@ -313,8 +317,7 @@ def f_ANC_LB_effect_vectorized(track, LB_base, param, flags, i, int_period, rng)
     mask_relocate_l23 = np.zeros(num_mothers, dtype=bool)            # apply relocation
     mask_relocate_l23[relocate_indices] = True
     i_loc[mask_relocate_l23] = 1
-    print(exceed_lb, np.sum(mask_relocate_l23), np.sum(i_loc == 2))
-
+    
     ##-------------------Elective C-section Decision----------------------##
     elcs_mask1 = (i_loc == 2) & (i_risk_pred == 1) & (i_preterm_pred == 0) & (i_ANC == 1)
     elcs_mask2 = (i_loc == 2) & (i_preterm_pred == 1) & (i_ANC == 1)
@@ -518,10 +521,10 @@ def shifting_live_births_vectorized(individual_outcomes, param, i, track, flags,
             """
                 Move allowed mothers to L4/5. Handle referral constraints.
             """
-            flag_refer = flags["flag_refer"]
+            flag_refer_voucher = flags["flag_refer_voucher"]
             allowed_mask = (mothers_allowed_shift == 1)
 
-            p_free_refer = Referral_Capacity if flag_refer else 0
+            p_free_refer = Referral_Capacity if flag_refer_voucher else 0
 
             # Random draw for free referral
             free_refer_draws = rng.random(num_mothers)
