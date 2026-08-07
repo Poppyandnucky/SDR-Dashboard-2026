@@ -697,6 +697,7 @@ def reset_flags():
         'flag_labor': 0,
         'flag_refer_voucher': 0,
         'flag_transfer_capacity': 0,
+        'flag_transfer_delay': 0,
         'flag_equipment': 0,
         #Treatment
         'flag_pph_bundle': 0,
@@ -730,6 +731,7 @@ def reset_HSS(slider_params):
     HSS["P_L45"] = slider_params['base_p_45_slider']
     HSS["P_ANC"] = slider_params['p_ANC_base_slider']
     HSS["P_refer"] = 0
+    HSS["transfer_capacity_target"] = 0.0
     HSS["labor_ratio"] = 0
     HSS["sensor_ratio"] = 0
     HSS['CHV_memory'] = "Always Forget"  # Default memory model for CHVs

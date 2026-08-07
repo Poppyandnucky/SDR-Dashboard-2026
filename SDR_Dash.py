@@ -302,7 +302,9 @@ def render_hss_preset():
         i_HSS["sensor_ratio"] = equipment_pct / 100.0
 
     i_flags["flag_refer_voucher"] = 0
+    i_flags["flag_transfer_capacity"] = 0
     i_HSS["P_refer"] = 0
+    i_HSS["transfer_capacity_target"] = 0.0
 
     if enable_network:
         if match_supply:
@@ -311,14 +313,8 @@ def render_hss_preset():
             refer_pct = 50
         i_flags["flag_refer_voucher"] = 1
         i_HSS["P_refer"] = refer_pct / 100.0
-
-        if not st.session_state.get("flag_transfer_capacity", 0):
-            # Rescue Network turns on Transfer & EMT (MOMISH panel) at Current
-            # level by default, but only when it isn't already enabled --
-            # never downgrades a level the user already picked there.
-            st.session_state["flag_transfer_capacity"] = 1
-            st.session_state["preset_transfer_emt_on"] = True
-            st.session_state["preset_transfer_emt_fidelity"] = "Current Fidelity"
+        i_flags["flag_transfer_capacity"] = 1
+        i_HSS["transfer_capacity_target"] = float(refer_pct)
 
     i_flags["flag_SDR"] = 1 if (enable_chv or enable_facility or enable_network) else 0
 
@@ -544,8 +540,8 @@ def render_prompts_preset():
             disabled=not transfer_emt_on,
         )
 
-    i_flags["flag_transfer_capacity"] = 1 if transfer_emt_on else 0
-    st.session_state["flag_transfer_capacity"] = int(transfer_emt_on)
+    i_flags["flag_transfer_delay"] = 1 if transfer_emt_on else 0
+    st.session_state["flag_transfer_delay"] = int(transfer_emt_on)
     if transfer_emt_on:
         if transfer_emt_fidelity.startswith("Current"):
             fid_key = "Current"
@@ -905,14 +901,31 @@ def render_hss(preset_demand_scenario, preset_supply_scenario):
                 i_flags['flag_refer_voucher'] = 0
                 i_HSS["P_refer"] = 0
 
-        if refint and not st.session_state.get("flag_transfer_capacity", 0):
-            # Rescue Network turns on Transfer & EMT (MOMISH panel) at Current
-            # level by default, but only when it isn't already enabled --
-            # never downgrades a level the user already picked there.
-            st.session_state["flag_transfer_capacity"] = 1
-            st.session_state["transfer_emt_enable"] = True
-            st.session_state["transfer_implementation_level"] = "Current"
-            st.session_state["transfer_implementation_level_select"] = "Current"
+        col2_15, col2_16 = st.columns(2)
+        with col2_15:
+            if referint:
+                transfer_capacity_int = st.checkbox(
+                    'Referral with Emergency Transfer',
+                    value=bool(update_refer),
+                    help="Improve emergency transfer capacity from L2/3 to L4/5 facilities",
+                )
+            else:
+                transfer_capacity_int = 0
+        with col2_16:
+            if transfer_capacity_int:
+                i_flags['flag_transfer_capacity'] = 1
+                i_HSS["transfer_capacity_target"] = st.slider(
+                    "% emergency transfers supported",
+                    min_value=0,
+                    max_value=100,
+                    step=1,
+                    value=refer_value,
+                    format="%d%%",
+                    help="Target L2/3-to-L4/5 emergency transfer capacity. Existing baseline values are preserved when higher.",
+                )
+            else:
+                i_flags['flag_transfer_capacity'] = 0
+                i_HSS["transfer_capacity_target"] = 0.0
 
 
 
@@ -1006,6 +1019,7 @@ def apply_momish_facility_delivery(i_flags, i_HSS, slider_params, choice_key, in
         i_flags["flag_labor"] = 0
         i_flags["flag_equipment"] = 0
         i_flags["flag_refer_voucher"] = 0
+        i_flags["flag_transfer_capacity"] = 0
         i_HSS["P_ANC"] = slider_params["p_ANC_base_slider"]
         i_HSS["P_L45"] = slider_params["base_p_45_slider"]
         i_HSS["knowledge"] = slider_params["base_knowledge_L45_slider"]
@@ -1013,6 +1027,7 @@ def apply_momish_facility_delivery(i_flags, i_HSS, slider_params, choice_key, in
         i_HSS["labor_ratio"] = 0
         i_HSS["sensor_ratio"] = 0
         i_HSS["P_refer"] = 0
+        i_HSS["transfer_capacity_target"] = 0.0
         i_HSS["tau_decay"] = 6
         i_HSS["CHV_memory"] = "Always Forget"
         i_HSS["referadded"] = 0
@@ -1033,6 +1048,7 @@ def apply_momish_facility_delivery(i_flags, i_HSS, slider_params, choice_key, in
     i_flags["flag_labor"] = 1
     i_flags["flag_equipment"] = 1
     i_flags["flag_refer_voucher"] = 1
+    i_flags["flag_transfer_capacity"] = 1
 
     i_HSS["P_ANC"] = d["P_ANC"] / 100.0
     p_l45_exp = get_P_l45(i_HSS["P_ANC"], slider_params)
@@ -1047,6 +1063,7 @@ def apply_momish_facility_delivery(i_flags, i_HSS, slider_params, choice_key, in
     i_HSS["labor_ratio"] = 1.0
     i_HSS["sensor_ratio"] = 1.0
     i_HSS["P_refer"] = 1.0
+    i_HSS["transfer_capacity_target"] = 100.0
 
     st.session_state["P_ANC"] = i_HSS["P_ANC"]
     st.session_state["P_L45"] = i_HSS["P_L45"]
@@ -1309,13 +1326,13 @@ def render_prompts():
     with col17:
         transfer_emt_on = st.toggle(
             "Transfer & EMT Intervention",
-            value=bool(st.session_state.get("flag_transfer_capacity", 0)),
+            value=bool(st.session_state.get("flag_transfer_delay", 0)),
             key="transfer_emt_enable"
         )
 
     with col18:
-        i_flags["flag_transfer_capacity"] = 1 if transfer_emt_on else 0
-        st.session_state["flag_transfer_capacity"] = int(transfer_emt_on)
+        i_flags["flag_transfer_delay"] = 1 if transfer_emt_on else 0
+        st.session_state["flag_transfer_delay"] = int(transfer_emt_on)
 
     if transfer_emt_on:
         transfer_fidelity_options = ["Current", "Moderate", "High"]

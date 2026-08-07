@@ -28,16 +28,17 @@ def assign_transfer_delay_categories(param, flags, rng, num_mothers, transfer_ma
 
     delay_probs_l23 = np.asarray(param["transfer_delay_probs_l23"], dtype=float)
     delay_probs_l45 = np.asarray(param["transfer_delay_probs_l45"], dtype=float)
-    if flags.get("flag_transfer_capacity", 0):
+    if flags.get("flag_transfer_delay", 0):
+        coverage = param.get("referral_implementation_index", 0.0)
         delay_probs_l23 = apply_transfer_delay_intervention(
             delay_probs_l23,
-            param.get("referral_implementation_index", 0.0),
+            coverage,
             param.get("transfer_delay_shift_2plus", 0.60),
             param.get("transfer_delay_shift_1_2", 0.40),
         )
         delay_probs_l45 = apply_transfer_delay_intervention(
             delay_probs_l45,
-            param.get("referral_implementation_index", 0.0),
+            coverage,
             param.get("transfer_delay_shift_2plus", 0.60),
             param.get("transfer_delay_shift_1_2", 0.40),
         )

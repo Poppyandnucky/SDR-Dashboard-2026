@@ -154,6 +154,13 @@ def initialize_intra_params(individual_outcomes, track, flags, param, i, rng):
     p_transfer_capacity_preterm = param['t_l23_l45_preterm']
     t_l4_l4_severe = param['t_l4_l4_severe']
     t_l4_l5_severe = param['t_l4_l5_severe']
+    if flags.get("flag_transfer_capacity", 0):
+        transfer_capacity_target = param["HSS"]["transfer_capacity_target"]
+        p_transfer_capacity_severe = max(transfer_capacity_target, param["t_l23_l45_severe"])
+        p_transfer_capacity_nonsevere = max(transfer_capacity_target, param["t_l23_l45_notsevere"])
+        p_transfer_capacity_preterm = max(transfer_capacity_target, param["t_l23_l45_preterm"])
+        t_l4_l4_severe = 0
+        t_l4_l5_severe = 0
 
     f_transfer_rates_severe = np.array([
         [0.00, 0.00, 0.00, 0.00],

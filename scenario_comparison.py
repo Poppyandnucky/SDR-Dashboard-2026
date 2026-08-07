@@ -108,7 +108,19 @@ SCENARIOS = [
     {"scenario": "fqa_current", "intervention": "FQA", "level": "current", "description": "County-specific current FQA index; PULSE current; all single interventions on; 10% amplification"},
     {"scenario": "fqa_moderate", "intervention": "FQA", "level": "moderate", "description": "50% FQA implementation index; PULSE current; all single interventions on; 10% amplification"},
     {"scenario": "fqa_high", "intervention": "FQA", "level": "high", "description": "95% FQA implementation index; PULSE current; all single interventions on; 30% amplification"},
+    {"scenario": "combined_base", "intervention": "All", "level": "base", "description": "No HSS; all MOMISH interventions off, all single interventions off"},
+    {"scenario": "combined_current", "intervention": "All", "level": "current", "description": "County-specific current implementation index for all interventions; all single interventions on; blood tracking 25% adoption; prompts 1.02 RR effectiveness; 1 hour delay shift; FQA 10% amplification; pulse_implementation_boost=0.25"},
+    {"scenario": "combined_moderate", "intervention": "All", "level": "moderate", "description": "50% implementation index for all interventions; all single interventions on; blood tracking 50% adoption; prompts 1.18 RR effectiveness; 1 hour delay shift; FQA 10% amplification; pulse_implementation_boost=0.5"},
+    {"scenario": "combined_high", "intervention": "All", "level": "high", "description": "95% implementation index for all interventions; all single interventions on; blood tracking 95% adoption; prompts 1.35 RR effectiveness; 1 hour delay shift; FQA 30% amplification; pulse_implementation_boost=0.75"},
 ]
+
+# PULSE implementation-index boost, by combined-scenario level (mirrors the
+# SDR_Dash.py PULSE_IMPLEMENTATION_BOOST_OPTIONS Low/Medium/High slider values).
+COMBINED_PULSE_BOOST_BY_LEVEL = {
+    "current": 0.25,
+    "moderate": 0.50,
+    "high": 0.75,
+}
 
 
 def enable_single_interventions(param, flags):
@@ -130,6 +142,31 @@ def apply_prompts_sensitivity(param, implementation_index):
     effective_sensitivity = baseline + (PROMPTS_HIGH_SENS_TRAD - baseline) * scale
     param["sen_risk_trad"] = clip01(effective_sensitivity)
     param["sen_risk_trad_target"] = param["sen_risk_trad"]
+
+
+def apply_pulse_implementation_boost(param, flags):
+    """Mirror SDR_Dash.py's sync_param_momish_from_hss PULSE boost: lend PULSE's
+    implementation index to PROMPTS, MENTORS, FQA, and REFERRAL (not Blood, not
+    itself). run_model_dash() never calls the dashboard's sync step, so this
+    has to be applied explicitly here for scenarios that set flag_pulse.
+    """
+    if not flags.get("flag_pulse", 0):
+        return
+    pulse_implementation_index = float(param.get("pulse_implementation_index", 0.0))
+    pulse_implementation_boost = float(param.get("pulse_implementation_boost", 0.0))
+    fqa_pulse_modifier = float(param.get("fqa_pulse_modifier", 0.0))
+    flag_fqa = float(flags.get("flag_fqa", 0))
+
+    pulse_implementation_boost_effective = clip01(
+        pulse_implementation_index * pulse_implementation_boost * (1 + flag_fqa * fqa_pulse_modifier)
+    )
+    for key in (
+        "prompts_implementation_index",
+        "mentors_implementation_index",
+        "fqa_implementation_index",
+        "referral_implementation_index",
+    ):
+        param[key] = clip01(param.get(key, 0.0) + pulse_implementation_boost_effective)
 
 
 def current_implementation(intervention, county):
@@ -212,7 +249,7 @@ def configure_scenario(name, param, flags, slider_params=None):
     if name.startswith("referral_"):
         level = name.removeprefix("referral_")
         implementation_index = implementation_for_level("referral", level, county)
-        flags["flag_transfer_capacity"] = 1
+        flags["flag_transfer_delay"] = 1
         hss["referral_implementation_index"] = implementation_index
         param["referral_implementation_index"] = implementation_index
         return
@@ -246,6 +283,57 @@ def configure_scenario(name, param, flags, slider_params=None):
         else:
             hss["fqa_implementation_index"] = 0.0
             param["fqa_implementation_index"] = 0.0
+        return
+
+    if name.startswith("combined_"):
+        # combined_base is handled by the generic "_base" branch above (all off).
+        level = name.removeprefix("combined_")
+
+        mentors_index = implementation_for_level("mentors", level, county)
+        flags["flag_MENTOR"] = 1
+        hss["mentor_implementation_index"] = mentors_index
+        param["mentors_implementation_index"] = mentors_index
+
+        prompts_index = implementation_for_level("prompts", level, county)
+        prompts_rr_anc4p = PROMPTS_RR_BY_LEVEL[level]
+        flags["flag_PROMPTS"] = 1
+        hss.update({
+            "prompts_implementation_index": prompts_index,
+            "prompts_rr_anc4p": prompts_rr_anc4p,
+        })
+        param["prompts_implementation_index"] = prompts_index
+        param["prompts_rr_anc4p"] = prompts_rr_anc4p
+        apply_prompts_sensitivity(param, prompts_index)
+
+        adoption = BLOOD_ADOPTION_BY_LEVEL[level]
+        flags["flag_blood"] = 1
+        flags["flag_blood_tracking"] = 1
+        hss["blood_adoption"] = adoption
+
+        referral_index = implementation_for_level("referral", level, county)
+        flags["flag_transfer_delay"] = 1
+        hss["referral_implementation_index"] = referral_index
+        param["referral_implementation_index"] = referral_index
+
+        pulse_index = implementation_for_level("pulse", level, county)
+        pulse_boost = COMBINED_PULSE_BOOST_BY_LEVEL[level]
+        flags["flag_pulse"] = 1
+        hss["pulse_implementation_index"] = pulse_index
+        hss["pulse_implementation_boost"] = pulse_boost
+        param["pulse_implementation_index"] = pulse_index
+        param["pulse_implementation_boost"] = pulse_boost
+
+        fqa_index = implementation_for_level("fqa", level, county)
+        fqa_pulse_modifier = 0.30 if level == "high" else 0.10
+        flags["flag_fqa"] = 1
+        hss["fqa_pulse_modifier_level"] = "High" if level == "high" else "Low"
+        hss["fqa_pulse_modifier"] = fqa_pulse_modifier
+        hss["fqa_implementation_index"] = fqa_index
+        param["fqa_pulse_modifier"] = fqa_pulse_modifier
+        param["fqa_implementation_index"] = fqa_index
+
+        enable_single_interventions(param, flags)
+        apply_pulse_implementation_boost(param, flags)
         return
 
     raise ValueError(f"Unknown scenario: {name}")
@@ -358,18 +446,59 @@ def summarize_by_location(individuals):
     return rows
 
 
+def load_existing_run_results(county):
+    """Load previously saved per-run results for `county`, if any, so a rerun
+    can skip scenarios that were already generated instead of redoing them."""
+    results_dir = Path(f"scenario_comparison_results_{county}")
+    run_results_path = results_dir / "run_level_results.csv"
+    location_run_results_path = results_dir / "location_run_level_results.csv"
+    if not run_results_path.exists():
+        return None, None
+    existing_run_results = pd.read_csv(run_results_path)
+    existing_location_run_results = (
+        pd.read_csv(location_run_results_path)
+        if location_run_results_path.exists()
+        else None
+    )
+    return existing_run_results, existing_location_run_results
+
+
+def _combine_frames(existing, new):
+    frames = [df for df in (existing, new) if df is not None and not df.empty]
+    if not frames:
+        return new if new is not None else pd.DataFrame()
+    return pd.concat(frames, ignore_index=True)
+
+
 def run_scenarios(county):
     parameter_loader.WORKBOOK_PATH = WORKBOOK_PATH
     slider_params = get_slider_params(county=county)
+
+    existing_run_results, existing_location_run_results = load_existing_run_results(county)
+    already_done = (
+        set(existing_run_results["scenario"].unique())
+        if existing_run_results is not None
+        else set()
+    )
+    scenarios_to_run = [s for s in SCENARIOS if s["scenario"] not in already_done]
+    skipped_scenarios = [s["scenario"] for s in SCENARIOS if s["scenario"] in already_done]
+    if skipped_scenarios:
+        print(
+            f"{county.title()}: skipping already-generated scenarios: {', '.join(skipped_scenarios)}",
+            flush=True,
+        )
+    if not scenarios_to_run:
+        print(f"{county.title()}: all scenarios already generated, nothing to run", flush=True)
+
     rows = []
     location_rows = []
 
-    for run in range(N_RUNS):
+    for run in range(N_RUNS) if scenarios_to_run else []:
         parameter_seed = BASE_SEED + run
         month_seeds = np.arange(parameter_seed, parameter_seed + N_MONTHS, dtype=int)
         overall_baseline_summary = None
         overall_baseline_location_summary = None
-        for scenario_def in SCENARIOS:
+        for scenario_def in scenarios_to_run:
             scenario = scenario_def["scenario"]
             is_standard_base = (
                 scenario_def["level"] == "base"
@@ -421,7 +550,10 @@ def run_scenarios(county):
                 })
         if (run + 1) % 10 == 0 or run == 0:
             print(f"{county.title()}: completed {run + 1}/{N_RUNS} matched runs", flush=True)
-    run_results = pd.DataFrame(rows)
+    new_run_results = pd.DataFrame(rows)
+    new_location_run_results = pd.DataFrame(location_rows)
+    run_results = _combine_frames(existing_run_results, new_run_results)
+    location_run_results = _combine_frames(existing_location_run_results, new_location_run_results)
     metric_columns = [
         column for column in run_results.columns
         if column not in {"scenario", "intervention", "level", "run"}
@@ -439,7 +571,6 @@ def run_scenarios(county):
     )
     differences.insert(3, "comparison_baseline", "overall_no_flags")
 
-    location_run_results = pd.DataFrame(location_rows)
     location_keys = [
         "scenario", "intervention", "level", "location", "location_code"
     ]

@@ -24,3 +24,7 @@ fqa_base,FQA,base,PULSE current; FQA off; all single interventions on
 fqa_current,FQA,current,County-specific current FQA index; PULSE current; all single interventions on; 10% amplification
 fqa_moderate,FQA,moderate,50% FQA implementation index; PULSE current; all single interventions on; 10% amplification
 fqa_high,FQA,high,95% FQA implementation index; PULSE current; all single interventions on; 30% amplification
+combined_base,All,base,"No HSS; all MOMISH interventions off, all single interventions off"
+combined_current,All,current,County-specific current implementation index for all interventions; all single interventions on; blood tracking 25% adoption; prompts 1.02 RR effectiveness; 1 hour delay shift; FQA 10% amplification; pulse_implementation_boost=0.25
+combined_moderate,All,moderate,50% implementation index for all interventions; all single interventions on; blood tracking 50% adoption; prompts 1.18 RR effectiveness; 1 hour delay shift; FQA 10% amplification; pulse_implementation_boost=0.5
+combined_high,All,high,95% implementation index for all interventions; all single interventions on; blood tracking 95% adoption; prompts 1.35 RR effectiveness; 1 hour delay shift; FQA 30% amplification; pulse_implementation_boost=0.75
