@@ -79,9 +79,9 @@ PROMPTS_RR_BY_LEVEL = {
 
 
 BLOOD_ADOPTION_BY_LEVEL = {
-    "current": 0.25,
-    "moderate": 0.50,
-    "high": 0.95,
+    "current": 0.15,
+    "moderate": 0.30,
+    "high": 0.50,
 }
 
 
@@ -96,9 +96,9 @@ SCENARIOS = [
     {"scenario": "prompts_high", "intervention": "PROMPTS", "level": "high", "description": "95% implementation index; 1.35 RR effectiveness"},
     {"scenario": "prompts_high_shift", "intervention": "PROMPTS", "level": "high_shift", "description": "PROMPTS high plus conservative delivery shift and matched facility expansion"},
     {"scenario": "blood_base", "intervention": "Blood tracking", "level": "base", "description": "All off"},
-    {"scenario": "blood_current", "intervention": "Blood tracking", "level": "current", "description": "Blood tracking on; 25% adoption"},
-    {"scenario": "blood_moderate", "intervention": "Blood tracking", "level": "moderate", "description": "Blood tracking on; 50% adoption"},
-    {"scenario": "blood_high", "intervention": "Blood tracking", "level": "high", "description": "Blood tracking on; 95% adoption"},
+    {"scenario": "blood_current", "intervention": "Blood tracking", "level": "current", "description": "Blood tracking on; 15% adoption"},
+    {"scenario": "blood_moderate", "intervention": "Blood tracking", "level": "moderate", "description": "Blood tracking on; 30% adoption"},
+    {"scenario": "blood_high", "intervention": "Blood tracking", "level": "high", "description": "Blood tracking on; 50% adoption"},
     {"scenario": "referral_base", "intervention": "Transfer & EMT", "level": "base", "description": "All off"},
     {"scenario": "referral_current", "intervention": "Transfer & EMT", "level": "current", "description": "County-specific referral_implementation_index; 1 hour delay shift"},
     {"scenario": "referral_moderate", "intervention": "Transfer & EMT", "level": "moderate", "description": "50% referral_implementation_index; 1 hour delay shift"},
@@ -112,10 +112,15 @@ SCENARIOS = [
     {"scenario": "fqa_moderate", "intervention": "FQA", "level": "moderate", "description": "50% FQA implementation index; PULSE current; all single interventions on; 10% amplification"},
     {"scenario": "fqa_high", "intervention": "FQA", "level": "high", "description": "95% FQA implementation index; PULSE current; all single interventions on; 30% amplification"},
     {"scenario": "combined_base", "intervention": "All", "level": "base", "description": "No HSS; all MOMISH interventions off, all single interventions off"},
-    {"scenario": "combined_current", "intervention": "All", "level": "current", "description": "County-specific current implementation index for all interventions; all single interventions on; Blood tracking 25% adoption; Transfer & EMT 1 hour delay shift; PROMPTS 1.02 RR effectiveness; FQA 10% amplification; pulse_implementation_boost=0.25"},
-    {"scenario": "combined_moderate", "intervention": "All", "level": "moderate", "description": "50% implementation index for all interventions; all single interventions on; Blood tracking 50% adoption; Transfer & EMT 1 hour delay shift; PROMPTS 1.18 RR effectiveness; FQA 10% amplification; pulse_implementation_boost=0.5"},
-    {"scenario": "combined_high", "intervention": "All", "level": "high", "description": "95% implementation index for all interventions; all single interventions on; Blood tracking 95% adoption; Transfer & EMT 1 hour delay shift; PROMPTS 1.35 RR effectiveness; FQA 30% amplification; pulse_implementation_boost=0.75"},
+    {"scenario": "combined_current", "intervention": "All", "level": "current", "description": "County-specific current implementation index for all interventions; all single interventions on; Blood tracking 15% adoption; Transfer & EMT 1 hour delay shift; PROMPTS 1.02 RR effectiveness; FQA 10% amplification; pulse_implementation_boost=0.25"},
+    {"scenario": "combined_moderate", "intervention": "All", "level": "moderate", "description": "50% implementation index for all interventions; all single interventions on; Blood tracking 30% adoption; Transfer & EMT 1 hour delay shift; PROMPTS 1.18 RR effectiveness; FQA 10% amplification; pulse_implementation_boost=0.5"},
+    {"scenario": "combined_high", "intervention": "All", "level": "high", "description": "95% implementation index for all interventions; all single interventions on; Blood tracking 50% adoption; Transfer & EMT 1 hour delay shift; PROMPTS 1.35 RR effectiveness; FQA 30% amplification; pulse_implementation_boost=0.75"},
 ]
+
+# Uncomment to restrict this run to a single intervention's scenarios (e.g. to
+# verify blood_current/moderate/high after an adoption-value change) instead
+# of regenerating the full scenario set. Leave commented for normal runs.
+# SCENARIOS = [s for s in SCENARIOS if s["scenario"].startswith("blood_")]
 
 # PULSE implementation-index boost, by combined-scenario level (mirrors the
 # SDR_Dash.py PULSE_IMPLEMENTATION_BOOST_OPTIONS Current/Moderate/High values).

@@ -142,7 +142,7 @@ PROMPTS_IMPLEMENTATION_OVERRIDE = {"Moderate": 0.5, "High": 0.95}
 # levels, including "Current" -- only the implementation index (population
 # coverage) varies with the workbook there.
 PROMPTS_RR_OVERRIDE = {"Current": 1.02, "Moderate": 1.18, "High": 1.35}
-BLOOD_TRACKING_FIDELITY_OVERRIDE = {"Current": 0.25, "Moderate": 0.5, "High": 0.95}
+BLOOD_TRACKING_FIDELITY_OVERRIDE = {"Current": 0.15, "Moderate": 0.30, "High": 0.50}
 PULSE_FIDELITY_OVERRIDE = {"Moderate": 0.5, "High": 0.95}
 FQA_FIDELITY_OVERRIDE = {"Moderate": 0.5, "High": 0.95}
 # Coverage for the transfer-delay shift (assign_transfer_delay_categories /
