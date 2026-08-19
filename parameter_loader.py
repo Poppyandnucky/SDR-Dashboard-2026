@@ -37,6 +37,8 @@ from global_func import (
     comps_riskstatus_vs_lowrisk,
     comp2_comp1_anemia,
     P_RDS,
+    GA_assign_kenya,
+    GA_by_ANC,
 )
 
 FACILITY_ORDER = ["home", "L2/3", "L4", "L5"]
@@ -178,6 +180,19 @@ def _sampled_params(wb: ParameterWorkbook, rng: np.random.Generator) -> dict[str
     return params
 
 
+# "*_implementation_index" parameters describe how much a MOMISH intervention
+# has actually been rolled out in a county. A county with no explicit row for
+# one of these has never had that intervention, i.e. the correct read is 0.0 --
+# never inherit whichever county happens to be listed last in the sheet.
+NO_FALLBACK_INTERV_PARAMS = {
+    "mentors_implementation_index",
+    "prompts_implementation_index",
+    "fqa_implementation_index",
+    "pulse_implementation_index",
+    "referral_implementation_index",
+}
+
+
 def _intervention_params(wb: ParameterWorkbook, rng: np.random.Generator, county: str) -> dict[str, Any]:
     """Load intervention-level parameters, preferring the row for this county.
 
@@ -187,7 +202,8 @@ def _intervention_params(wb: ParameterWorkbook, rng: np.random.Generator, county
     last in the sheet, regardless of the county actually requested. Now: use the
     row for `county` when one exists, otherwise fall back to the last row for
     that parameter_name (covers universal "All" rows and counties without their
-    own row).
+    own row) -- except for NO_FALLBACK_INTERV_PARAMS, which default to 0.0
+    instead of inheriting another county's row.
     """
     rows = wb.sheet("interv_params")
     rows = rows.dropna(subset=["parameter_name", "value"])
@@ -201,6 +217,9 @@ def _intervention_params(wb: ParameterWorkbook, rng: np.random.Generator, county
             if not county_match.empty:
                 row = county_match.iloc[0]
         if row is None:
+            if str(name) in NO_FALLBACK_INTERV_PARAMS:
+                params[str(name)] = 0.0
+                continue
             row = group.iloc[-1]
         params[str(name)] = _sample_or_value(row, rng)
     return params

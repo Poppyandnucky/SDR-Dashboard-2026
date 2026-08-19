@@ -64,7 +64,7 @@ def risk_stratification(i_risk, i_ANC, num_mothers, sen_risk, spec_risk, rng):
     return i_risk_pred
 
 def move_function(num_mothers, l4_l5, i_class, i_loc, i_loc_new, i_free_referral, i_self_referral, Referral_Capacity, flags, num_move, loc_index, rng):
-    flag_refer = flags["flag_refer"]
+    flag_refer_voucher = flags["flag_refer_voucher"]
 
     loc_mask = (i_loc == loc_index)
     eligible_indices = np.where(loc_mask)[0]
@@ -79,7 +79,7 @@ def move_function(num_mothers, l4_l5, i_class, i_loc, i_loc_new, i_free_referral
     mask_move[index_move] = True
 
     # Whether has free referrals by rescue network
-    p_free_refer = Referral_Capacity if flag_refer else 0
+    p_free_refer = Referral_Capacity if flag_refer_voucher else 0
     free_refer_draws = (rng.random(num_mothers) < p_free_refer).astype(int)
     move_free_refer_mask = mask_move & (free_refer_draws == 1)
     i_free_referral[move_free_refer_mask] = 1
@@ -280,11 +280,11 @@ def P_Prolonged_vectorized(GA_array, param):
 
     return P_PL
 
-def emergency_transfer_comps(i_transfer_actual, num_mothers, i_loc_last, max_capacity, comp_mask, i_loc_index, p_transfer, rng):
+def emergency_transfer_comps(i_transfer_actual, num_mothers, i_loc_last, max_capacity, comp_mask, i_loc_index, p_transfer_capacity, rng):
     i_loc_new = i_loc_last.copy()
     need_transfer = comp_mask & (i_loc_last == i_loc_index)                     # mothers need transfer in this level
     # **-transfer capacity
-    p_t_to_l45 = p_transfer[i_loc_index, 3] + p_transfer[i_loc_index, 4]        # extract the probability of transfering to l4/5 by rescue network
+    p_t_to_l45 = p_transfer_capacity[i_loc_index, 3] + p_transfer_capacity[i_loc_index, 4]        # extract the probability of transfering to l4/5 by rescue network
     with_transport = rng.random(num_mothers) < p_t_to_l45                       # binary index for transport
     mask_to_l45_w_t = with_transport & need_transfer                            # mothers with transport
     n_to_l45_w_t = np.sum(mask_to_l45_w_t)                                      # count the number
@@ -303,7 +303,7 @@ def emergency_transfer_comps(i_transfer_actual, num_mothers, i_loc_last, max_cap
         mask_can_transfer[selected_indices] = True
 
     if p_t_to_l45 > 0:
-        p_t_to_l45_relative = np.array([p_transfer[i_loc_index, 3], p_transfer[i_loc_index, 4]]) / p_t_to_l45
+        p_t_to_l45_relative = np.array([p_transfer_capacity[i_loc_index, 3], p_transfer_capacity[i_loc_index, 4]]) / p_t_to_l45
     else:
         p_t_to_l45_relative = np.array([0.5, 0.5])
     l4_or_l5 = rng.choice([2, 3], size=num_mothers, p=p_t_to_l45_relative)
@@ -479,7 +479,6 @@ def baseline_p_death(track, M, param, flags, i, n):
     actual_surgical, actual_nurse, actual_anesthetist = labor['actual_surgical'], labor['actual_nurse'], labor[
         'actual_anesthetist']
     n_pop_wt_lb = param['n_population'] * n["LB_L"][1:] / np.sum(n["LB_L"])
-
     def worker_density(actual_staff):
         actual_staff = np.asarray(actual_staff, dtype=float)
         density = np.divide(
@@ -492,7 +491,6 @@ def baseline_p_death(track, M, param, flags, i, n):
 
     density_skilled_surgical = worker_density(actual_surgical)
     density_skilled_nurse = worker_density(actual_nurse)
-
     # Compute the scaled quality-adjusted density index
     scaled_density_index = compute_scaled_density_index(density_skilled_surgical, density_skilled_nurse,
                                                         param['surgical_weight'], param['scaled_factor_density'])
@@ -697,8 +695,9 @@ def reset_flags():
         'flag_MENTOR': 0,
         'flag_capacity': 0,
         'flag_labor': 0,
-        'flag_refer': 0,
-        'flag_transfer': 0,
+        'flag_refer_voucher': 0,
+        'flag_transfer_capacity': 0,
+        'flag_transfer_delay': 0,
         'flag_equipment': 0,
         #Treatment
         'flag_pph_bundle': 0,
@@ -732,7 +731,7 @@ def reset_HSS(slider_params):
     HSS["P_L45"] = slider_params['base_p_45_slider']
     HSS["P_ANC"] = slider_params['p_ANC_base_slider']
     HSS["P_refer"] = 0
-    HSS["P_transfer"] = 0
+    HSS["transfer_capacity_target"] = 0.0
     HSS["labor_ratio"] = 0
     HSS["sensor_ratio"] = 0
     HSS['CHV_memory'] = "Always Forget"  # Default memory model for CHVs
@@ -744,6 +743,8 @@ def reset_HSS(slider_params):
     HSS['pulse_effectiveness'] = 0.0
     HSS['fqa_pulse_modifier_level'] = "Medium"
     HSS['fqa_pulse_modifier'] = 0.2
+    HSS['pulse_implementation_boost_level'] = "Medium"
+    HSS['pulse_implementation_boost'] = 0.5
     return HSS
 
 def reset_S(slider_params):
@@ -816,6 +817,7 @@ def generate_negative_experience_heard(
     # mothers than are actually in a given month's cohort (e.g. smaller
     # counties/months), which would otherwise desync the length of
     # linked_mother_indices (bounded by num_mothers) from CHV_assignments.
+    n_CHV = int(n_CHV)
     total_CHV_linked_mothers = min(round(n_CHV * mothers_per_CHV), num_mothers)
     CHV_IDs = np.full(num_mothers, -1, dtype=int)  # -1 means no CHV
 

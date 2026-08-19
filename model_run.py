@@ -146,9 +146,7 @@ def run_model_dash(param, flags, n_months, int_period, base_seed = None):
             )
             df.loc[i, 'Anesthetist_ratio'] = staffing_ratio(
                 df.loc[i, 'Anesthetist_actual'], df.loc[i, 'Anesthetist_needed']
-            )
-
-            # calculate number of sensors and sensor ratio
+            )           # calculate number of sensors and sensor ratio
             sensors = fetal_sensor_calculator(track, param, i, flags, rng)
             dopplers_ratio = np.array([sensors['dopplers_l23_ratio'], sensors['dopplers_l4_ratio'], sensors['dopplers_l5_ratio']])
             CTGs_ratio = np.array([sensors['CTGs_l23_ratio'], sensors['CTGs_l4_ratio'], sensors['CTGs_l5_ratio']])
@@ -196,7 +194,7 @@ def update_capacity(track, param, i, flags, int_period):
     track['CS_Capacity_Track'][i, 0] = CS_Capacity
 
     #Updating referral capacity
-    if flags['flag_refer']:
+    if flags['flag_refer_voucher']:
         track['Referral_Capacity_Track'][i, 0] = param["HSS"]["P_refer"]
     else:
         track['Referral_Capacity_Track'][i, 0] = track['Referral_Capacity_Track'][i - 1, 0]

@@ -148,32 +148,37 @@ def initialize_intra_params(individual_outcomes, track, flags, param, i, rng):
     P["transfer_rate_severe"] = np.zeros((4, 5))
     P["transfer_rate_notsevere"] = np.zeros((4, 5))
     P["transfer_rate_preterm"] = np.zeros((4, 5))
-    # Emergency-transfer intervention affects travel time, not the probability
-    # or receiving-facility capacity of transfer. Delay effects are applied in
-    # mortality.assign_transfer_delay_categories.
-    p_transfer_severe = param['t_l23_l45_severe']
-    p_transfer_nonsevere = param['t_l23_l45_notsevere']
-    p_transfer_preterm = param['t_l23_l45_preterm']
+
+    p_transfer_capacity_severe = param['t_l23_l45_severe']
+    p_transfer_capacity_nonsevere = param['t_l23_l45_notsevere']
+    p_transfer_capacity_preterm = param['t_l23_l45_preterm']
     t_l4_l4_severe = param['t_l4_l4_severe']
     t_l4_l5_severe = param['t_l4_l5_severe']
+    if flags.get("flag_transfer_capacity", 0):
+        transfer_capacity_target = param["HSS"]["transfer_capacity_target"]
+        p_transfer_capacity_severe = max(transfer_capacity_target, param["t_l23_l45_severe"])
+        p_transfer_capacity_nonsevere = max(transfer_capacity_target, param["t_l23_l45_notsevere"])
+        p_transfer_capacity_preterm = max(transfer_capacity_target, param["t_l23_l45_preterm"])
+        t_l4_l4_severe = 0
+        t_l4_l5_severe = 0
 
     f_transfer_rates_severe = np.array([
         [0.00, 0.00, 0.00, 0.00],
-        [0.00, 0.00, p_transfer_severe / 2, p_transfer_severe / 2],
+        [0.00, 0.00, p_transfer_capacity_severe / 2, p_transfer_capacity_severe / 2],
         [0.00, 0.00, t_l4_l4_severe, t_l4_l5_severe],
         [0.00, 0.00, 0.00, 0.00]
     ]) / 100
 
     f_transfer_rates_notsevere = np.array([
         [0.00, 0.00, 0.00, 0.00],
-        [0.00, 0.00, p_transfer_nonsevere / 2, p_transfer_nonsevere / 2],
+        [0.00, 0.00, p_transfer_capacity_nonsevere / 2, p_transfer_capacity_nonsevere / 2],
         [0.00, 0.00, 0.00, 0.00],
         [0.00, 0.00, 0.00, 0.00]
     ]) / 100
 
     f_transfer_rates_preterm = np.array([
         [0.00, 0.00, 0.00, 0.00],
-        [0.00, 0.00, p_transfer_preterm / 2, p_transfer_preterm / 2],
+        [0.00, 0.00, p_transfer_capacity_preterm / 2, p_transfer_capacity_preterm / 2],
         [0.00, 0.00, 0.00, 0.00],
         [0.00, 0.00, 0.00, 0.00]
     ]) / 100
@@ -247,6 +252,7 @@ def initialize_intra_params(individual_outcomes, track, flags, param, i, rng):
     E["int_sepsis"] = param['E_antibiotics']
     P["MgSO4"] = P_intervention('flag_MgSO4', "MgSO4", 'S_MgSO4', flags, param, S, P)
     P["antibiotics"] = P_intervention('flag_antibiotics', "antibiotics", 'S_antibiotics', flags, param, S, P)
+
     # Initialize counters
     MC = {}  # dict to restore maternal complications
     NC = {}  # dict to restore neonatal complications
@@ -355,8 +361,8 @@ def intrapartum_effect_vectorized(track, flags, param, i, individual_outcomes, r
     i_loc_new_v1 = i_loc.copy()
 
     transfer_mask = emergency_mask & (i_mod == "SVD") & (i_loc == 1) # Define Transfer Mask (SVD Mothers with Predicted Complications)
-    p_transfer = S["CS_capacity"][2] + S["CS_capacity"][3]
-    with_cs_capacity = (rng.random(num_mothers) < p_transfer).astype(int)
+    p_transfer_capacity = S["CS_capacity"][2] + S["CS_capacity"][3]
+    with_cs_capacity = (rng.random(num_mothers) < p_transfer_capacity).astype(int)
     transfer_mask_2 = with_cs_capacity & transfer_mask
     n_transfer = np.sum(transfer_mask_2)
 
@@ -376,8 +382,8 @@ def intrapartum_effect_vectorized(track, flags, param, i, individual_outcomes, r
         mask_can_transfer[selected_indices] = True
 
     # Apply transfer to selected agents
-    p_transfer_relative = np.array([S["CS_capacity"][2], S["CS_capacity"][3]]) / p_transfer
-    l4_or_l5_all = rng.choice(np.array([2, 3]), size=num_mothers, p=p_transfer_relative)
+    p_transfer_capacity_relative = np.array([S["CS_capacity"][2], S["CS_capacity"][3]]) / p_transfer_capacity
+    l4_or_l5_all = rng.choice(np.array([2, 3]), size=num_mothers, p=p_transfer_capacity_relative)
     i_loc_new_v1[mask_can_transfer] = l4_or_l5_all[mask_can_transfer]
     i_mod[mask_can_transfer] = "EmCS"
     i_transfer_pred[mask_can_transfer] = 1

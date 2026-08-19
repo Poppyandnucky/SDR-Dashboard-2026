@@ -22,6 +22,8 @@ from debug_report import build_parameter_debug_report
 
 # Set to False to disable the parameter debug report feature entirely.
 ENABLE_PARAM_DEBUG_REPORT = True
+DASHBOARD_RANDOM_MASTER_SEED = 2025
+DASHBOARD_RANDOM_RUN_OFFSET = 20
 
 st.set_page_config(layout="wide")
 selected_plot = None
@@ -52,36 +54,15 @@ slider_params = get_slider_params()
 i_flags, i_E, i_HSS, i_S = reset_flags(), reset_E(), reset_HSS(slider_params), reset_S(slider_params)
 
 
-def render_calculation_sidebar():
-    st.sidebar.header("Calculated Summary")
+def make_shifted_run_seeds(n_runs, n_months):
+    master_rng = np.random.default_rng(DASHBOARD_RANDOM_MASTER_SEED)
+    run_seeds = master_rng.integers(
+        low=0,
+        high=1e9,
+        size=(n_runs + DASHBOARD_RANDOM_RUN_OFFSET, n_months),
+    )
+    return run_seeds[DASHBOARD_RANDOM_RUN_OFFSET:]
 
-    if not st.session_state.get("model_finished", False):
-        st.sidebar.caption("Run the model to view intervention calculations.")
-        return
-
-    i_ind_outcomes = st.session_state.get("i_ind_outcomes")
-    print_outcomes = i_ind_outcomes.loc[i_ind_outcomes['Run']==1]
-    st.sidebar.write(print_outcomes.head())  # Debug: Display the first few rows of the individual outcomes DataFrame
-    
-    st.sidebar.subheader("Intervention Totals")
-
-    if print_outcomes is None or print_outcomes.empty:
-        st.sidebar.caption("No intervention outcomes available.")
-        return
-
-    total_mothers = print_outcomes.shape[0]
-    st.sidebar.metric("Mothers", f"{total_mothers:,}")
-
-    if "i_mat_death" in print_outcomes.columns:
-        # total_deaths = int(print_outcomes["i_mat_death"].sum())
-        total_deaths = np.sum(print_outcomes['i_mat_death']==1)
-        st.sidebar.metric("Maternal deaths (observed)", f"{total_deaths:,}")
-
-    df_fac = print_outcomes.loc[print_outcomes['i_mat_death'] == 1, 'i_loc_new_v2']
-    df_facility = df_fac.value_counts().reset_index()
-
-    st.sidebar.subheader("By Facility")
-    st.sidebar.dataframe(df_facility, width="stretch", hide_index=True)
 
 def go_back_to_main():
     st.session_state.intervention_selection = None
@@ -93,6 +74,48 @@ def go_back_to_hss():
     st.session_state.hss_mode = None
     st.session_state.scenario_selected = None
     st.session_state.model_finished = False
+
+
+def clear_model_runtime_state(clear_comparison=True, clear_table=False):
+    """Clear cached model outputs without changing currently selected interventions."""
+    runtime_keys = [
+        "b_df",
+        "i_df",
+        "b_df_multiple",
+        "b_ind_outcomes",
+        "i_ind_outcomes",
+        "b_param",
+        "i_param",
+        "n_months",
+        "int_period",
+        "n_runs",
+        "baseline_config",
+        "param_debug_report",
+        "scenario_name",
+    ]
+    comparison_keys = [
+        "dual_first_config",
+        "ab_base_df",
+        "ab_base_ind_outcomes",
+    ]
+
+    for key in runtime_keys:
+        st.session_state.pop(key, None)
+    for key in ("b_df", "i_df", "n_months", "int_period", "i_param", "n_runs"):
+        st.session_state[key] = None
+
+    if clear_comparison:
+        for key in comparison_keys:
+            st.session_state.pop(key, None)
+        st.session_state.dual_first_config = None
+        st.session_state.ab_base_df = None
+        st.session_state.ab_base_ind_outcomes = None
+
+    if clear_table:
+        st.session_state.dl_table = None
+
+    st.session_state.model_finished = False
+    st.session_state.selected_outcomes = []
 
 
 HSS_DEMAND_PRESETS = {
@@ -119,10 +142,19 @@ PROMPTS_IMPLEMENTATION_OVERRIDE = {"Moderate": 0.5, "High": 0.95}
 # levels, including "Current" -- only the implementation index (population
 # coverage) varies with the workbook there.
 PROMPTS_RR_OVERRIDE = {"Current": 1.02, "Moderate": 1.18, "High": 1.35}
-BLOOD_TRACKING_FIDELITY_OVERRIDE = {"Current": 0.25, "Moderate": 0.5, "High": 0.95}
+BLOOD_TRACKING_FIDELITY_OVERRIDE = {"Current": 0.15, "Moderate": 0.30, "High": 0.50}
 PULSE_FIDELITY_OVERRIDE = {"Moderate": 0.5, "High": 0.95}
 FQA_FIDELITY_OVERRIDE = {"Moderate": 0.5, "High": 0.95}
+# Coverage for the transfer-delay shift (assign_transfer_delay_categories /
+# apply_transfer_delay_intervention in mortality.py). "Current" reads
+# referral_implementation_index for the selected county.
+TRANSFER_FIDELITY_OVERRIDE = {"Moderate": 0.50, "High": 0.95}
 FQA_PULSE_MODIFIER_LEVELS = list(FQA_PULSE_MODIFIER_OPTIONS.keys())
+# Maximum implementation-index boost a fully-implemented PULSE system can lend
+# to the other MOMISH interventions (see sync_param_momish_from_hss).
+# Names mirror scenario_comparison.py combined_current/moderate/high.
+PULSE_IMPLEMENTATION_BOOST_OPTIONS = {"Current": 0.25, "Moderate": 0.5, "High": 0.75}
+PULSE_IMPLEMENTATION_BOOST_LEVELS = list(PULSE_IMPLEMENTATION_BOOST_OPTIONS.keys())
 
 
 def fqa_pulse_modifier_default_index():
@@ -130,6 +162,15 @@ def fqa_pulse_modifier_default_index():
     if level not in FQA_PULSE_MODIFIER_LEVELS:
         level = "Medium"
     return FQA_PULSE_MODIFIER_LEVELS.index(level)
+
+
+def pulse_implementation_boost_default_index():
+    legacy_level_names = {"Low": "Current", "Medium": "Moderate"}
+    saved_level = st.session_state.get("pulse_implementation_boost_level", "Moderate")
+    level = legacy_level_names.get(saved_level, saved_level)
+    if level not in PULSE_IMPLEMENTATION_BOOST_LEVELS:
+        level = "Moderate"
+    return PULSE_IMPLEMENTATION_BOOST_LEVELS.index(level)
 
 
 def get_mentor_implementation_index(fidelity_choice):
@@ -155,6 +196,17 @@ def get_prompts_implementation_index(fidelity_choice):
 
 def get_blood_tracking_implementation_index(fidelity_choice):
     return BLOOD_TRACKING_FIDELITY_OVERRIDE.get(fidelity_choice, 0.0)
+
+
+def get_transfer_implementation_index(fidelity_choice):
+    if fidelity_choice in TRANSFER_FIDELITY_OVERRIDE:
+        return TRANSFER_FIDELITY_OVERRIDE[fidelity_choice]
+    try:
+        param_sample = get_parameters(rng=np.random.default_rng(0), county=selected_county)
+        param_sample = calculate_derived_parameters(param_sample)
+        return float(np.clip(param_sample.get("referral_implementation_index", 0.0), 0.0, 1.0))
+    except Exception:
+        return 0.0
 
 
 def get_fqa_implementation_index(fidelity_choice):
@@ -275,22 +327,20 @@ def render_hss_preset():
         i_HSS["labor_ratio"] = labor_pct / 100.0
         i_HSS["sensor_ratio"] = equipment_pct / 100.0
 
-    i_flags["flag_refer"] = 0
-    i_flags["flag_transfer"] = 0
+    i_flags["flag_refer_voucher"] = 0
+    i_flags["flag_transfer_capacity"] = 0
     i_HSS["P_refer"] = 0
-    i_HSS["P_transfer"] = 0
+    i_HSS["transfer_capacity_target"] = 0.0
 
     if enable_network:
         if match_supply:
             refer_pct = 100
-            transfer_pct = 100
         else:
             refer_pct = 50
-            transfer_pct = 80
-        i_flags["flag_refer"] = 1
-        i_flags["flag_transfer"] = 1
+        i_flags["flag_refer_voucher"] = 1
         i_HSS["P_refer"] = refer_pct / 100.0
-        i_HSS["P_transfer"] = transfer_pct / 100.0
+        i_flags["flag_transfer_capacity"] = 1
+        i_HSS["transfer_capacity_target"] = float(refer_pct)
 
     i_flags["flag_SDR"] = 1 if (enable_chv or enable_facility or enable_network) else 0
 
@@ -463,6 +513,18 @@ def render_prompts_preset():
     i_HSS["fqa_pulse_modifier"] = FQA_PULSE_MODIFIER_OPTIONS[selected_fqa_pulse_level]
     st.session_state["fqa_pulse_modifier_level"] = selected_fqa_pulse_level
 
+    selected_pulse_boost_level = st.selectbox(
+        "PULSE implementation boost to other MOMISH interventions",
+        options=PULSE_IMPLEMENTATION_BOOST_LEVELS,
+        index=pulse_implementation_boost_default_index(),
+        key="preset_pulse_implementation_boost_level",
+        help="Maximum increase in implementation index a fully-implemented PULSE system "
+             "lends to PROMPTS, MENTORS, and FQA when PULSE is enabled.",
+    )
+    i_HSS["pulse_implementation_boost_level"] = selected_pulse_boost_level
+    i_HSS["pulse_implementation_boost"] = PULSE_IMPLEMENTATION_BOOST_OPTIONS[selected_pulse_boost_level]
+    st.session_state["pulse_implementation_boost_level"] = selected_pulse_boost_level
+
     bl_col1, bl_col2 = st.columns([1, 2])
     with bl_col1:
         blood_on = st.checkbox("Enable Blood tracking", value=False, key="preset_blood_on")
@@ -474,8 +536,6 @@ def render_prompts_preset():
             key="preset_blood_fidelity",
             disabled=not blood_on,
         )
-
-    emt_on = st.checkbox("Referral systems & EMT training", value=False, key="preset_emt_on")
 
     i_flags["flag_blood"] = 1 if blood_on else 0
     i_flags["flag_blood_tracking"] = i_flags["flag_blood"]
@@ -494,11 +554,33 @@ def render_prompts_preset():
         i_HSS["blood_adoption"] = 0.0
         st.session_state["blood_adoption"] = 0.0
 
-    i_flags["flag_emt"] = 1 if emt_on else 0
-    st.session_state["flag_emt"] = int(emt_on)
-    i_HSS["emt_participation"] = 1.0 if emt_on else 0.0
-    if not emt_on:
-        i_HSS["emt_intensity"] = 0.0
+    te_col1, te_col2 = st.columns([1, 2])
+    with te_col1:
+        transfer_emt_on = st.checkbox("Enable Transfer & EMT", value=False, key="preset_transfer_emt_on")
+    with te_col2:
+        transfer_emt_fidelity = st.radio(
+            "Transfer & EMT fidelity",
+            ["Current Fidelity", "Moderate Fidelity", "High Fidelity"],
+            horizontal=True,
+            key="preset_transfer_emt_fidelity",
+            disabled=not transfer_emt_on,
+        )
+
+    i_flags["flag_transfer_delay"] = 1 if transfer_emt_on else 0
+    st.session_state["flag_transfer_delay"] = int(transfer_emt_on)
+    if transfer_emt_on:
+        if transfer_emt_fidelity.startswith("Current"):
+            fid_key = "Current"
+        elif transfer_emt_fidelity.startswith("Moderate"):
+            fid_key = "Moderate"
+        else:
+            fid_key = "High"
+        transfer_index = get_transfer_implementation_index(fid_key)
+        i_HSS["referral_implementation_index"] = transfer_index
+        st.session_state["referral_implementation_index"] = transfer_index
+    else:
+        i_HSS["referral_implementation_index"] = 0.0
+        st.session_state["referral_implementation_index"] = 0.0
 
 
 # Function to render HSS interventions
@@ -656,7 +738,7 @@ def render_hss(preset_demand_scenario, preset_supply_scenario):
         #         i_HSS["chv_engagement"] = engage_val / 100.0
         #         st.session_state["chv_engagement"] = engage_val
 
-        #     with colP5: 
+        #     with colP5:
         #         prompts_effect_default = int(st.session_state.get("intervention_fidelity", 100))
         #         prompts_effect_val = st.slider(
         #             "Intervention Fidelity",
@@ -673,7 +755,7 @@ def render_hss(preset_demand_scenario, preset_supply_scenario):
         #     i_HSS["adoption_prompts"] = 0.0
         #     i_HSS["chv_engagement"] = 0.0
         #     i_HSS["intervention_fidelity"] = 0.0
-                
+
         col1_7, col1_8 = st.columns(2)
         with col1_7:
             if CHVint:
@@ -698,13 +780,11 @@ def render_hss(preset_demand_scenario, preset_supply_scenario):
             upgrade_equipment = 1
             update_transport = 1
             update_refer = 1
-            update_transfer = 1
             performance_value = 100
             capacity_added_value = Capacity_match[preset_demand_scenario]
             labor_value = 100
             equipment_value = 100
             refer_value = 100
-            transfer_value = 100
         elif preset_supply_scenario == "Cannot Meet Demand":
             upgrade_L45_facilities = 1
             upgrade_performance = 1
@@ -713,13 +793,11 @@ def render_hss(preset_demand_scenario, preset_supply_scenario):
             upgrade_equipment = 1
             update_transport = 1
             update_refer = 1
-            update_transfer = 1
             performance_value = 75
             capacity_added_value = Capacity_dismatch[preset_demand_scenario]
             labor_value = 50
             equipment_value = 50
             refer_value = 50
-            transfer_value = 80
         elif preset_supply_scenario is None:
             upgrade_L45_facilities = 0
             upgrade_performance = 0
@@ -728,13 +806,11 @@ def render_hss(preset_demand_scenario, preset_supply_scenario):
             upgrade_equipment = 0
             update_transport = 0
             update_refer = 0
-            update_transfer = 0
             performance_value = round(slider_params['base_knowledge_L45_slider'] * 100)
             capacity_added_value = 0.0
             labor_value = 0
             equipment_value = 0
             refer_value = 0
-            transfer_value = round(slider_params['t_l23_l45_notsevere_slider'])
 
         col2_1, col2_2 = st.columns(2)
         with col2_1:
@@ -843,39 +919,43 @@ def render_hss(preset_demand_scenario, preset_supply_scenario):
                 referint = 0
         with col2_14:
             if referint:
-                i_flags['flag_refer'] = 1
+                i_flags['flag_refer_voucher'] = 1
                 i_HSS["P_refer"] = st.slider("% referral with free taxies/bodas", min_value=0, max_value=100, step=1, value=refer_value,
                                       format="%d%%", help="Value = 100 means 100% of referral can use free taxies/bodas")
                 i_HSS["P_refer"] /= 100
             else:
-                i_flags['flag_refer'] = 0
+                i_flags['flag_refer_voucher'] = 0
                 i_HSS["P_refer"] = 0
 
         col2_15, col2_16 = st.columns(2)
         with col2_15:
-            if refint:
-                transferint = st.checkbox(
-                    'Improve emergency transfer',
-                    value=update_transfer,
-                    help="Reduce transfer delays through improved emergency transport and coordination",
+            if referint:
+                transfer_capacity_int = st.checkbox(
+                    'Referral with Emergency Transfer',
+                    value=bool(update_refer),
+                    help="Improve emergency transfer capacity from L2/3 to L4/5 facilities",
                 )
             else:
-                transferint = 0
-
+                transfer_capacity_int = 0
         with col2_16:
-            if transferint:
-                i_flags['flag_transfer'] = 1
-                i_HSS["P_transfer"] = st.slider('% emergency transfer', min_value=round(slider_params['t_l23_l45_notsevere_slider']), max_value=100, step=10,
-                                                 value=transfer_value,
-                                                 format="%d%%", help="% complications can be transferred\n\n"
-                                                      "Value = 50 means 50% of complications can be transferred from L2/3 to L4/5 facilities")
-                i_HSS["P_transfer"] /= 100
+            if transfer_capacity_int:
+                i_flags['flag_transfer_capacity'] = 1
+                i_HSS["transfer_capacity_target"] = st.slider(
+                    "% emergency transfers supported",
+                    min_value=0,
+                    max_value=100,
+                    step=1,
+                    value=refer_value,
+                    format="%d%%",
+                    help="Target L2/3-to-L4/5 emergency transfer capacity. Existing baseline values are preserved when higher.",
+                )
             else:
-                i_flags['flag_transfer'] = 0
-                i_HSS["P_transfer"] = 0
+                i_flags['flag_transfer_capacity'] = 0
+                i_HSS["transfer_capacity_target"] = 0.0
 
 
-def sync_param_momish_from_hss(i_param, i_HSS):
+
+def sync_param_momish_from_hss(i_param, i_HSS, flags):
     """Align top-level param keys with dashboard i_HSS (LB_effect + intrapartum may read either)."""
     if i_HSS.get("prompts_implementation_index") is not None:
         i_param["prompts_implementation_index"] = float(i_HSS["prompts_implementation_index"])
@@ -890,6 +970,47 @@ def sync_param_momish_from_hss(i_param, i_HSS):
         i_param["pulse_implementation_index"] = float(i_HSS["pulse_implementation_index"])
     if i_HSS.get("fqa_implementation_index") is not None:
         i_param["fqa_implementation_index"] = float(i_HSS["fqa_implementation_index"])
+    if i_HSS.get("pulse_implementation_boost") is not None:
+        i_param["pulse_implementation_boost_level"] = i_HSS.get("pulse_implementation_boost_level", "Moderate")
+        i_param["pulse_implementation_boost"] = float(i_HSS["pulse_implementation_boost"])
+    if i_HSS.get("referral_implementation_index") is not None:
+        i_param["referral_implementation_index"] = float(i_HSS["referral_implementation_index"])
+
+    # Snapshot FQA's own implementation index *before* PULSE's cross-boost below.
+    # pulse_effect() (LB_effect.py) reads this snapshot for its own strength
+    # formula -- if it read the boosted value instead, PULSE would indirectly
+    # amplify itself through FQA's fqa_pulse_modifier term, which was
+    # calibrated against FQA's un-boosted level, not a PULSE-inflated one.
+    i_param["fqa_pulse_amplifier_index"] = float(i_param.get("fqa_implementation_index", 0.0))
+
+    # PULSE implementation boost: when PULSE is enabled, it lends some of its
+    # own implementation index to PROMPTS, MENTORS, FQA, and REFERRAL (not
+    # Blood, and not itself). Computed once here rather than inside each
+    # intervention's own per-month block, so none of them need to know PULSE
+    # exists.
+    if flags.get("flag_pulse", 0):
+        pulse_implementation_index = float(i_param.get("pulse_implementation_index", 0.0))
+        pulse_implementation_boost = float(i_param.get("pulse_implementation_boost", 0.0))
+        fqa_pulse_modifier = float(i_param.get("fqa_pulse_modifier", 0.0))
+        flag_fqa = float(flags.get("flag_fqa", 0))
+
+        pulse_implementation_boost_effective = float(np.clip(
+            pulse_implementation_index * pulse_implementation_boost * (1 + flag_fqa * fqa_pulse_modifier),
+            0.0,
+            1.0,
+        ))
+
+        for key in (
+            "prompts_implementation_index",
+            "mentors_implementation_index",
+            "fqa_implementation_index",
+            "referral_implementation_index",
+        ):
+            i_param[key] = float(np.clip(
+                i_param.get(key, 0.0) + pulse_implementation_boost_effective,
+                0.0,
+                1.0,
+            ))
 
 
 def apply_momish_facility_delivery(i_flags, i_HSS, slider_params, choice_key, intervention_selection):
@@ -923,8 +1044,8 @@ def apply_momish_facility_delivery(i_flags, i_HSS, slider_params, choice_key, in
         i_flags["flag_capacity"] = 0
         i_flags["flag_labor"] = 0
         i_flags["flag_equipment"] = 0
-        i_flags["flag_refer"] = 0
-        i_flags["flag_transfer"] = 0
+        i_flags["flag_refer_voucher"] = 0
+        i_flags["flag_transfer_capacity"] = 0
         i_HSS["P_ANC"] = slider_params["p_ANC_base_slider"]
         i_HSS["P_L45"] = slider_params["base_p_45_slider"]
         i_HSS["knowledge"] = slider_params["base_knowledge_L45_slider"]
@@ -932,7 +1053,7 @@ def apply_momish_facility_delivery(i_flags, i_HSS, slider_params, choice_key, in
         i_HSS["labor_ratio"] = 0
         i_HSS["sensor_ratio"] = 0
         i_HSS["P_refer"] = 0
-        i_HSS["P_transfer"] = 0
+        i_HSS["transfer_capacity_target"] = 0.0
         i_HSS["tau_decay"] = 6
         i_HSS["CHV_memory"] = "Always Forget"
         i_HSS["referadded"] = 0
@@ -952,8 +1073,8 @@ def apply_momish_facility_delivery(i_flags, i_HSS, slider_params, choice_key, in
     i_flags["flag_capacity"] = 1
     i_flags["flag_labor"] = 1
     i_flags["flag_equipment"] = 1
-    i_flags["flag_refer"] = 1
-    i_flags["flag_transfer"] = 1
+    i_flags["flag_refer_voucher"] = 1
+    i_flags["flag_transfer_capacity"] = 1
 
     i_HSS["P_ANC"] = d["P_ANC"] / 100.0
     p_l45_exp = get_P_l45(i_HSS["P_ANC"], slider_params)
@@ -968,7 +1089,7 @@ def apply_momish_facility_delivery(i_flags, i_HSS, slider_params, choice_key, in
     i_HSS["labor_ratio"] = 1.0
     i_HSS["sensor_ratio"] = 1.0
     i_HSS["P_refer"] = 1.0
-    i_HSS["P_transfer"] = 1.0
+    i_HSS["transfer_capacity_target"] = 100.0
 
     st.session_state["P_ANC"] = i_HSS["P_ANC"]
     st.session_state["P_L45"] = i_HSS["P_L45"]
@@ -1171,6 +1292,18 @@ def render_prompts():
     i_HSS["fqa_pulse_modifier"] = FQA_PULSE_MODIFIER_OPTIONS[selected_fqa_pulse_level]
     st.session_state["fqa_pulse_modifier_level"] = selected_fqa_pulse_level
 
+    selected_pulse_boost_level = st.selectbox(
+        "PULSE implementation boost to other MOMISH interventions",
+        options=PULSE_IMPLEMENTATION_BOOST_LEVELS,
+        index=pulse_implementation_boost_default_index(),
+        key="pulse_implementation_boost_level_select",
+        help="Maximum increase in implementation index a fully-implemented PULSE system "
+             "lends to PROMPTS, MENTORS, and FQA when PULSE is enabled.",
+    )
+    i_HSS["pulse_implementation_boost_level"] = selected_pulse_boost_level
+    i_HSS["pulse_implementation_boost"] = PULSE_IMPLEMENTATION_BOOST_OPTIONS[selected_pulse_boost_level]
+    st.session_state["pulse_implementation_boost_level"] = selected_pulse_boost_level
+
 
     # ==========================================================
     # BLOCK 4 — BLOOD INTERVENTION
@@ -1213,23 +1346,44 @@ def render_prompts():
         st.session_state["blood_adoption"] = 0.0
 
     # ==========================================================
-    # BLOCK 5 — Referral Systems & EMT Training INTERVENTION
+    # BLOCK 5 — TRANSFER & EMT
     # ==========================================================
-    col15, col16 = st.columns(2)
-    with col15:
-        emt_int = st.toggle(
-            "Referral Systems & EMT Training Intervention",
-            value=bool(st.session_state.get("flag_emt", 0)),
-            key="emt_enable"
+    col17, col18 = st.columns(2)
+    with col17:
+        transfer_emt_on = st.toggle(
+            "Transfer & EMT Intervention",
+            value=bool(st.session_state.get("flag_transfer_delay", 0)),
+            key="transfer_emt_enable"
         )
 
-    with col16:
-        i_flags["flag_emt"] = 1 if emt_int else 0
-        st.session_state["flag_emt"] = int(emt_int)
+    with col18:
+        i_flags["flag_transfer_delay"] = 1 if transfer_emt_on else 0
+        st.session_state["flag_transfer_delay"] = int(transfer_emt_on)
 
-    i_HSS["emt_participation"] = 1.0 if emt_int else 0.0
-    if not emt_int:
-        i_HSS["emt_intensity"] = 0.0
+    if transfer_emt_on:
+        transfer_fidelity_options = ["Current", "Moderate", "High"]
+        transfer_fidelity_choice_default = st.session_state.get(
+            "transfer_implementation_level", "Current"
+        )
+        if transfer_fidelity_choice_default not in transfer_fidelity_options:
+            transfer_fidelity_choice_default = "Current"
+
+        transfer_fidelity_choice = st.selectbox(
+            "Transfer & EMT implementation level",
+            options=transfer_fidelity_options,
+            index=transfer_fidelity_options.index(transfer_fidelity_choice_default),
+            key="transfer_implementation_level_select",
+            help="Choose the Transfer & EMT implementation level. Shifts some transferred "
+                 "mothers one delay category shorter (e.g. 2+h to 1-2h).",
+        )
+        st.session_state["transfer_implementation_level"] = transfer_fidelity_choice
+
+        transfer_index = get_transfer_implementation_index(transfer_fidelity_choice)
+        i_HSS["referral_implementation_index"] = transfer_index
+        st.session_state["referral_implementation_index"] = transfer_index
+    else:
+        i_HSS["referral_implementation_index"] = 0.0
+        st.session_state["referral_implementation_index"] = 0.0
 
     apply_momish_facility_delivery(
         i_flags, i_HSS, slider_params, _facility_choice_key, _intervention
@@ -1386,598 +1540,597 @@ if 'dl_table' not in st.session_state:
 
 
 
-with st.expander("⚙️ **Scenario Settings** (Click to expand/collapse)", expanded=True):
-    # Leading Question
-    if st.session_state.intervention_selection is None:
-        st.title("Intervention Selection")
-        st.subheader("1. Which types of interventions would you like to explore?")
+with st.sidebar:
+    with st.expander("⚙️ **Scenario Settings** (Click to expand/collapse)", expanded=True):
+        # Leading Question
+        if st.session_state.intervention_selection is None:
+            st.title("Intervention Selection")
+            st.subheader("1. Which types of interventions would you like to explore?")
 
-        if st.button("All (Analyst Mode)"):
-            st.session_state.intervention_selection = "Both"
-        if st.button("All (Preset Mode)"):
-            st.session_state.intervention_selection = "BothPreset"
-        if st.button(":one: Health Systems Strengthening Interventions (Demand and Supply)"):
-            st.session_state.intervention_selection = "HSS"
-        if st.button(":two: Single Interventions (Treatment and Diagnosis)"):
-            st.session_state.intervention_selection = "Single"
-        if st.button(":three: MOMISH Interventions"):
-            st.session_state.intervention_selection = "PROMPTS"
+            if st.button("All (Analyst Mode)"):
+                st.session_state.intervention_selection = "Both"
+            if st.button("All (Preset Mode)"):
+                st.session_state.intervention_selection = "BothPreset"
+            if st.button(":one: Health Systems Strengthening Interventions (Demand and Supply)"):
+                st.session_state.intervention_selection = "HSS"
+            if st.button(":two: Single Interventions (Treatment and Diagnosis)"):
+                st.session_state.intervention_selection = "Single"
+            if st.button(":three: MOMISH Interventions"):
+                st.session_state.intervention_selection = "PROMPTS"
 
 
-    if st.session_state.intervention_selection == "HSS":
-        st.button("🔙 Back to Intervention Options", on_click=go_back_to_main)
+        if st.session_state.intervention_selection == "HSS":
+            st.button("🔙 Back to Intervention Options", on_click=go_back_to_main)
 
-        # Choose between scenarios or manual customization
-        # if st.session_state.hss_mode is None:
-        st.subheader("2. Choose how you want to explore HSS interventions:")
+            # Choose between scenarios or manual customization
+            # if st.session_state.hss_mode is None:
+            st.subheader("2. Choose how you want to explore HSS interventions:")
 
-        if st.button("📊 Select Pre-set Scenarios"):
-            st.session_state.hss_mode = "Scenarios"
+            if st.button("📊 Select Pre-set Scenarios"):
+                st.session_state.hss_mode = "Scenarios"
 
-        if st.button("🎛️ Customize Manually"):
-            st.session_state.hss_mode = "Manual"
+            if st.button("🎛️ Customize Manually"):
+                st.session_state.hss_mode = "Manual"
 
-        # Scenario Selection Mode
-        if st.session_state.hss_mode == "Scenarios":
-            st.button("🔙 Back to HSS Options", on_click=go_back_to_hss)
-            st.subheader("3. Select a scenario:")
-            col1, col2 = st.columns(2)
-            with col1:
-                demand_scenario = st.selectbox("**3.1 Choose a pre-set demand scenario**", ["Conservative", "Moderate", "Aggressive"])
-                supply_scenario = st.selectbox("**3.2 Choose a pre-set supply scenario**", ["Match Demand", "Cannot Meet Demand"])
-            with col2:
-                pass
-            render_hss(preset_demand_scenario=demand_scenario, preset_supply_scenario= supply_scenario)
+            # Scenario Selection Mode
+            if st.session_state.hss_mode == "Scenarios":
+                st.button("🔙 Back to HSS Options", on_click=go_back_to_hss)
+                st.subheader("3. Select a scenario:")
+                col1, col2 = st.columns(2)
+                with col1:
+                    demand_scenario = st.selectbox("**3.1 Choose a pre-set demand scenario**", ["Conservative", "Moderate", "Aggressive"])
+                    supply_scenario = st.selectbox("**3.2 Choose a pre-set supply scenario**", ["Match Demand", "Cannot Meet Demand"])
+                with col2:
+                    pass
+                render_hss(preset_demand_scenario=demand_scenario, preset_supply_scenario= supply_scenario)
+                st.session_state.scenario_selected = True
+
+            # --- Manual Customization Mode ---
+            if st.session_state.hss_mode == "Manual":
+                st.button("🔙 Back to HSS Options", on_click=go_back_to_hss)
+                render_hss(preset_demand_scenario=None, preset_supply_scenario=None)
+                st.session_state.scenario_selected = True
+
+        elif st.session_state.intervention_selection == "Single":
+            st.button("🔙 Back to Intervention Options", on_click=go_back_to_main)
+            render_single()
             st.session_state.scenario_selected = True
 
-        # --- Manual Customization Mode ---
-        if st.session_state.hss_mode == "Manual":
-            st.button("🔙 Back to HSS Options", on_click=go_back_to_hss)
-            render_hss(preset_demand_scenario=None, preset_supply_scenario=None)
-            st.session_state.scenario_selected = True
-
-    elif st.session_state.intervention_selection == "Single":
-        st.button("🔙 Back to Intervention Options", on_click=go_back_to_main)
-        render_single()
-        st.session_state.scenario_selected = True
-
-    elif st.session_state.intervention_selection == "BothPreset":
-        st.button("🔙 Back to Intervention Options", on_click=go_back_to_main)
-        st.caption(
-            "Preset mode: choose enabled interventions and strategy levels only. "
-            "Parameters use predefined values (no sliders)."
-        )
-        render_hss_preset()
-        st.markdown("---")
-        render_single_preset()
-        st.markdown("---")
-        render_prompts_preset()
-        st.session_state.scenario_selected = True
-
-    elif st.session_state.intervention_selection == "Both":
-        st.button("🔙 Back to Intervention Options", on_click=go_back_to_main)
-        st.subheader("2. Choose how you want to explore HSS interventions (with Single + MOMISH below):")
-
-        if st.button("📊 Select Pre-set Scenarios", key="both_btn_scenarios"):
-            st.session_state.hss_mode = "Scenarios"
-
-        if st.button("🎛️ Customize Manually", key="both_btn_manual"):
-            st.session_state.hss_mode = "Manual"
-
-        if st.session_state.hss_mode == "Scenarios":
-            st.button("🔙 Back to HSS Options", on_click=go_back_to_hss, key="both_back_hss_scenarios")
-            st.subheader("3. Select a scenario:")
-            col_b1, col_b2 = st.columns(2)
-            with col_b1:
-                demand_scenario_both = st.selectbox(
-                    "**3.1 Choose a pre-set demand scenario**",
-                    ["Conservative", "Moderate", "Aggressive"],
-                    key="both_demand_preset",
-                )
-                supply_scenario_both = st.selectbox(
-                    "**3.2 Choose a pre-set supply scenario**",
-                    ["Match Demand", "Cannot Meet Demand"],
-                    key="both_supply_preset",
-                )
-            with col_b2:
-                pass
-            render_hss(
-                preset_demand_scenario=demand_scenario_both,
-                preset_supply_scenario=supply_scenario_both,
+        elif st.session_state.intervention_selection == "BothPreset":
+            st.button("🔙 Back to Intervention Options", on_click=go_back_to_main)
+            st.caption(
+                "Preset mode: choose enabled interventions and strategy levels only. "
+                "Parameters use predefined values (no sliders)."
             )
+            render_hss_preset()
             st.markdown("---")
-            render_single()
+            render_single_preset()
             st.markdown("---")
-            st.subheader("MOMISH interventions")
+            render_prompts_preset()
+            st.session_state.scenario_selected = True
+
+        elif st.session_state.intervention_selection == "Both":
+            st.button("🔙 Back to Intervention Options", on_click=go_back_to_main)
+            st.subheader("2. Choose how you want to explore HSS interventions (with Single + MOMISH below):")
+
+            if st.button("📊 Select Pre-set Scenarios", key="both_btn_scenarios"):
+                st.session_state.hss_mode = "Scenarios"
+
+            if st.button("🎛️ Customize Manually", key="both_btn_manual"):
+                st.session_state.hss_mode = "Manual"
+
+            if st.session_state.hss_mode == "Scenarios":
+                st.button("🔙 Back to HSS Options", on_click=go_back_to_hss, key="both_back_hss_scenarios")
+                st.subheader("3. Select a scenario:")
+                col_b1, col_b2 = st.columns(2)
+                with col_b1:
+                    demand_scenario_both = st.selectbox(
+                        "**3.1 Choose a pre-set demand scenario**",
+                        ["Conservative", "Moderate", "Aggressive"],
+                        key="both_demand_preset",
+                    )
+                    supply_scenario_both = st.selectbox(
+                        "**3.2 Choose a pre-set supply scenario**",
+                        ["Match Demand", "Cannot Meet Demand"],
+                        key="both_supply_preset",
+                    )
+                with col_b2:
+                    pass
+                render_hss(
+                    preset_demand_scenario=demand_scenario_both,
+                    preset_supply_scenario=supply_scenario_both,
+                )
+                st.markdown("---")
+                render_single()
+                st.markdown("---")
+                st.subheader("MOMISH interventions")
+                render_prompts()
+                st.session_state.scenario_selected = True
+
+            elif st.session_state.hss_mode == "Manual":
+                st.button("🔙 Back to HSS Options", on_click=go_back_to_hss, key="both_back_hss_manual")
+                render_hss(preset_demand_scenario=None, preset_supply_scenario=None)
+                st.markdown("---")
+                render_single()
+                st.markdown("---")
+                st.subheader("MOMISH interventions")
+                render_prompts()
+                st.session_state.scenario_selected = True
+
+        elif st.session_state.intervention_selection == "PROMPTS":
+            st.button("🔙 Back to Intervention Options", on_click=go_back_to_main)
             render_prompts()
             st.session_state.scenario_selected = True
 
-        elif st.session_state.hss_mode == "Manual":
-            st.button("🔙 Back to HSS Options", on_click=go_back_to_hss, key="both_back_hss_manual")
-            render_hss(preset_demand_scenario=None, preset_supply_scenario=None)
+    with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expanded=True)):
+        if st.session_state.scenario_selected == True:
+            ##leading question on length of implementation phase, maintantance phase, multiple scenarios?
+            st.subheader("How would you like to run the model?")
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                MODEL["imple_time"] = st.slider("The length of implementation phase (years)?",
+                                                min_value=3, max_value=6, step=1, value=3,
+                                                help='Implementation phase will stop at the years you choose \n\n and continue the maintainance phase')
+
+                MODEL["int_period"] = MODEL["imple_time"] * 12
+
+            with col2:
+                MODEL["main_time"] = st.slider("The length of maintenance phase (years)?",
+                                               min_value=0, max_value=3, step=1, value=0,
+                                               help='The model will simulate until maintenance phase finish')
+
+                MODEL["n_months"] = MODEL["main_time"] * 12 + MODEL["int_period"]
+
+            with col3:
+                MODEL["multiple_run"] = st.checkbox("Run multiple scenarios?",
+                                                    help="If checked, the model will run multiple scenarios with different random seeds")
+
+            with col4:
+                if MODEL["multiple_run"]:
+                    MODEL["n_runs"] = st.number_input("Number of runs", min_value=1, max_value=300, step=1, value=1, placeholder="Type a number")
+
+                    # st.slider("Number of runs", min_value=1, max_value=300, step=1, value=10,
+                    #                             help="Number of simulation runs to average over")
+
             st.markdown("---")
-            render_single()
-            st.markdown("---")
-            st.subheader("MOMISH interventions")
-            render_prompts()
-            st.session_state.scenario_selected = True
+            previous_compare_two_interventions = st.session_state.compare_two_interventions
+            compare_two_interventions_selected = st.checkbox(
+                "Compare two interventions directly (A vs B)",
+                value=previous_compare_two_interventions,
+                help="First click Run to capture Intervention A. Then adjust settings and click Run again for Intervention B."
+            )
+            if compare_two_interventions_selected != previous_compare_two_interventions:
+                clear_model_runtime_state(clear_comparison=True)
+            st.session_state.compare_two_interventions = compare_two_interventions_selected
+            if st.session_state.compare_two_interventions:
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    st.session_state.reference_label = st.text_input(
+                        "Intervention A label",
+                        value=st.session_state.reference_label if st.session_state.reference_label != "Baseline" else "Intervention A"
+                    )
+                with col_b:
+                    st.session_state.target_label = st.text_input(
+                        "Intervention B label",
+                        value=st.session_state.target_label if st.session_state.target_label != "Intervention" else "Intervention B"
+                    )
 
-    elif st.session_state.intervention_selection == "PROMPTS":
-        st.button("🔙 Back to Intervention Options", on_click=go_back_to_main)
-        render_prompts()
-        st.session_state.scenario_selected = True
+                if st.session_state.dual_first_config is None:
+                    st.info("A/B mode: first click Run to capture Intervention A.")
+                else:
+                    st.success("Intervention A captured. Adjust settings and click Run for Intervention B.")
 
-with (st.expander("⚙️ **Model Settings** (Click to expand/collapse)", expanded=True)):
-    if st.session_state.scenario_selected == True:
-        ##leading question on length of implementation phase, maintantance phase, multiple scenarios?
-        st.subheader("How would you like to run the model?")
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            MODEL["imple_time"] = st.slider("The length of implementation phase (years)?",
-                                            min_value=3, max_value=6, step=1, value=3,
-                                            help='Implementation phase will stop at the years you choose \n\n and continue the maintainance phase')
-
-            MODEL["int_period"] = MODEL["imple_time"] * 12
-
-        with col2:
-            MODEL["main_time"] = st.slider("The length of maintenance phase (years)?",
-                                           min_value=0, max_value=3, step=1, value=0,
-                                           help='The model will simulate until maintenance phase finish')
-
-            MODEL["n_months"] = MODEL["main_time"] * 12 + MODEL["int_period"]
-
-        with col3:
-            MODEL["multiple_run"] = st.checkbox("Run multiple scenarios?",
-                                                help="If checked, the model will run multiple scenarios with different random seeds")
-
-        with col4:
-            if MODEL["multiple_run"]:
-                MODEL["n_runs"] = st.number_input("Number of runs", min_value=1, max_value=300, step=1, value=1, placeholder="Type a number")
-
-                # st.slider("Number of runs", min_value=1, max_value=300, step=1, value=10,
-                #                             help="Number of simulation runs to average over")
-
-        st.markdown("---")
-        st.session_state.compare_two_interventions = st.checkbox(
-            "Compare two interventions directly (A vs B)",
-            value=st.session_state.compare_two_interventions,
-            help="First click Run to capture Intervention A. Then adjust settings and click Run again for Intervention B."
-        )
-        if st.session_state.compare_two_interventions:
-            col_a, col_b = st.columns(2)
-            with col_a:
-                st.session_state.reference_label = st.text_input(
-                    "Intervention A label",
-                    value=st.session_state.reference_label if st.session_state.reference_label != "Baseline" else "Intervention A"
-                )
-            with col_b:
-                st.session_state.target_label = st.text_input(
-                    "Intervention B label",
-                    value=st.session_state.target_label if st.session_state.target_label != "Intervention" else "Intervention B"
-                )
-
-            if st.session_state.dual_first_config is None:
-                st.info("A/B mode: first click Run to capture Intervention A.")
-            else:
-                st.success("Intervention A captured. Adjust settings and click Run for Intervention B.")
-
-    render_calculation_sidebar()
-
-    if "b_df" not in st.session_state or "i_df" not in st.session_state or "n_months" not in st.session_state or "i_param" not in st.session_state or "n_runs" not in st.session_state or "int_period" not in st.session_state:
-        st.session_state.b_df = None
-        st.session_state.i_df = None
-        st.session_state.n_months = None
-        st.session_state.int_period = None
-        st.session_state.i_param = None
-        st.session_state.n_runs = None
-        st.session_state.model_finished = False
-
-    with st.form('Test'):
-        col1, col2 = st.columns(2)
-
-        with col1:
-            submitted = st.form_submit_button("🚀 Run Model",
-                                              help="Click this button to run the model with the selected settings")
-
-        with col2:
-            clear = st.form_submit_button("🧹 Clear All Settings",
-                                          help="Click this button and rerun the model to show the baseline scenario")
-
-        if clear:
-            i_flags, i_HSS, i_S, i_E = reset_flags(), reset_HSS(slider_params), reset_S(slider_params), reset_E()
-            st.session_state.model_finished = False
+        if "b_df" not in st.session_state or "i_df" not in st.session_state or "n_months" not in st.session_state or "i_param" not in st.session_state or "n_runs" not in st.session_state or "int_period" not in st.session_state:
             st.session_state.b_df = None
-            st.session_state.b_df_multiple = None
-            st.session_state.dual_first_config = None
-            st.session_state.ab_base_df = None
-            st.session_state.ab_base_ind_outcomes = None
-            st.session_state.selected_outcomes = []
-            st.success("All settings have been reset! Please rerun the model with the new settings.")
-
-        if submitted:
+            st.session_state.i_df = None
+            st.session_state.n_months = None
+            st.session_state.int_period = None
+            st.session_state.i_param = None
+            st.session_state.n_runs = None
             st.session_state.model_finished = False
-            st.session_state.selected_outcomes = []
 
-            current_config = {
-                            "multiple_run": MODEL["multiple_run"], 
-                            "n_runs": MODEL["n_runs"], 
-                            "n_months": MODEL["n_months"],
-                            "compare_two_interventions": st.session_state.compare_two_interventions
-                        }
-            
-            if st.session_state.get("baseline_config") != current_config:
-                            st.session_state.b_df = None
-                            st.session_state.b_df_multiple = None
-                            st.session_state.b_ind_outcomes = None
-                            st.session_state.baseline_config = current_config
+        with st.form('Test'):
+            col1, col2 = st.columns(2)
 
-            # Display progress status
-            status = st.empty()  # Placeholder for dynamic status messages
-            progress_bar = st.progress(0)  # Initialize progress bar
+            with col1:
+                submitted = st.form_submit_button("🚀 Run Model",
+                                                  help="Click this button to run the model with the selected settings")
 
-            status.text("⏳ Running Model...")
+            with col2:
+                clear = st.form_submit_button(
+                    "🧹 Reset Model / Clear Cache",
+                    help="Clear cached results and captured A/B comparison state without changing the selected intervention settings.",
+                )
 
-            # Time tracking variables
-            start_time = time.time()  # Record start time
-            avg_time_per_run = None  # Will store estimated time per run
+            if clear:
+                clear_model_runtime_state(clear_comparison=True, clear_table=True)
+                st.success("Model cache and captured A/B comparison state have been reset. Current intervention settings were kept.")
 
-            # Parameter debug report snapshots (i_param at two points). In
-            # multiple-run mode only the first run's snapshots are kept.
-            debug_loader_param = None
-            debug_final_param = None
-
-            ### MODEL PARAMETERS ###
-            n_months = MODEL["n_months"]
-            int_period = MODEL["int_period"]
-            compare_two_interventions = st.session_state.compare_two_interventions
-
-            if compare_two_interventions and st.session_state.dual_first_config is None:
-                st.session_state.dual_first_config = {
-                    "flags": copy.deepcopy(i_flags),
-                    "E": copy.deepcopy(i_E),
-                    "S": copy.deepcopy(i_S),
-                    "HSS": copy.deepcopy(i_HSS),
-                }
-                st.session_state.ab_base_df = None
-                st.session_state.ab_base_ind_outcomes = None
+            if submitted:
+                if not st.session_state.compare_two_interventions:
+                    st.session_state.dual_first_config = None
                 st.session_state.model_finished = False
-                st.info("Intervention A has been captured. Please adjust settings and click Run again to execute Intervention B.")
-                st.stop()
+                st.session_state.selected_outcomes = []
 
-            if not MODEL["multiple_run"]:  # SINGLE RUN MODE
-                num_seeds = n_months 
-                base_seed = np.random.default_rng().integers(low=0, high=1e6, size=1)[0]
-                master_rng = np.random.default_rng(base_seed)
-                base_seeds = master_rng.integers(low=0, high=1e6, size=num_seeds)
+                current_config = {
+                                "multiple_run": MODEL["multiple_run"],
+                                "n_runs": MODEL["n_runs"],
+                                "n_months": MODEL["n_months"],
+                                "compare_two_interventions": st.session_state.compare_two_interventions
+                            }
 
-                b_param = get_parameters(rng=np.random.default_rng(base_seed), county=selected_county)
-                b_param = calculate_derived_parameters(b_param)
+                if st.session_state.get("baseline_config") != current_config:
+                                st.session_state.b_df = None
+                                st.session_state.b_df_multiple = None
+                                st.session_state.b_ind_outcomes = None
+                                st.session_state.baseline_config = current_config
 
-                i_param = get_parameters(rng=np.random.default_rng(base_seed), county=selected_county)
-                i_param = calculate_derived_parameters(i_param)
-                if ENABLE_PARAM_DEBUG_REPORT:
-                    debug_loader_param = copy.deepcopy(i_param)
-                # base_seed = np.random.default_rng().integers(low=0, high=1e6, size=1)[0]
-                # rng_param = np.random.default_rng(base_seed)
+                # Display progress status
+                status = st.empty()  # Placeholder for dynamic status messages
+                progress_bar = st.progress(0)  # Initialize progress bar
 
-                # b_param = get_parameters(rng = rng_param)
-                # b_param = calculate_derived_parameters(b_param)
-                b_flags = reset_flags()
-                b_HSS = reset_HSS(slider_params)
-                b_S = reset_S(slider_params)
-                b_E = reset_E()
-                if compare_two_interventions and st.session_state.dual_first_config is not None:
-                    b_flags = copy.deepcopy(st.session_state.dual_first_config["flags"])
-                    b_E = copy.deepcopy(st.session_state.dual_first_config["E"])
-                    b_S = copy.deepcopy(st.session_state.dual_first_config["S"])
-                    b_HSS = copy.deepcopy(st.session_state.dual_first_config["HSS"])
+                status.text("⏳ Running Model...")
 
-                b_param.update({"E": b_E, "S": b_S, "HSS": b_HSS})
-                if compare_two_interventions:
-                    sync_param_momish_from_hss(b_param, b_HSS)
-                i_param.update({"E": i_E, "S": i_S, "HSS": i_HSS})
-                sync_param_momish_from_hss(i_param, i_HSS)
-                if ENABLE_PARAM_DEBUG_REPORT:
-                    debug_final_param = copy.deepcopy(i_param)
+                # Time tracking variables
+                start_time = time.time()  # Record start time
+                avg_time_per_run = None  # Will store estimated time per run
 
-                # rng_clone = np.random.default_rng(base_seed)
-                # i_param = get_parameters(rng = rng_clone)
-                # i_param = calculate_derived_parameters(i_param)
-                # i_param.update({"E": i_E, "S": i_S, "HSS": i_HSS})
+                # Parameter debug report snapshots (i_param at two points). In
+                # multiple-run mode only the first run's snapshots are kept.
+                debug_loader_param = None
+                debug_final_param = None
 
-                # Run baseline model only if not already stored
-                # Always run baseline with the same base_seeds as intervention below.
-                # If we skipped this when b_df was cached, intervention would use newly drawn seeds
-                # while baseline stayed on old seeds (misaligned comparisons — e.g. MOMISH-only runs).
-                status.text("⏳ Running Baseline Model...")
-                b_df, b_ind_outcomes, _ = run_model_dash(b_param, b_flags, n_months, int_period, base_seed=base_seeds)
-                b_ind_outcomes["Run"] = 1
-                b_ind_outcomes["Scenario"] = st.session_state.reference_label if compare_two_interventions else "Baseline"
-                st.session_state.b_df = b_df
-                st.session_state.b_ind_outcomes = b_ind_outcomes
-                status.text("✅ Baseline Model Completed!")
+                ### MODEL PARAMETERS ###
+                n_months = MODEL["n_months"]
+                int_period = MODEL["int_period"]
+                compare_two_interventions = st.session_state.compare_two_interventions
 
-                # Run intervention model
-                status.text("⏳ Running Comparison Model...")
-                # rng_model = np.random.default_rng(base_seed)
-                i_df, i_ind_outcomes, _ = run_model_dash(i_param, i_flags, n_months, int_period, base_seed = base_seeds)
-                #i_df, i_ind_outcomes, _ = run_model_dash(i_param, i_flags, n_months, int_period, rng = rng_model)
-                i_ind_outcomes["Run"] = 1
-                i_ind_outcomes["Scenario"] = st.session_state.target_label if compare_two_interventions else "Intervention"
+                if compare_two_interventions and st.session_state.dual_first_config is None:
+                    st.session_state.dual_first_config = {
+                        "flags": copy.deepcopy(i_flags),
+                        "E": copy.deepcopy(i_E),
+                        "S": copy.deepcopy(i_S),
+                        "HSS": copy.deepcopy(i_HSS),
+                    }
+                    st.session_state.ab_base_df = None
+                    st.session_state.ab_base_ind_outcomes = None
+                    st.session_state.model_finished = False
+                    st.info("Intervention A has been captured. Please adjust settings and click Run again to execute Intervention B.")
+                    st.stop()
 
-                # In A/B mode, also run plain baseline once for column comparison
-                if compare_two_interventions:
-                    status.text("⏳ Running Plain Baseline for A/B column comparison...")
-                    base_param = get_parameters(rng=np.random.default_rng(base_seed), county=selected_county)
-                    base_param = calculate_derived_parameters(base_param)
-                    base_flags = reset_flags()
-                    base_HSS = reset_HSS(slider_params)
-                    base_S = reset_S(slider_params)
-                    base_E = reset_E()
-                    base_param.update({"E": base_E, "S": base_S, "HSS": base_HSS})
-                    ab_base_df, ab_base_ind_outcomes, _ = run_model_dash(base_param, base_flags, n_months, int_period, base_seed=base_seeds)
-                    ab_base_ind_outcomes["Run"] = 1
-                    ab_base_ind_outcomes["Scenario"] = "Baseline"
-                    st.session_state.ab_base_df = ab_base_df
-                    st.session_state.ab_base_ind_outcomes = ab_base_ind_outcomes
+                if not MODEL["multiple_run"]:  # SINGLE RUN MODE
+                    num_seeds = n_months
+                    base_seeds = make_shifted_run_seeds(1, num_seeds)[0]
+                    base_seed = int(base_seeds[0])
 
-                # Retrieve cached baseline results
-                b_df = st.session_state.b_df
-                b_ind_outcomes = st.session_state.b_ind_outcomes
-                st.session_state.b_param = b_param
-                st.session_state.i_param = i_param
-
-                # Update progress bar to 100%
-                progress_bar.progress(100)
-
-            else:  # MULTIPLE RUNS MODE
-                i_df, b_df, i_ind_outcomes, b_ind_outcomes = pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
-                total_runs = MODEL["n_runs"]
-                master_rng = np.random.default_rng(2025)
-                run_seeds_matrix = master_rng.integers(low=0, high=1e9, size=(total_runs, n_months))
-
-                # --- BASELINE RUNS ---
-                # seeds = np.random.default_rng(2025).integers(low=0, high=1e6, size=total_runs * n_months)
-
-                # Always rerun the baseline on every "Run Model" click (single-run mode
-                # already does this unconditionally above) so that changing settings that
-                # aren't tracked in current_config -- e.g. the selected county -- can never
-                # leave a stale cached baseline in place.
-                status.text("⏳ Running Reference Model for Multiple Runs...")
-
-                temp_b_df = []  # Store results in list before concatenating (better performance)
-                temp_b_ind_outcomes = []
-
-                #for i in range(total_runs):
-                for run_index in range(total_runs):
-                    iter_start_time = time.time()
-
-                    # Reset flags and initialize parameters for each run
-                    monthly_seeds_for_this_run = run_seeds_matrix[run_index]
-                    # Use the VERY FIRST seed of this run's sequence to generate parameters
-                    param_rng = np.random.default_rng(monthly_seeds_for_this_run[0])
-                    b_param = get_parameters(rng=param_rng, county=selected_county)
+                    b_param = get_parameters(rng=np.random.default_rng(base_seed), county=selected_county)
                     b_param = calculate_derived_parameters(b_param)
 
-                    b_flags, b_HSS, b_S, b_E = reset_flags(), reset_HSS(slider_params), reset_S(slider_params), reset_E()
+                    i_param = get_parameters(rng=np.random.default_rng(base_seed), county=selected_county)
+                    i_param = calculate_derived_parameters(i_param)
+                    if ENABLE_PARAM_DEBUG_REPORT:
+                        debug_loader_param = copy.deepcopy(i_param)
+                    # base_seed = np.random.default_rng().integers(low=0, high=1e6, size=1)[0]
+                    # rng_param = np.random.default_rng(base_seed)
+
+                    # b_param = get_parameters(rng = rng_param)
+                    # b_param = calculate_derived_parameters(b_param)
+                    b_flags = reset_flags()
+                    b_HSS = reset_HSS(slider_params)
+                    b_S = reset_S(slider_params)
+                    b_E = reset_E()
                     if compare_two_interventions and st.session_state.dual_first_config is not None:
                         b_flags = copy.deepcopy(st.session_state.dual_first_config["flags"])
                         b_E = copy.deepcopy(st.session_state.dual_first_config["E"])
                         b_S = copy.deepcopy(st.session_state.dual_first_config["S"])
                         b_HSS = copy.deepcopy(st.session_state.dual_first_config["HSS"])
+
                     b_param.update({"E": b_E, "S": b_S, "HSS": b_HSS})
                     if compare_two_interventions:
-                        sync_param_momish_from_hss(b_param, b_HSS)
-
-                    # Pass the ARRAY of monthly seeds to run_model_dash
-                    b_df_i, b_ind_outcomes_i, _ = run_model_dash(b_param, b_flags, n_months, int_period, base_seed=monthly_seeds_for_this_run)
-
-                    b_df_i["Run"] = run_index + 1
-                    b_ind_outcomes_i["Run"] = run_index + 1
-                    b_ind_outcomes_i["Scenario"] = st.session_state.reference_label if compare_two_interventions else "Baseline"
-                    temp_b_df.append(b_df_i)
-                    temp_b_ind_outcomes.append(b_ind_outcomes_i)
-
-                    # rng_param = np.random.default_rng(base_seed)
-                    # b_param = get_parameters(rng = rng_param)
-                    # b_param = calculate_derived_parameters(b_param)
-                    # #st.text(b_param)
-                    # b_flags, b_HSS, b_S, b_E = reset_flags(), reset_HSS(slider_params), reset_S(slider_params), reset_E()
-                    # b_param.update({"E": b_E, "S": b_S, "HSS": b_HSS})
-
-                    # # Run baseline model only once per iteration
-                    # rng_model = np.random.default_rng(base_seed)
-                    # b_df_i, b_ind_outcomes_i, _ = run_model_dash(b_param, b_flags, n_months, int_period, base_seed = base_seeds)
-                    # #b_df_i, b_ind_outcomes_i, _ = run_model_dash(b_param, b_flags, n_months, int_period,
-                    #                                          rng=None)
-                    # Time tracking & progress update
-                    iter_time_taken = time.time() - iter_start_time
-                    avg_time_per_run = iter_time_taken if avg_time_per_run is None else (
-                                                                                                    avg_time_per_run * run_index + iter_time_taken) / (
-                                                                                                    run_index + 1)
-                    remaining_time = avg_time_per_run * (total_runs - (run_index + 1))
-                    progress_bar.progress((run_index + 1) / total_runs)
-                    status.text(f"⏳ Running Reference Model... {run_index + 1}/{total_runs} runs completed. "
-                                f"Estimated time left: {remaining_time / 60:.1f} min.")
-                    # st.text(f"CPU usage: {psutil.cpu_percent()}%")
-                    # usage_per_core = psutil.cpu_percent(percpu=True)
-                    # for i, usage in enumerate(usage_per_core):
-                    #     st.text(f"Core {i}: {usage}%")
-                    #
-                    # def print_resource_usage(interval=1, repeat=10):
-                    #     process = psutil.Process(os.getpid())
-                    #
-                    #     for i in range(repeat):
-                    #         cpu = psutil.cpu_percent(interval=interval)
-                    #         mem_info = process.memory_info()
-                    #         mem_mb = mem_info.rss / (1024 ** 2)  # Convert bytes to MB
-                    #
-                    #         st.text(f"[{i + 1}] CPU Usage: {cpu:.1f}% | Memory Usage: {mem_mb:.2f} MB")
-                    #
-                    # print_resource_usage()
-
-                # Store final baseline results in session state
-                st.session_state.b_df_multiple = pd.concat(temp_b_df, ignore_index=True)
-                st.session_state.b_ind_outcomes = pd.concat(temp_b_ind_outcomes, ignore_index=True)
-
-                status.text("✅ Reference Model Completed!")
-
-                # Retrieve baseline results just computed above
-                b_df = st.session_state.b_df_multiple
-                b_ind_outcomes = st.session_state.b_ind_outcomes
-
-                # Run Intervention Model for Each Run
-                temp_i_df = []
-                temp_i_ind_outcomes = []
-
-                #for i in range(total_runs):
-                for run_index in range(total_runs):
-                    iter_start_time = time.time()
-
-                    monthly_seeds_for_this_run = run_seeds_matrix[run_index]
-
-                    # Use the exact same seed to generate identical starting parameters
-                    param_rng = np.random.default_rng(monthly_seeds_for_this_run[0])
-                    i_param = get_parameters(rng=param_rng, county=selected_county)
-                    i_param = calculate_derived_parameters(i_param)
-                    if ENABLE_PARAM_DEBUG_REPORT and run_index == 0:
-                        debug_loader_param = copy.deepcopy(i_param)
+                        sync_param_momish_from_hss(b_param, b_HSS, b_flags)
                     i_param.update({"E": i_E, "S": i_S, "HSS": i_HSS})
-                    sync_param_momish_from_hss(i_param, i_HSS)
-                    if ENABLE_PARAM_DEBUG_REPORT and run_index == 0:
+                    sync_param_momish_from_hss(i_param, i_HSS, i_flags)
+                    if ENABLE_PARAM_DEBUG_REPORT:
                         debug_final_param = copy.deepcopy(i_param)
 
-                    # Pass the exact same ARRAY of monthly seeds
-                    i_df_i, i_ind_outcomes_i, _ = run_model_dash(i_param, i_flags, n_months, int_period, base_seed=monthly_seeds_for_this_run)
-                    
-                    i_df_i["Run"] = run_index + 1
-                    i_ind_outcomes_i["Run"] = run_index + 1
-                    i_ind_outcomes_i["Scenario"] = st.session_state.target_label if compare_two_interventions else "Intervention"
-                    temp_i_df.append(i_df_i)
-                    temp_i_ind_outcomes.append(i_ind_outcomes_i)
-                    # Reset flags and initialize parameters for each run
-                    # rng_param = np.random.default_rng(base_seed)
-                    # i_param = get_parameters(rng = rng_param)
+                    # rng_clone = np.random.default_rng(base_seed)
+                    # i_param = get_parameters(rng = rng_clone)
                     # i_param = calculate_derived_parameters(i_param)
-                    # #st.text(i_param)
                     # i_param.update({"E": i_E, "S": i_S, "HSS": i_HSS})
 
-                    # # Run intervention model
+                    # Run baseline model only if not already stored
+                    # Always run baseline with the same base_seeds as intervention below.
+                    # If we skipped this when b_df was cached, intervention would use newly drawn seeds
+                    # while baseline stayed on old seeds (misaligned comparisons — e.g. MOMISH-only runs).
+                    status.text("⏳ Running Baseline Model...")
+                    b_df, b_ind_outcomes, _ = run_model_dash(b_param, b_flags, n_months, int_period, base_seed=base_seeds)
+                    b_ind_outcomes["Run"] = 1
+                    b_ind_outcomes["Scenario"] = st.session_state.reference_label if compare_two_interventions else "Baseline"
+                    st.session_state.b_df = b_df
+                    st.session_state.b_ind_outcomes = b_ind_outcomes
+                    status.text("✅ Baseline Model Completed!")
+
+                    # Run intervention model
+                    status.text("⏳ Running Comparison Model...")
                     # rng_model = np.random.default_rng(base_seed)
-                    # i_df_i, i_ind_outcomes_i, _ = run_model_dash(i_param, i_flags, n_months, int_period, base_seed = base_seed)
-                    # i_df_i["Run"] = run_index + 1
-                    # i_ind_outcomes_i["Run"] = run_index + 1
-                    # i_ind_outcomes_i["Scenario"] = "Intervention"
-                    # temp_i_df.append(i_df_i)
-                    # temp_i_ind_outcomes.append(i_ind_outcomes_i)
+                    i_df, i_ind_outcomes, _ = run_model_dash(i_param, i_flags, n_months, int_period, base_seed = base_seeds)
+                    #i_df, i_ind_outcomes, _ = run_model_dash(i_param, i_flags, n_months, int_period, rng = rng_model)
+                    i_ind_outcomes["Run"] = 1
+                    i_ind_outcomes["Scenario"] = st.session_state.target_label if compare_two_interventions else "Intervention"
 
-                    # Time tracking & progress update
-                    iter_time_taken = time.time() - iter_start_time
-                    avg_time_per_run = iter_time_taken if avg_time_per_run is None else (
-                                                                                                    avg_time_per_run * run_index + iter_time_taken) / (
-                                                                                                    run_index + 1)
-                    remaining_time = avg_time_per_run * (total_runs - (run_index + 1))
-                    progress_bar.progress((run_index + 1) / total_runs)
-                    status.text(f"⏳ Running Comparison Model... {run_index + 1}/{total_runs} runs completed. "
-                                f"Estimated time left: {remaining_time / 60:.1f} min.")
-                    # st.text(f"CPU usage: {psutil.cpu_percent()}%")
-                    # usage_per_core = psutil.cpu_percent(percpu=True)
-                    # for i, usage in enumerate(usage_per_core):
-                    #     st.text(f"Core {i}: {usage}%")
-
-                # Store intervention results
-                i_df = pd.concat(temp_i_df, ignore_index=True)
-                i_ind_outcomes = pd.concat(temp_i_ind_outcomes, ignore_index=True)
-
-                # In A/B mode, also run plain baseline for multiple runs
-                if compare_two_interventions:
-                    status.text("⏳ Running Plain Baseline for A/B column comparison...")
-                    temp_ab_base_df = []
-                    temp_ab_base_ind_outcomes = []
-                    for run_index in range(total_runs):
-                        monthly_seeds_for_this_run = run_seeds_matrix[run_index]
-                        param_rng = np.random.default_rng(monthly_seeds_for_this_run[0])
-                        base_param = get_parameters(rng=param_rng, county=selected_county)
+                    # In A/B mode, also run plain baseline once for column comparison
+                    if compare_two_interventions:
+                        status.text("⏳ Running Plain Baseline for A/B column comparison...")
+                        base_param = get_parameters(rng=np.random.default_rng(base_seed), county=selected_county)
                         base_param = calculate_derived_parameters(base_param)
                         base_flags = reset_flags()
                         base_HSS = reset_HSS(slider_params)
                         base_S = reset_S(slider_params)
                         base_E = reset_E()
                         base_param.update({"E": base_E, "S": base_S, "HSS": base_HSS})
-                        ab_base_df_i, ab_base_ind_outcomes_i, _ = run_model_dash(base_param, base_flags, n_months, int_period, base_seed=monthly_seeds_for_this_run)
-                        ab_base_df_i["Run"] = run_index + 1
-                        ab_base_ind_outcomes_i["Run"] = run_index + 1
-                        ab_base_ind_outcomes_i["Scenario"] = "Baseline"
-                        temp_ab_base_df.append(ab_base_df_i)
-                        temp_ab_base_ind_outcomes.append(ab_base_ind_outcomes_i)
+                        ab_base_df, ab_base_ind_outcomes, _ = run_model_dash(base_param, base_flags, n_months, int_period, base_seed=base_seeds)
+                        ab_base_ind_outcomes["Run"] = 1
+                        ab_base_ind_outcomes["Scenario"] = "Baseline"
+                        st.session_state.ab_base_df = ab_base_df
+                        st.session_state.ab_base_ind_outcomes = ab_base_ind_outcomes
 
-                    st.session_state.ab_base_df = pd.concat(temp_ab_base_df, ignore_index=True)
-                    st.session_state.ab_base_ind_outcomes = pd.concat(temp_ab_base_ind_outcomes, ignore_index=True)
+                    # Retrieve cached baseline results
+                    b_df = st.session_state.b_df
+                    b_ind_outcomes = st.session_state.b_ind_outcomes
+                    st.session_state.b_param = b_param
+                    st.session_state.i_param = i_param
 
-                status.text("✅ Model Run Completed!")
+                    # Update progress bar to 100%
+                    progress_bar.progress(100)
 
-            # Total execution time
-            total_time = time.time() - start_time
-            total_minutes = total_time / 60
+                else:  # MULTIPLE RUNS MODE
+                    i_df, b_df, i_ind_outcomes, b_ind_outcomes = pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+                    total_runs = MODEL["n_runs"]
+                    run_seeds_matrix = make_shifted_run_seeds(total_runs, n_months)
 
-            # Store results in session state
-            st.session_state.b_df = b_df
-            st.session_state.i_df = i_df
-            st.session_state.b_ind_outcomes = b_ind_outcomes
-            st.session_state.i_ind_outcomes = i_ind_outcomes
-            st.session_state.n_months = n_months
-            st.session_state.int_period = int_period
-            st.session_state.b_param = b_param
-            st.session_state.i_param = i_param
-            st.session_state.n_runs = MODEL["n_runs"]
-            st.session_state.model_finished = True
+                    # --- BASELINE RUNS ---
+                    # seeds = np.random.default_rng(2025).integers(low=0, high=1e6, size=total_runs * n_months)
 
-            if ENABLE_PARAM_DEBUG_REPORT and debug_loader_param is not None and debug_final_param is not None:
-                st.session_state.param_debug_report = build_parameter_debug_report(
-                    debug_loader_param,
-                    debug_final_param,
-                    county=selected_county,
-                    scenario=st.session_state.get("target_label", "Intervention"),
-                    flags=i_flags,
-                )
+                    # Always rerun the baseline on every "Run Model" click (single-run mode
+                    # already does this unconditionally above) so that changing settings that
+                    # aren't tracked in current_config -- e.g. the selected county -- can never
+                    # leave a stale cached baseline in place.
+                    status.text("⏳ Running Reference Model for Multiple Runs...")
 
-            # Success message with total runtime
-            st.success(f"🎉 Model execution completed! Total runtime: {total_minutes:.1f} minutes.")
-    if  st.session_state.model_finished == True:
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            download_option = st.checkbox("Download the individual outcomes")
-            if download_option:
-                if "b_ind_outcomes" in st.session_state and not st.session_state.b_ind_outcomes.empty:
-                    csv_baseline = st.session_state.b_ind_outcomes.to_csv(index=False)
-                    baseline_filename = f"{st.session_state.reference_label.replace(' ', '_')}.csv"
-                    st.download_button(label=f"📥 Download {baseline_filename}", data=csv_baseline, file_name=baseline_filename,
+                    temp_b_df = []  # Store results in list before concatenating (better performance)
+                    temp_b_ind_outcomes = []
+
+                    #for i in range(total_runs):
+                    for run_index in range(total_runs):
+                        iter_start_time = time.time()
+
+                        # Reset flags and initialize parameters for each run
+                        monthly_seeds_for_this_run = run_seeds_matrix[run_index]
+                        # Use the VERY FIRST seed of this run's sequence to generate parameters
+                        param_rng = np.random.default_rng(monthly_seeds_for_this_run[0])
+                        b_param = get_parameters(rng=param_rng, county=selected_county)
+                        b_param = calculate_derived_parameters(b_param)
+
+                        b_flags, b_HSS, b_S, b_E = reset_flags(), reset_HSS(slider_params), reset_S(slider_params), reset_E()
+                        if compare_two_interventions and st.session_state.dual_first_config is not None:
+                            b_flags = copy.deepcopy(st.session_state.dual_first_config["flags"])
+                            b_E = copy.deepcopy(st.session_state.dual_first_config["E"])
+                            b_S = copy.deepcopy(st.session_state.dual_first_config["S"])
+                            b_HSS = copy.deepcopy(st.session_state.dual_first_config["HSS"])
+                        b_param.update({"E": b_E, "S": b_S, "HSS": b_HSS})
+                        if compare_two_interventions:
+                            sync_param_momish_from_hss(b_param, b_HSS, b_flags)
+
+                        # Pass the ARRAY of monthly seeds to run_model_dash
+                        b_df_i, b_ind_outcomes_i, _ = run_model_dash(b_param, b_flags, n_months, int_period, base_seed=monthly_seeds_for_this_run)
+
+                        b_df_i["Run"] = run_index + 1
+                        b_ind_outcomes_i["Run"] = run_index + 1
+                        b_ind_outcomes_i["Scenario"] = st.session_state.reference_label if compare_two_interventions else "Baseline"
+                        temp_b_df.append(b_df_i)
+                        temp_b_ind_outcomes.append(b_ind_outcomes_i)
+
+                        # rng_param = np.random.default_rng(base_seed)
+                        # b_param = get_parameters(rng = rng_param)
+                        # b_param = calculate_derived_parameters(b_param)
+                        # #st.text(b_param)
+                        # b_flags, b_HSS, b_S, b_E = reset_flags(), reset_HSS(slider_params), reset_S(slider_params), reset_E()
+                        # b_param.update({"E": b_E, "S": b_S, "HSS": b_HSS})
+
+                        # # Run baseline model only once per iteration
+                        # rng_model = np.random.default_rng(base_seed)
+                        # b_df_i, b_ind_outcomes_i, _ = run_model_dash(b_param, b_flags, n_months, int_period, base_seed = base_seeds)
+                        # #b_df_i, b_ind_outcomes_i, _ = run_model_dash(b_param, b_flags, n_months, int_period,
+                        #                                          rng=None)
+                        # Time tracking & progress update
+                        iter_time_taken = time.time() - iter_start_time
+                        avg_time_per_run = iter_time_taken if avg_time_per_run is None else (
+                                                                                                        avg_time_per_run * run_index + iter_time_taken) / (
+                                                                                                        run_index + 1)
+                        remaining_time = avg_time_per_run * (total_runs - (run_index + 1))
+                        progress_bar.progress((run_index + 1) / total_runs)
+                        status.text(f"⏳ Running Reference Model... {run_index + 1}/{total_runs} runs completed. "
+                                    f"Estimated time left: {remaining_time / 60:.1f} min.")
+                        # st.text(f"CPU usage: {psutil.cpu_percent()}%")
+                        # usage_per_core = psutil.cpu_percent(percpu=True)
+                        # for i, usage in enumerate(usage_per_core):
+                        #     st.text(f"Core {i}: {usage}%")
+                        #
+                        # def print_resource_usage(interval=1, repeat=10):
+                        #     process = psutil.Process(os.getpid())
+                        #
+                        #     for i in range(repeat):
+                        #         cpu = psutil.cpu_percent(interval=interval)
+                        #         mem_info = process.memory_info()
+                        #         mem_mb = mem_info.rss / (1024 ** 2)  # Convert bytes to MB
+                        #
+                        #         st.text(f"[{i + 1}] CPU Usage: {cpu:.1f}% | Memory Usage: {mem_mb:.2f} MB")
+                        #
+                        # print_resource_usage()
+
+                    # Store final baseline results in session state
+                    st.session_state.b_df_multiple = pd.concat(temp_b_df, ignore_index=True)
+                    st.session_state.b_ind_outcomes = pd.concat(temp_b_ind_outcomes, ignore_index=True)
+
+                    status.text("✅ Reference Model Completed!")
+
+                    # Retrieve baseline results just computed above
+                    b_df = st.session_state.b_df_multiple
+                    b_ind_outcomes = st.session_state.b_ind_outcomes
+
+                    # Run Intervention Model for Each Run
+                    temp_i_df = []
+                    temp_i_ind_outcomes = []
+
+                    #for i in range(total_runs):
+                    for run_index in range(total_runs):
+                        iter_start_time = time.time()
+
+                        monthly_seeds_for_this_run = run_seeds_matrix[run_index]
+
+                        # Use the exact same seed to generate identical starting parameters
+                        param_rng = np.random.default_rng(monthly_seeds_for_this_run[0])
+                        i_param = get_parameters(rng=param_rng, county=selected_county)
+                        i_param = calculate_derived_parameters(i_param)
+                        if ENABLE_PARAM_DEBUG_REPORT and run_index == 0:
+                            debug_loader_param = copy.deepcopy(i_param)
+                        i_param.update({"E": i_E, "S": i_S, "HSS": i_HSS})
+                        sync_param_momish_from_hss(i_param, i_HSS, i_flags)
+                        if ENABLE_PARAM_DEBUG_REPORT and run_index == 0:
+                            debug_final_param = copy.deepcopy(i_param)
+
+                        # Pass the exact same ARRAY of monthly seeds
+                        i_df_i, i_ind_outcomes_i, _ = run_model_dash(i_param, i_flags, n_months, int_period, base_seed=monthly_seeds_for_this_run)
+
+                        i_df_i["Run"] = run_index + 1
+                        i_ind_outcomes_i["Run"] = run_index + 1
+                        i_ind_outcomes_i["Scenario"] = st.session_state.target_label if compare_two_interventions else "Intervention"
+                        temp_i_df.append(i_df_i)
+                        temp_i_ind_outcomes.append(i_ind_outcomes_i)
+                        # Reset flags and initialize parameters for each run
+                        # rng_param = np.random.default_rng(base_seed)
+                        # i_param = get_parameters(rng = rng_param)
+                        # i_param = calculate_derived_parameters(i_param)
+                        # #st.text(i_param)
+                        # i_param.update({"E": i_E, "S": i_S, "HSS": i_HSS})
+
+                        # # Run intervention model
+                        # rng_model = np.random.default_rng(base_seed)
+                        # i_df_i, i_ind_outcomes_i, _ = run_model_dash(i_param, i_flags, n_months, int_period, base_seed = base_seed)
+                        # i_df_i["Run"] = run_index + 1
+                        # i_ind_outcomes_i["Run"] = run_index + 1
+                        # i_ind_outcomes_i["Scenario"] = "Intervention"
+                        # temp_i_df.append(i_df_i)
+                        # temp_i_ind_outcomes.append(i_ind_outcomes_i)
+
+                        # Time tracking & progress update
+                        iter_time_taken = time.time() - iter_start_time
+                        avg_time_per_run = iter_time_taken if avg_time_per_run is None else (
+                                                                                                        avg_time_per_run * run_index + iter_time_taken) / (
+                                                                                                        run_index + 1)
+                        remaining_time = avg_time_per_run * (total_runs - (run_index + 1))
+                        progress_bar.progress((run_index + 1) / total_runs)
+                        status.text(f"⏳ Running Comparison Model... {run_index + 1}/{total_runs} runs completed. "
+                                    f"Estimated time left: {remaining_time / 60:.1f} min.")
+                        # st.text(f"CPU usage: {psutil.cpu_percent()}%")
+                        # usage_per_core = psutil.cpu_percent(percpu=True)
+                        # for i, usage in enumerate(usage_per_core):
+                        #     st.text(f"Core {i}: {usage}%")
+
+                    # Store intervention results
+                    i_df = pd.concat(temp_i_df, ignore_index=True)
+                    i_ind_outcomes = pd.concat(temp_i_ind_outcomes, ignore_index=True)
+
+                    # In A/B mode, also run plain baseline for multiple runs
+                    if compare_two_interventions:
+                        status.text("⏳ Running Plain Baseline for A/B column comparison...")
+                        temp_ab_base_df = []
+                        temp_ab_base_ind_outcomes = []
+                        for run_index in range(total_runs):
+                            monthly_seeds_for_this_run = run_seeds_matrix[run_index]
+                            param_rng = np.random.default_rng(monthly_seeds_for_this_run[0])
+                            base_param = get_parameters(rng=param_rng, county=selected_county)
+                            base_param = calculate_derived_parameters(base_param)
+                            base_flags = reset_flags()
+                            base_HSS = reset_HSS(slider_params)
+                            base_S = reset_S(slider_params)
+                            base_E = reset_E()
+                            base_param.update({"E": base_E, "S": base_S, "HSS": base_HSS})
+                            ab_base_df_i, ab_base_ind_outcomes_i, _ = run_model_dash(base_param, base_flags, n_months, int_period, base_seed=monthly_seeds_for_this_run)
+                            ab_base_df_i["Run"] = run_index + 1
+                            ab_base_ind_outcomes_i["Run"] = run_index + 1
+                            ab_base_ind_outcomes_i["Scenario"] = "Baseline"
+                            temp_ab_base_df.append(ab_base_df_i)
+                            temp_ab_base_ind_outcomes.append(ab_base_ind_outcomes_i)
+
+                        st.session_state.ab_base_df = pd.concat(temp_ab_base_df, ignore_index=True)
+                        st.session_state.ab_base_ind_outcomes = pd.concat(temp_ab_base_ind_outcomes, ignore_index=True)
+
+                    status.text("✅ Model Run Completed!")
+
+                # Total execution time
+                total_time = time.time() - start_time
+                total_minutes = total_time / 60
+
+                # Store results in session state
+                st.session_state.b_df = b_df
+                st.session_state.i_df = i_df
+                st.session_state.b_ind_outcomes = b_ind_outcomes
+                st.session_state.i_ind_outcomes = i_ind_outcomes
+                st.session_state.n_months = n_months
+                st.session_state.int_period = int_period
+                st.session_state.b_param = b_param
+                st.session_state.i_param = i_param
+                st.session_state.n_runs = MODEL["n_runs"]
+                st.session_state.model_finished = True
+
+                if ENABLE_PARAM_DEBUG_REPORT and debug_loader_param is not None and debug_final_param is not None:
+                    st.session_state.param_debug_report = build_parameter_debug_report(
+                        debug_loader_param,
+                        debug_final_param,
+                        county=selected_county,
+                        scenario=st.session_state.get("target_label", "Intervention"),
+                        flags=i_flags,
+                    )
+
+                # Success message with total runtime
+                st.success(f"🎉 Model execution completed! Total runtime: {total_minutes:.1f} minutes.")
+
+if  st.session_state.model_finished == True:
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        download_option = st.checkbox("Download the individual outcomes")
+        if download_option:
+            if "b_ind_outcomes" in st.session_state and not st.session_state.b_ind_outcomes.empty:
+                csv_baseline = st.session_state.b_ind_outcomes.to_csv(index=False)
+                baseline_filename = f"{st.session_state.reference_label.replace(' ', '_')}.csv"
+                st.download_button(label=f"📥 Download {baseline_filename}", data=csv_baseline, file_name=baseline_filename,
+                                   mime="text/csv")
+            else:
+                st.warning("⚠️ Reference scenario data is not available. Please run the model first.")
+
+            scenario_name = st.text_input("**Enter Intervention Scenario Name:**", placeholder="e.g., Scenario_1")
+            st.session_state.scenario_name = scenario_name
+            # Ensure a scenario name is entered
+            if scenario_name:
+                if "i_ind_outcomes" in st.session_state and not st.session_state.i_ind_outcomes.empty:
+                    file_name = f"{scenario_name}.csv"
+                    st.session_state.i_ind_outcomes["Scenario"] = scenario_name
+                    csv_intervention = st.session_state.i_ind_outcomes.to_csv(index=False)
+                    st.download_button(label=f"📥 Download {file_name}", data=csv_intervention, file_name=file_name,
                                        mime="text/csv")
                 else:
-                    st.warning("⚠️ Reference scenario data is not available. Please run the model first.")
+                    st.warning("⚠️ Intervention data is not available. Please run the model first.")
+            else:
+                st.warning("⚠️ Please enter a scenario name before downloading the intervention data.")
 
-                scenario_name = st.text_input("**Enter Intervention Scenario Name:**", placeholder="e.g., Scenario_1")
-                st.session_state.scenario_name = scenario_name
-                # Ensure a scenario name is entered
-                if scenario_name:
-                    if "i_ind_outcomes" in st.session_state and not st.session_state.i_ind_outcomes.empty:
-                        file_name = f"{scenario_name}.csv"
-                        st.session_state.i_ind_outcomes["Scenario"] = scenario_name
-                        csv_intervention = st.session_state.i_ind_outcomes.to_csv(index=False)
-                        st.download_button(label=f"📥 Download {file_name}", data=csv_intervention, file_name=file_name,
-                                           mime="text/csv")
-                    else:
-                        st.warning("⚠️ Intervention data is not available. Please run the model first.")
-                else:
-                    st.warning("⚠️ Please enter a scenario name before downloading the intervention data.")
-
-            if ENABLE_PARAM_DEBUG_REPORT and st.session_state.get("param_debug_report"):
-                st.download_button(
-                    label="🛠️ Download Parameter Debug Report",
-                    data=st.session_state.param_debug_report,
-                    file_name="param_debug_report.txt",
-                    mime="text/plain",
-                )
+        if ENABLE_PARAM_DEBUG_REPORT and st.session_state.get("param_debug_report"):
+            st.download_button(
+                label="🛠️ Download Parameter Debug Report",
+                data=st.session_state.param_debug_report,
+                file_name="param_debug_report.txt",
+                mime="text/plain",
+            )
 
 
 if "b_df" in st.session_state and "i_df" in st.session_state and st.session_state.model_finished:
@@ -3886,7 +4039,7 @@ if st.session_state.b_df is not None and st.session_state.i_df is not None:
                     if cause_chart is None:
                         st.info("No attributed maternal deaths in the current run results.")
                     else:
-                        st.altair_chart(cause_chart, width="stretch")
+                        st.altair_chart(cause_chart, use_container_width=True)
 
 
             if selected_plot == "Severe maternal outcomes":
@@ -3948,7 +4101,7 @@ if st.session_state.b_df is not None and st.session_state.i_df is not None:
                         bar_data = create_bar_data(df_MCR, 100)
                         chart = bar_chart_ci(bar_data, "Complications rate annually", "Rate", [0, ymax])
                         st.altair_chart(chart)
-                    ## MEIBIN ALTERED ## 
+                    ## MEIBIN ALTERED ##
                     st.text(f'complications: {i_df["severe_comps"]}')
                     st.text(f'complications: {b_df["severe_comps"]}')
                 with tab2:
@@ -4669,8 +4822,7 @@ if run_clicked:
         n_months = MODEL["n_months"] if MODEL["n_months"] > 0 else 36
         int_period = MODEL["int_period"] if MODEL["int_period"] > 0 else 36
 
-        master_rng = np.random.default_rng(2025)
-        run_seeds_matrix = master_rng.integers(low=0, high=1e9, size=(dl_n_runs, n_months))
+        run_seeds_matrix = make_shifted_run_seeds(dl_n_runs, n_months)
 
         dl_status = st.empty()
         dl_progress = st.progress(0)
@@ -4683,7 +4835,7 @@ if run_clicked:
             sc_param = get_parameters(rng=param_rng, county=selected_county)
             sc_param = calculate_derived_parameters(sc_param)
             sc_param.update({"E": copy.deepcopy(i_E), "S": copy.deepcopy(i_S), "HSS": copy.deepcopy(i_HSS)})
-            sync_param_momish_from_hss(sc_param, i_HSS)
+            sync_param_momish_from_hss(sc_param, i_HSS, i_flags)
 
             _, ind_outcomes, _ = run_model_dash(
                 sc_param, copy.deepcopy(i_flags), n_months, int_period, base_seed=monthly_seeds,
@@ -4722,4 +4874,4 @@ if st.session_state.dl_table is not None:
     )
 
     with st.expander("Preview", expanded=False):
-        st.dataframe(export.head(100), width="stretch", hide_index=True)
+        st.dataframe(export.head(100), use_container_width=True, hide_index=True)
