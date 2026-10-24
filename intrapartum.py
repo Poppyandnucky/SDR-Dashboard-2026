@@ -7,7 +7,8 @@ from LB_effect import pulse_effect
 from global_func import (P_Prolonged, P_Prolonged_vectorized, P_Sepsis_vectorized, P_Sepsis, P_NEC_vectorized, P_NEC,
                          P_IVH_vectorized, P_IVH, comps_riskstatus_vs_lowrisk, \
     sensors_accuracy_vectorized, sensors_accuracy, fetal_sensor_calculator, P_intervention, \
-                         intrapartum_prediction, comp_OL_type, comp_severe, emergency_transfer_comps, preterm_complication, SI_reduction)
+                         intrapartum_prediction, comp_OL_type, comp_severe, emergency_transfer_comps, preterm_complication, SI_reduction, \
+                         facility_capacity_limit)
 
 
 # Fixed order matching the 'pulse_indicator_targets' list in parameters.py / array_constants sheet.
@@ -135,7 +136,7 @@ def initialize_intra_params(individual_outcomes, track, flags, param, i, rng):
         "spec_comp_trad"]])
 
     # Facility capacity
-    S["Fac_capacity"] = track['Facility_Capacity_Track'][i, 0]
+    S["Fac_capacity"] = facility_capacity_limit(track, i, flags)
     CS_Capacity = track['CS_Capacity_Track'][i, 0]
     if flags['flag_capacity']:
         S["CS_capacity"] = np.array([0, 0, CS_Capacity, CS_Capacity])
@@ -162,23 +163,24 @@ def initialize_intra_params(individual_outcomes, track, flags, param, i, rng):
         t_l4_l4_severe = 0
         t_l4_l5_severe = 0
 
+    l5_share = param.get("p_l5_given_l23_transfer", 0.5)  # share of L2/3 transfers received at L5
     f_transfer_rates_severe = np.array([
         [0.00, 0.00, 0.00, 0.00],
-        [0.00, 0.00, p_transfer_capacity_severe / 2, p_transfer_capacity_severe / 2],
+        [0.00, 0.00, p_transfer_capacity_severe * (1 - l5_share), p_transfer_capacity_severe * l5_share],
         [0.00, 0.00, t_l4_l4_severe, t_l4_l5_severe],
         [0.00, 0.00, 0.00, 0.00]
     ]) / 100
 
     f_transfer_rates_notsevere = np.array([
         [0.00, 0.00, 0.00, 0.00],
-        [0.00, 0.00, p_transfer_capacity_nonsevere / 2, p_transfer_capacity_nonsevere / 2],
+        [0.00, 0.00, p_transfer_capacity_nonsevere * (1 - l5_share), p_transfer_capacity_nonsevere * l5_share],
         [0.00, 0.00, 0.00, 0.00],
         [0.00, 0.00, 0.00, 0.00]
     ]) / 100
 
     f_transfer_rates_preterm = np.array([
         [0.00, 0.00, 0.00, 0.00],
-        [0.00, 0.00, p_transfer_capacity_preterm / 2, p_transfer_capacity_preterm / 2],
+        [0.00, 0.00, p_transfer_capacity_preterm * (1 - l5_share), p_transfer_capacity_preterm * l5_share],
         [0.00, 0.00, 0.00, 0.00],
         [0.00, 0.00, 0.00, 0.00]
     ]) / 100
@@ -361,7 +363,7 @@ def intrapartum_effect_vectorized(track, flags, param, i, individual_outcomes, r
     i_loc_new_v1 = i_loc.copy()
 
     transfer_mask = emergency_mask & (i_mod == "SVD") & (i_loc == 1) # Define Transfer Mask (SVD Mothers with Predicted Complications)
-    p_transfer_capacity = S["CS_capacity"][2] + S["CS_capacity"][3]
+    p_transfer_capacity = np.clip(param["t_l23_l45_predicted"] / 100, 0.0, 1.0)  # L2/3 transfer probability for predicted complications
     with_cs_capacity = (rng.random(num_mothers) < p_transfer_capacity).astype(int)
     transfer_mask_2 = with_cs_capacity & transfer_mask
     n_transfer = np.sum(transfer_mask_2)
@@ -382,7 +384,9 @@ def intrapartum_effect_vectorized(track, flags, param, i, individual_outcomes, r
         mask_can_transfer[selected_indices] = True
 
     # Apply transfer to selected agents
-    p_transfer_capacity_relative = np.array([S["CS_capacity"][2], S["CS_capacity"][3]]) / p_transfer_capacity
+    p_transfer_capacity_relative = np.array([S["CS_capacity"][2], S["CS_capacity"][3]]) / (S["CS_capacity"][2] + S["CS_capacity"][3])
+    if "p_l5_given_l23_transfer" in param:
+        p_transfer_capacity_relative = np.array([1 - param["p_l5_given_l23_transfer"], param["p_l5_given_l23_transfer"]])
     l4_or_l5_all = rng.choice(np.array([2, 3]), size=num_mothers, p=p_transfer_capacity_relative)
     i_loc_new_v1[mask_can_transfer] = l4_or_l5_all[mask_can_transfer]
     i_mod[mask_can_transfer] = "EmCS"
@@ -513,6 +517,11 @@ def intrapartum_effect_vectorized(track, flags, param, i, individual_outcomes, r
     preterm_mask = i_preterm & (~i_comp_death_bf)             # Transfer Condition 3 - preterm
     max_capacity = S["Fac_capacity"].astype(int)            # Maximum Facility Capacity
 
+    # Transfer group before transfer (disjoint): 2 severe, 4 preterm without complication, 5 non-severe.
+    i_transfer_group = np.select(
+        [np.asarray(mask, dtype=bool) for mask in (severe_mask, preterm_mask, notsevere_mask)], [2, 4, 5], 0
+    )
+
     i_loc_new_v2, i_transfer_actual = emergency_transfer_comps(i_transfer_actual, num_mothers, i_loc_new_v1, max_capacity, severe_mask, 1, P["transfer_rate_severe"], rng)       # severe transfers from l23 to l45
     i_loc_new_v3, i_transfer_actual = emergency_transfer_comps(i_transfer_actual, num_mothers, i_loc_new_v2, max_capacity, severe_mask, 2, P["transfer_rate_severe"], rng)       # severe transfers from l4 to l45
     i_loc_new_v4, i_transfer_actual = emergency_transfer_comps(i_transfer_actual, num_mothers, i_loc_new_v3, max_capacity, preterm_mask, 1, P["transfer_rate_preterm"], rng)     # preterm transfers from l23 to l45
@@ -567,6 +576,7 @@ def intrapartum_effect_vectorized(track, flags, param, i, individual_outcomes, r
                                           i_NEC, i_neo_sepsis, individual_outcomes,
                                           i_PL_pred, i_OL_pred, i_hypoxia_pred, i_sensors,
                                           i_sepsis_severe_new, i_eclampsia_severe_new, i_ruptured_uterus_severe, i_ol_severe, i_aph_severe, i_loc, i_unnecessary_cs)
+    individual_outcomes["i_transfer_group"] = i_transfer_group.astype(int)
 
     return MC, M, NC, individual_outcomes
 

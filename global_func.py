@@ -10,7 +10,9 @@ def get_P_l45(p_anc, slider_params):
     idx = np.where(slider_params['p_l45_anc_slider'][:, 0] == p_anc)  # Find the row index where P_ANC matches
     return slider_params['p_l45_anc_slider'][idx, 1][0][0] if idx[0].size > 0 else None  # Return P_l45 or None if not found
 
-def odds_prob(oddsratio, p_comp, p_expose):
+def odds_prob(oddsratio, p_comp, p_expose, decimals=2):
+    """Solve P(comp|exposed) and P(comp|not exposed) from an odds ratio and the
+    overall rate. Results are rounded to ``decimals`` places (None: no rounding)."""
     def equations(vars):
         x, y = vars
         eq1 = x / (1 - x) / (y / (1 - y)) - oddsratio
@@ -18,9 +20,9 @@ def odds_prob(oddsratio, p_comp, p_expose):
         return [eq1, eq2]
 
     initial_guess = [0.5, 0.5]  # Initial guess for x and y
-    solution = fsolve(equations, initial_guess)
-    solution[0] = round(np.clip(solution[0], 0, 1), 2)
-    solution[1] = round(np.clip(solution[1], 0, 1), 2)
+    solution = np.clip(fsolve(equations, initial_guess), 0, 1)
+    if decimals is not None:
+        solution = np.round(solution, decimals)
     return solution #solution[0] = P(comp|exposed), solution[1] = P(comp|not exposed)
 
 def GA_assign_kenya(param, n, P):
@@ -38,7 +40,8 @@ def GA_by_ANC(param, OR, P):
     PT_mask = np.array([1] * 10 + [0] * 8, dtype=bool)
     FT_mask = ~PT_mask
     Preterm_rate = np.sum(P["GA"][PT_mask])  # overall preterm rate
-    preterm_anc_noanc = odds_prob(OR["ANC"], Preterm_rate, param['p_ANC_base'])
+    # Unrounded so that small changes in PT_scale move the preterm rate (Stage 1 calibration).
+    preterm_anc_noanc = odds_prob(OR["ANC"], Preterm_rate, param['p_ANC_base'], decimals=None)
     P["GA_anc"] = P["GA"].copy()
     P_scale_anc = preterm_anc_noanc[0] / Preterm_rate
     P["GA_anc"][PT_mask] *= P_scale_anc
@@ -280,6 +283,20 @@ def P_Prolonged_vectorized(GA_array, param):
 
     return P_PL
 
+# Sentinel L4/5 limit when the facility capacity constraint is off.
+NO_CAPACITY_LIMIT = np.float64(np.iinfo(np.int32).max)
+
+def facility_capacity_limit(track, i, flags):
+    """Monthly L4/5 delivery limit used by routing, birth shifting, and transfers.
+
+    Off unless flag_facility_capacity_limit is set: calibration and current
+    scenarios assume L4/5 can absorb all deliveries. Capacity is still tracked
+    in Facility_Capacity_Track for outputs and costs.
+    """
+    if flags.get("flag_facility_capacity_limit", 0):
+        return track['Facility_Capacity_Track'][i, 0]
+    return NO_CAPACITY_LIMIT
+
 def emergency_transfer_comps(i_transfer_actual, num_mothers, i_loc_last, max_capacity, comp_mask, i_loc_index, p_transfer_capacity, rng):
     i_loc_new = i_loc_last.copy()
     need_transfer = comp_mask & (i_loc_last == i_loc_index)                     # mothers need transfer in this level
@@ -501,6 +518,15 @@ def baseline_p_death(track, M, param, flags, i, n):
     p_mat_death_l5 = p_maternal_death(scaled_density_index[2])
     p_mat_death_baseline = np.array([0, p_mat_death_l23, p_mat_death_l4, p_mat_death_l5])
 
+    # Shared facility baseline (Stage 6); staffing scales it relative to baseline staffing.
+    if param.get("p_mat_death_facility_baseline") is not None:
+        base = labor_calculator(track['LB_Track'][i, :], M["CS"], param, {**flags, "flag_labor": 0})
+        base_index = compute_scaled_density_index(worker_density(base["actual_surgical"]), worker_density(base["actual_nurse"]),
+                                                  param['surgical_weight'], param['scaled_factor_density'])
+        base_risk = np.array([p_maternal_death(x) for x in base_index])
+        staffing_effect = np.divide(p_mat_death_baseline[1:], base_risk, out=np.ones(3), where=base_risk > 0)
+        p_mat_death_baseline = np.r_[0.0, param["p_mat_death_facility_baseline"] * staffing_effect]
+
     # Compute the probability of neonatal death at baseline and by facility level
     p_neo_death_l23 = p_neonatal_death(scaled_density_index[0])
     p_neo_death_l4 = p_neonatal_death(scaled_density_index[1])
@@ -697,6 +723,7 @@ def reset_flags():
         'flag_labor': 0,
         'flag_refer_voucher': 0,
         'flag_transfer_capacity': 0,
+        'flag_facility_capacity_limit': 0,
         'flag_transfer_delay': 0,
         'flag_equipment': 0,
         #Treatment

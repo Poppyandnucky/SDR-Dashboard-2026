@@ -4,6 +4,13 @@ from global_func import baseline_p_death, P_intervention
 import streamlit as st
 
 
+def maternal_facility_weights(param):
+    """Return a shared facility weight with an optional L2/3 relative risk."""
+    shared = float(param["weight_facility_mat"])
+    l23_rr = float(param.get("RR_MM_l23_vs_l4", 1.0))
+    return np.array([0.0, shared * l23_rr, shared, shared], dtype=float)
+
+
 def apply_transfer_delay_intervention(delay_probs, coverage, shift_2plus, shift_1_2):
     """Shift covered transfers down one delay category without changing transfer count."""
     p_lt1, p_1_2, p_2plus = np.asarray(delay_probs, dtype=float)
@@ -110,7 +117,7 @@ def initialize_MM_params_vectorized(track, param, flags, i, MC, M, NC):
     # The effect of transfer, severity of complications, planned c-section, emergency c-section
     P['MM_home'] = param['p_MM_home']  # baseline probability of maternal death at home
     P['NM_home'] = param['p_NM_home']  # baseline probability of neonatal death at home
-    W["weight_facility_mat"] = param['weight_facility_mat']  # weight of facility in contributing to maternal death
+    W["weight_facility_mat"] = maternal_facility_weights(param)
     W["weight_facility_neo"] = param['weight_facility_neo']  # weight of facility in contributing to neonatal death
     OR["MM_CSvsSVD"] = param["OR_MM_CSvsSVD"]  # odds ratio of maternal death for CS vs SVD
     OR["MM_EmCSvsELCS"] = param["OR_MM_EmCSvsELCS"]  # odds ratio of maternal death for emergency CS vs elective CS
@@ -198,7 +205,11 @@ def f_MM_vectorized(track, param, flags, i, MC, M, NC, individual_outcomes, rng)
     # Location-based modifier
     location_modifier = np.zeros(num_mothers, dtype=float)
     location_modifier[home_mask] = P["MM_home"]
-    location_modifier[facility_mask] = W['weight_facility_mat'] * P["mat_death_labor"][i_loc_new_v2[facility_mask]]
+    facility_locations = i_loc_new_v2[facility_mask]
+    location_modifier[facility_mask] = (
+        W["weight_facility_mat"][facility_locations]
+        * P["mat_death_labor"][facility_locations]
+    )
 
     p_death = base_comp_risks * location_modifier       # Initial death probability based on max complication risk and location
 
@@ -253,6 +264,7 @@ def f_MM_vectorized(track, param, flags, i, MC, M, NC, individual_outcomes, rng)
 
     #update individual outcomes
     individual_outcomes["i_mat_death"] = i_mort.astype(int)
+    individual_outcomes["p_mat_death"] = p_death.astype(float)
     individual_outcomes["i_neo_death"] = i_ND.astype(int)
     individual_outcomes["i_transfer"] = i_transfer.astype(int)
     individual_outcomes["travel_time_transfer"] = travel_time_transfer.astype(int)
