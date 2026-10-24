@@ -1,0 +1,556 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage[hidelinks]{hyperref}
+
+\title{Supplementary Methods: Calibrating the MOMISH Maternal Model to Kenyan Counties\\
+\large Kisii, Makueni, and Mombasa}
+\author{}
+\date{}
+
+\newcommand{\p}[1]{\texttt{#1}}
+
+\begin{document}
+\maketitle
+
+\section{Purpose and scope}
+
+This supplement describes how the maternal health systems model was calibrated
+to three Kenyan counties, Kisii, Makueni, and Mombasa. It is written so that the
+same procedure can be applied to other counties.
+
+The calibration follows four principles:
+\begin{enumerate}
+\item Every target comes from a stated data source available for all counties
+(the 2022 Kenya DHS and the Kenya Health Information System, KHIS) or from
+published literature.
+\item Each parameter is solved from an explicit equation that links it to its
+target, rather than by numerical search. Stages whose targets depend on one
+another are solved together by repeating these equations until the values stop
+changing.
+\item The same measurement rule is applied to every recorded diagnosis.
+\item Parameters are pooled across counties where county data are too sparse or
+too inconsistently recorded to support county values.
+\end{enumerate}
+
+Locations are home, Level 2/3 (L2/3), Level 4 (L4), and Level 5 (L5). The
+\emph{initial} location is where labour starts; the \emph{final} location is
+where delivery occurs after any emergency transfer, which is what DHS and KHIS
+record. L5 hospitals receive referrals from outside the county, so L5 is
+excluded from all rate targets.
+
+\section{Selection of parameters for calibration}
+
+The model contains three broad classes of parameters. First, quantities
+that are directly observed for a county, such as ANC coverage, delivery volume,
+and facility-level outcome rates, enter as model inputs or calibration targets.
+Second, biological and clinical relationships---including relative risks by
+maternal risk or anaemia, diagnostic performance, mortality effects of
+complications and care, and intervention efficacy---are informed by published
+literature. These relationships are not re-estimated merely to improve county
+fit; where uncertainty ranges are available, they are sampled in each
+simulation run. Third, calibration is reserved for latent or operational
+quantities that are not observed directly but determine whether the model
+reproduces the observed baseline care pathway and outcomes.
+
+The calibrated quantities therefore describe four aspects of the county health
+system: how women are distributed across delivery locations, how often modeled
+clinical events occur, how facilities respond through caesarean section or
+transfer, and the overall level of maternal mortality. Table~\ref{tab:scope}
+states why each quantity requires calibration and whether it is allowed to vary
+by county. Parameters held fixed are shown to make clear which mechanisms were
+not used to force agreement with county targets.
+
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.18\textwidth} >{\raggedright\arraybackslash}p{0.29\textwidth} >{\raggedright\arraybackslash}p{0.32\textwidth} >{\raggedright\arraybackslash}p{0.13\textwidth}}
+\caption{Rationale and treatment of parameters considered during calibration.}\label{tab:scope}\\
+\toprule
+Model area & Parameters & Why calibrated or held fixed & Treatment \\
+\midrule
+\endfirsthead
+\toprule
+Model area & Parameters & Why calibrated or held fixed & Treatment \\
+\midrule
+\endhead
+Preterm birth & \p{PT\_scale} & The model's gestational-age distribution requires a scale factor to reproduce the externally observed facility preterm rate; preterm status subsequently affects risk recognition, planned CS, and transfer. & County-specific \\
+Initial delivery location & \p{home\_noANC}, \p{home\_lowrisk}, \p{baseline\_l23\_preference} & These latent routing probabilities translate observed ANC and final delivery-location distributions into initial locations before transfer. & County-specific \\
+Recognized-risk routing & \p{OR\_recognized\_L45} & The routing effect of recognized risk is not directly observed by county; a shared value preserves a common behavioral relationship while allowing the baseline preference to vary. & Shared \\
+Planned caesarean section & \p{p\_elec\_CS|highrisk}; \p{p\_elec\_CS|preterm} & These probabilities are not reported directly but determine whether the model reproduces planned CS overall and among preterm births. & County; pooled \\
+Complication incidence & \p{p\_aph}, \p{p\_ruptured\_uterus}, \p{p\_eclampsia}, \p{p\_OL\_scale}, \p{pph\_incidence\_multiplier}, \p{sepsis\_incidence\_multiplier} & Baseline event probabilities must reproduce each county's observed total complication burden after applying a common measurement rule and pooled cause mix. & County-specific \\
+Caesarean capacity & \p{p\_cs\_capacity} [L2/3, L4] & This operational probability represents the ability to perform an indicated emergency CS, rather than the physical proportion of all births a facility could accommodate. & County-specific \\
+Emergency transfer & \p{t\_l23\_l45\_preterm}, \p{t\_l23\_l45\_notsevere}, \p{t\_l23\_l45\_predicted}; \p{p\_l5\_given\_l23\_transfer} & Transfer probabilities are not observed directly and must reproduce the post-transfer L2/3 case mix (preterm share, complication ratio) and the observed mix of transfer reasons; the receiving level is taken directly from referral records. & County; shared destination \\
+Mortality level & \p{p\_mat\_death\_facility\_baseline}, \p{RR\_MM\_l23\_vs\_l4} & Cause weights, fixed so that modeled deaths reproduce the global distribution of maternal deaths by cause, set relative risk between complications; an overall level and an L2/3 contrast are needed to match observed deaths. & Pooled \\
+Held fixed & \p{p\_comp\_severe\_lowrisk}, \p{MM\_weight\_*}, \p{p\_MM\_others}, \p{weight\_facility\_mat}, \p{sen\_comp\_trad}, \p{spec\_comp\_trad}, \p{t\_l23\_l45\_severe} & These represent biological or clinical relationships, diagnostic performance, or assumptions without sufficient county-specific evidence; allowing them to vary would make county fit less identifiable. & Fixed/shared \\
+\bottomrule
+\end{longtable}
+
+The stages below are numbered in the order they are solved in each calibration
+round. Preterm birth (Stage 1) comes first because it changes recognized risk
+and therefore affects routing, planned caesarean section, and transfer
+eligibility; it is updated from the previous round's simulation. Routing
+(Stage 2) then defines where women start labour, and the transfer probabilities
+(Stage 3) are solved by re-simulating until stable. Planned caesarean section
+and the complication and caesarean capacity parameters (Stages 4 and 5) are
+updated from that final simulation. Mortality (Stage 6) is estimated last
+because it depends on the resulting complication and care pathways but does
+not feed back into them.
+
+\section{Data required for each county}
+
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.34\textwidth} >{\raggedright\arraybackslash}p{0.58\textwidth}}
+\caption{Data sources.}\label{tab:sources}\\
+\toprule
+Source & Quantities \\
+\midrule
+\endfirsthead
+\toprule
+Source & Quantities \\
+\midrule
+\endhead
+2022 Kenya DHS, most recent birth within two years (survey weights, clusters, strata) & County 4+ ANC coverage; home delivery by ANC status; L2/3 share by ANC status (check); national ANC gradient \\
+KHIS 2022 deliveries by facility level & L2/3 share of facility births; L5 share of L4/5 births \\
+KHIS MOH 711 facility-month indicators, January 2022--June 2025 for every county & L2/3 and internal-L4 complications, preterm births, caesarean sections, and maternal deaths \\
+Rescue referral records, Kakamega (November 2021--October 2022) & Reasons for L2/3 transfers; receiving level \\
+Waiswa et al. (2020), Kenya and Uganda & Facility preterm rate 0.134; share of L4/5 births arriving by referral 0.122 (check) \\
+Sandie et al. (2023), sub-Saharan Africa & 40\% of caesarean sections are planned \\
+Ghosh et al. (2022), Kenya and Uganda; Nigerian multicentre study \textbf{[citation to add]} & Caesarean section among preterm births 0.265; planned share 1232/4477 \\
+Say et al. (2014) & Direct, non-abortion share of maternal deaths 0.618 \\
+Clarke-Deelder et al. (2023) & Suspected PPH in Kenyan referral hospitals 9\% (check) \\
+\bottomrule
+\end{longtable}
+
+The KHIS facility list must be checked for level coding before use; Makueni
+County Referral Hospital is recorded as Level 4 but functions as Level 5 and
+was reclassified.
+
+\section{Measurement rules}
+
+\paragraph{KHIS processing.} The indicator extract omits facility-months without
+reported values. Rates therefore use all facility-months with deliveries as the
+denominator and count missing indicator months as zero. Facility-months with
+indicator values but no delivery count are excluded. The same period is used
+for every county, so that differences between counties are not differences in
+time.
+
+\paragraph{Recorded diagnoses.} Every recorded diagnosis (the six maternal
+complications, their total, and preterm birth) is multiplied by the
+under-recording factor $s=4.48$: the facility preterm rate of Waiswa et al.
+(0.134) divided by the 2020 KHIS facility preterm rate in Kakamega County
+(2.99\%), where the factor was first derived. Caesarean sections are recorded procedures and are used unscaled.
+
+\paragraph{Cause mix.} Each county keeps its own total complication rate
+(\p{p\_mcr\_l4}); the split by cause uses the delivery-weighted mix of the
+three counties:
+\begin{equation}
+T_{k,c}=\p{p\_mcr\_l4}_c\times
+\frac{\sum_{c'}D_{c'}R_{k,c'}}{\sum_{c'}D_{c'}\,\p{p\_mcr\_l4}_{c'}},
+\end{equation}
+where $R_{k,c}$ is the scaled KHIS rate of cause $k$ in county $c$ and $D_c$ the
+county's internal-L4 deliveries. Complication burden and recording quality
+cannot be separated from KHIS diagnoses alone, but deaths are recorded far more
+completely. Deaths per 100 recorded complications are of the same order across
+counties (Kisii 0.97, Makueni 1.62, Mombasa 1.06), so county totals are treated
+as real. The cause split is not plausible as a true difference: Kisii records 67\% of
+its complications as obstructed labour and 17\% as PPH, against 24--38\% and
+37--48\% in the other counties. County cause-specific KHIS rates are reported as
+checks.
+
+\paragraph{Mortality.} The model represents direct maternal complications only.
+KHIS maternal deaths are therefore multiplied by 0.618, the share of maternal
+deaths that are direct and not abortion-related (Say et al. 2014).
+
+\section{Calibration procedure}
+
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.17\textwidth} >{\raggedright\arraybackslash}p{0.37\textwidth} >{\raggedright\arraybackslash}p{0.38\textwidth}}
+\caption{Calibration stages.}\label{tab:stages}\\
+\toprule
+Stage & Target & Method \\
+\midrule
+\endfirsthead
+\toprule
+Stage & Target & Method \\
+\midrule
+\endhead
+1 Preterm & Preterm among facility births $=0.134$ & Damped proportional update \\
+2 Routing & DHS home share by ANC status; KHIS L2/3 share of facility births & Closed form \\
+3 Transfers & KHIS L2/3 preterm share; L2/3:L4 complication ratio; Rescue reason mix and receiving level & Counting equations \\
+4 Planned CS & $0.40\times$ KHIS L4 CS rate; planned CS among preterm $=0.0729$ (pooled) & Closed form \\
+5 Complications and CS capacity & Six internal-L4 complication rates; KHIS CS rates at L2/3 and L4 & Proportional updates \\
+6 Mortality & Pooled KHIS L2/3 and internal-L4 MMR (direct causes) & Fixed-point update \\
+\bottomrule
+\end{longtable}
+
+Stages 1--5 depend on one another, because their targets are measured after
+transfer: preterm prevalence changes routing and transfers, transfers change who
+delivers at L4, and planned caesarean section and caesarean capacity change who
+is monitored in labour and transferred. They are solved together
+(Section~\ref{sec:joint}). Mortality does not feed back, so Stage 6 is solved
+once afterwards.
+
+\subsection{Risk recognition}
+
+Routing and planned caesarean section depend on whether an ANC mother is
+recognized as high risk. With $\pi$ the high-risk prevalence, $Se$ and $Sp$ the
+accuracy of risk screening (\p{sen\_risk\_trad}, \p{spec\_risk\_trad}), and
+$g_c$ the probability of being dated preterm or post-term,
+\begin{equation}
+r_c=1-\bigl[1-\pi Se-(1-\pi)(1-Sp)\bigr](1-g_c).
+\end{equation}
+$g_c$ depends on \p{PT\_scale} and is recomputed each round ($r_c=0.593$--0.594).
+
+\subsection{Stage 1: Preterm birth}
+
+\p{PT\_scale} multiplies the probability of gestational ages below 37 weeks. The
+target is the preterm rate among all facility births after transfer,
+$T_{PT}=0.134$, common to the three counties. Kisii's KHIS L4 preterm rate is
+half that of the other counties while its L2/3 rate is similar, which suggests
+under-recording, so county KHIS rates are not used. Because routing and
+transfers respond to preterm prevalence, the update is damped and uses the
+previous round's simulation:
+\begin{equation}
+\p{PT\_scale}\leftarrow\p{PT\_scale}\times
+\bigl(T_{PT}/\widehat P(PT\mid\text{facility birth})\bigr)^{0.5}.
+\end{equation}
+
+\emph{Assumption:} the facility preterm rate is the same in all three counties.
+
+\subsection{Stage 2: Initial delivery location}
+
+Initial location probabilities are
+\begin{align}
+\text{No ANC:}\quad & P(H)=h_0,\quad P(L23)=(1-h_0)b_c,\\
+\text{ANC, not recognized:}\quad & P(H)=h_U,\quad P(L23)=(1-h_U)b_c,\\
+\text{ANC, recognized:}\quad & P(H)=0,\quad P(L23)=\frac{b_c}{b_c+\theta(1-b_c)},
+\end{align}
+with the remainder at L4/5, where $h_0$ is \p{home\_noANC}, $h_U$ is
+\p{home\_lowrisk}, $b_c$ is the baseline L2/3 preference
+(\p{baseline\_l23\_preference}), and $\theta$ is the odds ratio for L4/5 among
+recognized high-risk women (\p{OR\_recognized\_L45}). A share $\tau_c$ of women
+starting at L2/3 is transferred (Stage 3).
+
+With 4+ ANC coverage $a_c$, DHS final home shares $F_{H\mid noANC}$ and
+$F_{H\mid ANC}$, and the KHIS L2/3 share of facility births $q_c$,
+\begin{align}
+h_0&=F_{H\mid noANC},\qquad h_U=\frac{F_{H\mid ANC}}{1-r_c},\qquad
+H_c=(1-a_c)h_0+a_cF_{H\mid ANC},\\
+I_{L23,c}&=\frac{q_c(1-H_c)}{1-\tau_c},
+\end{align}
+and $b_c$ is the unique root of
+\begin{equation}
+(1-a_c)(1-h_0)b_c+a_c\left[(1-r_c)(1-h_U)b_c+r_c\frac{b_c}{b_c+\theta(1-b_c)}\right]=I_{L23,c}.
+\end{equation}
+The derived quantities are $\p{p\_lb\_l23\_45}=\tau_cI_{L23,c}$ and the
+monthly births by location (\p{base\_LB}), with L4/5 births split by the KHIS
+L5 share.
+
+$\theta=2$ is shared. The same equations applied to the national DHS sample
+give $\theta$ between 1.95 and 2.59 depending on the transfer share; county
+samples (32--48 births without ANC) are too small to estimate it.
+
+\emph{Assumptions:} DHS is used for home delivery and ANC and KHIS for the facility
+split, because KHIS is a facility census with coded levels and the facility
+outcome targets come from KHIS. The DHS L2/3 share among ANC mothers is a check;
+it agrees in Kisii and Mombasa but not in Makueni (DHS 36\%, model 16\%).
+
+\subsection{Stage 3: Emergency transfer from L2/3}
+
+A woman who starts labour at L2/3 can be transferred, in order, for a predicted
+labour emergency without local caesarean capacity
+(\p{t\_l23\_l45\_predicted}), a severe complication (\p{t\_l23\_l45\_severe},
+90\%), preterm labour without complication (\p{t\_l23\_l45\_preterm}), or a
+non-severe complication (\p{t\_l23\_l45\_notsevere}). Transferred women are
+received at L5 with probability \p{p\_l5\_given\_l23\_transfer} $=0.579$ (Rescue,
+499 transfers with a recorded destination).
+
+One simulation divides women who start at L2/3 and are not moved by the first
+two pathways into $A$ (preterm without complication, $E_{pt}$ women), $B$
+(non-severe complication, $E_{ns}$ women, preterm share $\pi_B$, $e_B$ events
+each), and $C$ (all others). With $p_{pt}$ and $p_{ns}$ the two transfer
+probabilities and $s_4$ the share received at L4,
+\begin{align}
+\widehat P(PT\mid L23)&=\frac{PT_C+E_{pt}(1-p_{pt})+E_{ns}(1-p_{ns})\pi_B}{N_C+E_{pt}(1-p_{pt})+E_{ns}(1-p_{ns})},\\
+\widehat R_{L23:L4}&=\frac{\bigl[ev_C+E_{ns}(1-p_{ns})e_B\bigr]/N_{L23}}
+{\bigl[ev_{L4}^{other}+s_4E_{ns}p_{ns}e_B\bigr]/\bigl[N_{L4}^{other}+s_4(E_{pt}p_{pt}+E_{ns}p_{ns})\bigr]},
+\end{align}
+which are solved for $(p_{pt},p_{ns})$ against the KHIS L2/3 preterm share and
+the L2/3:L4 complication ratio. No KHIS indicator identifies
+\p{t\_l23\_l45\_predicted}, so it is set so that labour emergencies are the
+Rescue share $w=0.583$ of transfers with a known reason:
+\begin{equation}
+\text{labour-emergency transfers}=\frac{w}{1-w}\,
+\bigl(\text{severe}+\text{preterm}+\text{non-severe transfers}\bigr).
+\end{equation}
+Each pass re-simulates to update the counts.
+
+\emph{Assumptions:} the Rescue reason mix and receiving level, observed in
+Kakamega County, apply to all three counties; \p{t\_l23\_l45\_severe} is held
+fixed; the L4/5 capacity limit is not applied at baseline, because the capacity input
+equals the observed L4/5 delivery load and would otherwise ration emergency
+transfers. The share of L4/5 births arriving by
+referral (0.122, Waiswa et al.) is a share of L4/5 births, not of all births, and
+is used only as a check.
+
+The resulting transfer share $\tau$ (0.35--0.44) is above referral rates
+reported from primary facilities (about 10--15\%). It is nevertheless supported
+by two independent checks: the share of L4/5 births arriving by transfer
+(0.11--0.22, against 0.122 in Waiswa et al.) and the KHIS L2/3 preterm share,
+both of which fail when $\tau$ is fixed lower (Section~\ref{sec:sensitivity}).
+About 60\% of $\tau$ consists of labour emergencies.
+
+\subsection{Stage 4: Planned caesarean section}
+
+Planned caesarean section is assigned to ANC mothers who start labour at L4/5
+and are predicted high risk (\p{p\_elec\_CS|highrisk}, $q_{H,c}$, per county) or
+predicted preterm (\p{p\_elec\_CS|preterm}, $q_P$, shared). With $a_c$ and $b_c$
+the shares of these two groups among final L4 births, and $c_c$, $d_c$ their
+shares among preterm women starting at L4/5 (weights $w_c$),
+\begin{align}
+a_cq_{H,c}+b_cq_P&=0.40\times\text{KHIS L4 CS rate}_c,\\
+\textstyle\sum_cw_c\left(c_cq_{H,c}+d_cq_P\right)&=0.265\times1232/4477=0.0729.
+\end{align}
+Substituting the first equation into the second leaves one linear equation in
+$q_P$.
+
+\emph{Assumptions:} 40\% of caesarean sections are planned (sub-Saharan
+average); 0.265 is caesarean section of any type among preterm births and is
+converted to planned caesarean section with the Nigerian planned share.
+
+\subsection{Stage 5: Complications and caesarean capacity}
+
+Each incidence parameter mainly drives one target, and the modeled rate is
+proportional to it, so each is updated by
+$x\leftarrow x\,T_x/\widehat R_x$. Caesarean capacity at L4,
+\p{p\_cs\_capacity} [L4], is the probability of emergency caesarean section
+among women flagged in labour at L4. It is solved from the L4 caesarean target
+after subtracting planned caesarean sections and emergency caesarean sections
+among women transferred in:
+\begin{equation}
+\kappa_{L4}\leftarrow\kappa_{L4}\,
+\frac{T_{CS,L4}-\widehat E_{planned}-\widehat E_{in}}{\widehat E_{starters}},
+\end{equation}
+where $\widehat E_{starters}$ is emergency caesarean section among women who
+started at L4/5. \p{p\_cs\_capacity} [L2/3] is updated proportionally to the
+L2/3 caesarean rate.
+
+\emph{Assumptions:} every woman transferred for a labour emergency receives
+emergency caesarean section; the severity probability
+(\p{p\_comp\_severe\_lowrisk}) is not estimated, and facility severe maternal
+outcomes (SMO) are used as a check.
+
+\subsection{Stage 6: Maternal mortality}
+
+A woman's facility death probability is set by her most lethal severe
+complication:
+\begin{equation}
+p_{i}=\max\Bigl(\max_k S_{ik}\,\p{MM\_weight}_k,\ \p{p\_MM\_others}\Bigr)
+\,W_j\,\p{p\_mat\_death\_facility\_baseline},
+\end{equation}
+where $S_{ik}$ indicates severe complication $k$, and
+$W_j=\p{weight\_facility\_mat}\times\p{RR\_MM\_l23\_vs\_l4}$ at L2/3 and
+\p{weight\_facility\_mat} at L4 and L5, followed by odds-ratio adjustments for
+caesarean section, emergency caesarean section, and transfer delay.
+\p{p\_mat\_death\_facility\_baseline} sets the baseline facility risk; skilled-worker
+density enters only as the relative change produced by staffing
+interventions, because absolute county staffing counts are uncertain.
+
+County deaths are too few to fit county values (1--35 deaths per level), so the
+baseline and the L2/3 relative risk are fitted to deaths pooled over the three
+counties: 84 deaths in 168,887 internal-L4 deliveries and 7 in 60,657 L2/3
+deliveries, which after the direct-cause scaling give 30.8 and 7.1 per 100,000.
+Expected deaths are proportional to the baseline, and L2/3 deaths to the
+relative risk, so each iteration applies
+\begin{align}
+A&=T_{L4}/\widehat M_{L4},\qquad
+\p{p\_mat\_death\_facility\_baseline}\leftarrow\p{p\_mat\_death\_facility\_baseline}\times A,\\
+\p{RR\_MM\_l23\_vs\_l4}&\leftarrow\p{RR\_MM\_l23\_vs\_l4}\times\frac{T_{L23}/\widehat M_{L23}}{A},
+\end{align}
+where $\widehat M$ is the modeled expected MMR (the sum of individual death
+probabilities, which has less Monte Carlo noise than sampled deaths). Three
+iterations suffice. Each county is then checked against its own KHIS MMR.
+
+\emph{Assumptions:} cause-specific weights, \p{p\_MM\_others}, and
+\p{weight\_facility\_mat} are held fixed; one mortality level applies to
+the three counties.
+
+\subsection{Joint solution of Stages 1--5}
+\label{sec:joint}
+
+Each round updates \p{PT\_scale} from the previous round's simulation (Stage 1),
+applies the Stage 2 closed form with the current $r_c$ and $\tau_c$, and applies
+the Stage 3 counting equations until stable; the Stage 4 and 5 updates are then
+computed from the same final simulation. Rounds repeat until $\tau$
+changes by less than 0.005, \p{PT\_scale} by less than 1\%, the planned
+caesarean probabilities by less than 0.005, and the Stage 5 parameters by less
+than 3\%. Each round uses ten runs of 24 months, each with its own parameter
+draw. The calibration converged in seven rounds.
+
+\section{Results}
+
+\begin{table}[htbp]
+\centering
+\caption{Estimated parameters.}
+\label{tab:params}
+\begin{tabular}{lrrr}
+\toprule
+ & Kisii & Makueni & Mombasa \\
+\midrule
+\p{PT\_scale} & 0.727 & 0.701 & 0.716 \\
+\p{home\_noANC} & 0.1324 & 0.1076 & 0.0358 \\
+\p{home\_lowrisk} & 0.0424 & 0.2241 & 0.1008 \\
+\p{baseline\_l23\_preference} & 0.3214 & 0.3904 & 0.4563 \\
+\p{p\_elec\_CS|highrisk} & 0.2517 & 0.2885 & 0.4173 \\
+\p{p\_elec\_CS|preterm} (shared) & 0.1001 & 0.1001 & 0.1001 \\
+\p{p\_aph} & 0.01533 & 0.02128 & 0.02254 \\
+\p{p\_ruptured\_uterus} & 0.00180 & 0.00247 & 0.00266 \\
+\p{p\_eclampsia} & 0.00955 & 0.01589 & 0.01171 \\
+\p{p\_OL\_scale} & 1.242 & 1.995 & 2.312 \\
+\p{pph\_incidence\_multiplier} & 0.766 & 0.883 & 0.792 \\
+\p{sepsis\_incidence\_multiplier} & 0.0303 & 0.0414 & 0.0287 \\
+\p{p\_cs\_capacity} [L2/3] & 0.0610 & 0.0661 & 0.0847 \\
+\p{p\_cs\_capacity} [L4] & 0.1970 & 0.2883 & 0.3029 \\
+\p{t\_l23\_l45\_preterm} (\%) & 71.0 & 73.1 & 73.8 \\
+\p{t\_l23\_l45\_notsevere} (\%) & 55.0 & 47.8 & 54.5 \\
+\p{t\_l23\_l45\_predicted} (\%) & 42.8 & 36.7 & 41.4 \\
+\p{p\_mat\_death\_facility\_baseline} (pooled) & 0.000941 & 0.000941 & 0.000941 \\
+\p{RR\_MM\_l23\_vs\_l4} (pooled) & 1.945 & 1.945 & 1.945 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{longtable}{lrrr}
+\caption{Fit to targets (model / target).}\label{tab:fit}\\
+\toprule
+ & Kisii & Makueni & Mombasa \\
+\midrule
+\endfirsthead
+\toprule
+ & Kisii & Makueni & Mombasa \\
+\midrule
+\endhead
+Final L2/3 share & 0.165 / 0.166 & 0.169 / 0.168 & 0.210 / 0.212 \\
+Preterm among facility births & 0.133 / 0.134 & 0.134 / 0.134 & 0.135 / 0.134 \\
+Planned CS at L4 & 0.080 / 0.080 & 0.112 / 0.111 & 0.125 / 0.125 \\
+APH, L4 & 0.0146 / 0.0146 & 0.0204 / 0.0207 & 0.0220 / 0.0223 \\
+Uterine rupture, L4 & 0.0018 / 0.0018 & 0.0023 / 0.0025 & 0.0025 / 0.0027 \\
+Eclampsia, L4 & 0.0124 / 0.0125 & 0.0181 / 0.0176 & 0.0191 / 0.0190 \\
+Obstructed labour, L4 & 0.058 / 0.058 & 0.082 / 0.082 & 0.089 / 0.088 \\
+PPH, L4 & 0.049 / 0.049 & 0.070 / 0.070 & 0.075 / 0.075 \\
+Sepsis, L4 & 0.0048 / 0.0047 & 0.0067 / 0.0067 & 0.0072 / 0.0072 \\
+CS, L4 & 0.202 / 0.200 & 0.277 / 0.277 & 0.312 / 0.312 \\
+CS, L2/3 & 0.040 / 0.040 & 0.066 / 0.065 & 0.086 / 0.085 \\
+L2/3 preterm share & 0.060 / 0.059 & 0.063 / 0.062 & 0.064 / 0.064 \\
+L2/3:L4 complication ratio & 0.391 / 0.393 & 0.571 / 0.573 & 0.512 / 0.506 \\
+\midrule
+Planned CS among preterm, pooled & \multicolumn{3}{c}{0.0728 / 0.0729} \\
+\quad county values (checks) & 0.061 & 0.082 & 0.080 \\
+\bottomrule
+\end{longtable}
+
+\begin{table}[htbp]
+\centering
+\caption{Maternal mortality, direct causes (deaths per 100,000 deliveries;
+KHIS scaled by 0.618).}
+\label{tab:mortality}
+\begin{tabular}{llrrrc}
+\toprule
+County & Level & KHIS deaths & KHIS MMR (95\% CI) & Model & Within CI \\
+\midrule
+Pooled (fitted) & L2/3 & 7 & 7.1 & 7.4 & -- \\
+Pooled (fitted) & L4 & 84 & 30.8 & 31.0 & -- \\
+\midrule
+Kisii & L2/3 & 2 & 6.1 (0.7--22.0) & 5.6 & yes \\
+Kisii & L4 & 18 & 18.8 (11.1--29.7) & 24.5 & yes \\
+Makueni & L2/3 & 4 & 16.6 (4.5--42.5) & 7.9 & yes \\
+Makueni & L4 & 35 & 44.6 (31.1--62.0) & 34.4 & yes \\
+Mombasa & L2/3 & 1 & 2.4 (0.1--13.5) & 8.6 & yes \\
+Mombasa & L4 & 31 & 31.4 (21.3--44.5) & 35.5 & yes \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Validation}
+
+Validation uses 10 runs of 60 months, each with its own parameter draw and
+simulation seeds not used in fitting. All 45 county targets and the three
+pooled targets (planned caesarean section among preterm births, and L2/3 and
+internal-L4 MMR) are reproduced within 10\%. The initial L2/3 share is implied
+by the final share and $\tau$, so it is reported but not counted as a target.
+Quantities not used in fitting serve as checks:
+\begin{itemize}
+\item County MMR lies within its exact Poisson 95\% interval in all six
+county-level comparisons (Table~\ref{tab:mortality}); Mombasa's L2/3 interval
+rests on one death.
+\item Facility SMO is 0.031 / 0.045 / 0.047 against reference values of 0.036 /
+0.040 / 0.044.
+\item The share of L4/5 births arriving by transfer is 0.11 / 0.16 / 0.22,
+against 0.122 in Waiswa et al.
+\item PPH at L4 is 5--8\%, consistent with suspected PPH of 9\% (7--11\%) in
+Kenyan referral hospitals.
+\item The DHS L2/3 share among ANC mothers agrees in Kisii and Mombasa but not
+in Makueni.
+\item The KHIS L4 preterm rate ($\times 4.48$) is 0.088 / 0.160 / 0.181 against
+0.145 / 0.147 / 0.151 in the model; Kisii's low recorded rate is the
+under-recording noted for Stage 1.
+\end{itemize}
+
+\section{Sensitivity analyses}
+\label{sec:sensitivity}
+
+Each analysis repeats the full calibration and validation. Intervention effects are
+compared with the same seeds (40 paired runs of 36 months) as relative changes
+in expected MMR.
+
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.27\textwidth} >{\raggedright\arraybackslash}p{0.65\textwidth}}
+\caption{Sensitivity analyses.}\label{tab:sensitivity}\\
+\toprule
+Analysis & Result \\
+\midrule
+\endfirsthead
+\toprule
+Analysis & Result \\
+\midrule
+\endhead
+L2/3 monitoring without the 0.8 factor on \p{sen\_comp\_trad}, \p{spec\_comp\_trad} & $\tau$ unchanged; all targets met. \p{t\_l23\_l45\_predicted} rises to keep the Rescue share. The two values are kept; they set the comparator for the PULSE sensor intervention rather than any calibration target. \\
+Transfer share fixed at 0.15 or 0.25, with transfers set from the full Rescue reason mix & L2/3 preterm share doubles (0.12 against KHIS 0.06) and the referral share of L4/5 births falls to 0.04--0.09; baseline complications and mortality barely change. At $\tau=0.25$, Transfer \& EMT effects at high implementation are similar in Kisii ($-5.0\%$ vs $-4.8\%$) and smaller in Makueni ($-3.9\%$ vs $-3.0\%$) and Mombasa ($-4.6\%$ vs $-2.9\%$); PROMPTS effects are larger where fewer women are transferred out of L2/3 (Makueni $-25.9\%$ vs $-29.4\%$); the combined package changes by at most 4 points. \\
+$\theta=2.5$ & Parameters and county MMR change by less than 2\%; PROMPTS, Transfer \& EMT, and combined effects change by at most 2 percentage points. \\
+County cause-specific complication targets & All targets met, but the PPH and sepsis multipliers vary 4- to 9-fold across counties. County L4 mortality fits KHIS slightly better (mean absolute error 16\% vs 22\%; the likelihood of the observed deaths is about 1.8 times higher), which is weak evidence given 18--35 deaths per county. Effects of interventions acting through specific complications shift in opposite directions in Kisii and Makueni, whose recorded cause mixes differ most from the pooled mix: PPH bundle $-10.3\%$ vs $-7.4\%$ in Kisii and $-10.0\%$ vs $-13.3\%$ in Makueni; PROMPTS $-27.2\%$ vs $-31.0\%$ and $-25.9\%$ vs $-19.3\%$; the combined package $-64.9\%$ vs $-59.9\%$ in Kisii. Mombasa changes by less than 1.2 points. \\
+External referrals to L5 (illustrative) & L5 also delivers women referred from outside the county, who are not modeled; their number and acuity are not observed. For assumed external shares of L5 deliveries (0--30\%) and late-referral odds ratios (1--3), the reported L5 MMR is $(1-s)\times$ internal L5 MMR $+\ s\times$ proxy external MMR, the proxy being complication-bearing emergency transfers received at L5. One observed MMR cannot identify two unknowns, so the grid is shown rather than a fit. Against KHIS L5 MMR (direct causes) of 160 (125--202) in Kisii and 312 (259--373) in Mombasa, several combinations fit (Kisii 5--10\% external; Mombasa 10--30\%). In Makueni the modeled internal L5 MMR (177) already exceeds the observed 61 (38--93). \\
+\bottomrule
+\end{longtable}
+
+\section{Applying the procedure to another county}
+
+The procedure requires, for a new county, the DHS county estimates and KHIS
+MOH 711 facility data listed in Table~\ref{tab:sources}, both of which exist for
+all Kenyan counties, and a check of facility level coding. The remaining
+inputs are literature values or are pooled. Three qualifications apply. First,
+the transfer-reason mix, receiving level, and under-recording factor come from
+a single county; a county with its own referral records should use them. Second, the
+cause mix and the mortality level are pooled; adding counties strengthens the
+pool, but a single new county is checked against, not fitted to, its own
+mortality. Third, data quality varies by county (extract completeness, level
+coding, small DHS samples) and should be reviewed before targets are built.
+
+\section{Limitations}
+
+\begin{enumerate}
+\item The transfer share exceeds published primary-facility referral rates; it
+is the value required to reproduce KHIS L2/3 composition and the Rescue reason
+mix, rather than an observed rate.
+\item The Rescue reason mix and receiving level come from one county.
+\item \p{t\_l23\_l45\_severe}, \p{sen\_comp\_trad}, and \p{spec\_comp\_trad} have
+no direct data.
+\item A single under-recording factor is applied to all diagnoses and levels.
+\item SMO matches its reference values on average over parameter draws but not
+for individual draws with a low severity relative risk.
+\item Makueni's DHS facility split conflicts with KHIS.
+\item The direct-cause share of deaths is a global value.
+\item \p{sepsis\_incidence\_multiplier} is 0.03--0.04: matching KHIS sepsis
+($\times 4.48$) requires reducing the model's baseline sepsis risk about 30-fold,
+which suggests that sepsis is under-recorded by more than the common factor.
+\end{enumerate}
+
+\end{document}

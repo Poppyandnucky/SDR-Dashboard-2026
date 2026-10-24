@@ -1,5 +1,26 @@
-Calibration/
+Calibration/*
+!Calibration/README.md
+!Calibration/phase1_anc_routing_supplementary_methods.tex
+!Calibration/run_external_l5_sensitivity.py
+!Calibration/calibration_common.py
+!Calibration/calibration_data.py
+!Calibration/run_calibration.py
+!Calibration/validate_baseline_calibration.py
+!Calibration/calibrate_stages_1_to_5.py
+!Calibration/calibrate_stage6_mortality.py
+!Calibration/run_tau_intervention_sensitivity.py
+!Calibration/stages/
+!Calibration/stages/*.py
+!Calibration/targets/
+!Calibration/targets/*.R
+!Calibration/targets/*.py
 .venv/
 __pycache__/
 .DS_Store
+~$*.xlsx
+*.recovered.xlsx
+test_outputs/
 # scenario_comparison_results*
+
+# Local archive of superseded files (not in git)
+archive/
