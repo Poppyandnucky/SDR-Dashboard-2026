@@ -116,7 +116,7 @@ KHIS MOH 711 facility-month indicators, January 2022--June 2025 for every county
 Rescue referral records, Kakamega (November 2021--October 2022) & Reasons for L2/3 transfers; receiving level \\
 Waiswa et al. (2020), Kenya and Uganda & Facility preterm rate 0.134; share of L4/5 births arriving by referral 0.122 (check) \\
 Sandie et al. (2023), sub-Saharan Africa & 40\% of caesarean sections are planned \\
-Ghosh et al. (2022), Kenya and Uganda; Nigerian multicentre study \textbf{[citation to add]} & Caesarean section among preterm births 0.265; planned share 1232/4477 \\
+Ghosh et al. (2022), Kenya and Uganda; Adeniran et al. (2024), 54 referral-level hospitals in Nigeria (BJOG 131:78--87, doi:10.1111/1471-0528.17815) & Caesarean section among preterm births 0.265; planned (elective) share of preterm births after caesarean section 1232/4477 (1,232 preterm of 8,246 elective and 3,245 preterm of 13,478 emergency caesarean births) \\
 Say et al. (2014) & Direct, non-abortion share of maternal deaths 0.618 \\
 Clarke-Deelder et al. (2023) & Suspected PPH in Kenyan referral hospitals 9\% (check) \\
 \bottomrule
@@ -517,7 +517,7 @@ L2/3 monitoring without the 0.8 factor on \p{sen\_comp\_trad}, \p{spec\_comp\_tr
 Transfer share fixed at 0.15 or 0.25, with transfers set from the full Rescue reason mix & L2/3 preterm share doubles (0.12 against KHIS 0.06) and the referral share of L4/5 births falls to 0.04--0.09; baseline complications and mortality barely change. At $\tau=0.25$, Transfer \& EMT effects at high implementation are similar in Kisii ($-5.0\%$ vs $-4.8\%$) and smaller in Makueni ($-3.9\%$ vs $-3.0\%$) and Mombasa ($-4.6\%$ vs $-2.9\%$); PROMPTS effects are larger where fewer women are transferred out of L2/3 (Makueni $-25.9\%$ vs $-29.4\%$); the combined package changes by at most 4 points. \\
 $\theta=2.5$ & Parameters and county MMR change by less than 2\%; PROMPTS, Transfer \& EMT, and combined effects change by at most 2 percentage points. \\
 County cause-specific complication targets & All targets met, but the PPH and sepsis multipliers vary 4- to 9-fold across counties. County L4 mortality fits KHIS slightly better (mean absolute error 16\% vs 22\%; the likelihood of the observed deaths is about 1.8 times higher), which is weak evidence given 18--35 deaths per county. Effects of interventions acting through specific complications shift in opposite directions in Kisii and Makueni, whose recorded cause mixes differ most from the pooled mix: PPH bundle $-10.3\%$ vs $-7.4\%$ in Kisii and $-10.0\%$ vs $-13.3\%$ in Makueni; PROMPTS $-27.2\%$ vs $-31.0\%$ and $-25.9\%$ vs $-19.3\%$; the combined package $-64.9\%$ vs $-59.9\%$ in Kisii. Mombasa changes by less than 1.2 points. \\
-External referrals to L5 (illustrative) & L5 also delivers women referred from outside the county, who are not modeled; their number and acuity are not observed. For assumed external shares of L5 deliveries (0--30\%) and late-referral odds ratios (1--3), the reported L5 MMR is $(1-s)\times$ internal L5 MMR $+\ s\times$ proxy external MMR, the proxy being complication-bearing emergency transfers received at L5. One observed MMR cannot identify two unknowns, so the grid is shown rather than a fit. Against KHIS L5 MMR (direct causes) of 160 (125--202) in Kisii and 312 (259--373) in Mombasa, several combinations fit (Kisii 5--10\% external; Mombasa 10--30\%). In Makueni the modeled internal L5 MMR (177) already exceeds the observed 61 (38--93). \\
+Cross-county referrals at L5 (illustrative) & The model has no cross-county referrals, and their number and acuity are not observed. Kisii and Mombasa L5 hospitals receive women from outside the county: for assumed external shares of L5 deliveries (0--30\%) and late-referral odds ratios (1--3), the reported L5 MMR is $(1-s)\times$ internal L5 MMR $+\ s\times$ proxy MMR, the proxy being complication-bearing emergency transfers received at L5. Against KHIS L5 MMR (direct causes) of 160 (125--202) in Kisii and 312 (259--373) in Mombasa, several combinations fit (Kisii 5--10\% external; Mombasa 10--30\%). In Makueni the modeled internal L5 MMR (177) exceeds the observed 75 (41--126), so in-referral cannot match it. One possible explanation, not documented, is that Makueni refers its most complicated cases out of the county (for example to Machakos Level 5 or Kenyatta National Hospital), where their deaths are recorded. Removing a share of modeled L5 deliveries from the proxy group, with their deaths, matches the observed value if the riskiest 1--2\% or 10--15\% at average proxy risk are referred out. One observed MMR cannot identify two unknowns, so the grids are shown rather than a fit. \\
 \bottomrule
 \end{longtable}
 
@@ -548,6 +548,9 @@ no direct data.
 for individual draws with a low severity relative risk.
 \item Makueni's DHS facility split conflicts with KHIS.
 \item The direct-cause share of deaths is a global value.
+\item The model has no cross-county referrals. If Makueni refers complicated
+cases out of the county, its modeled L5 deaths include deaths that are recorded
+elsewhere.
 \item \p{sepsis\_incidence\_multiplier} is 0.03--0.04: matching KHIS sepsis
 ($\times 4.48$) requires reducing the model's baseline sepsis risk about 30-fold,
 which suggests that sepsis is under-recorded by more than the common factor.

@@ -70,7 +70,7 @@ tau is the share of women starting labour at L2/3 who are transferred.
 | 1 Preterm | `PT_scale` | `preterm_fac_target` = 0.134 among all facility births after transfer (Waiswa et al. 2020) | `PT_scale <- PT_scale x (target / modeled)^0.5` in the loop |
 | 2 Routing | `home_noANC`, `home_lowrisk`, `baseline_l23_preference`; derived `p_lb_l23_45`, `base_LB` | DHS 2022 home share by ANC status; KHIS 2022 L2/3 share of facility births (final) | Closed form given the recognition rate and tau; `OR_recognized_L45` = 2 shared |
 | 3 Transfers | `t_l23_l45_preterm`, `t_l23_l45_notsevere`, `t_l23_l45_predicted`, `p_l5_given_l23_transfer` | KHIS `p_preterm_l23`; `p_mcr_l23_l4` (L2/3 vs internal L4); Rescue labour-emergency share 58.3%; Rescue receiving level 58% L5 | Counting equations re-simulated until stable |
-| 4 Planned CS | `p_elec_CS|highrisk` (county); `p_elec_CS|preterm` (shared) | `elective_cs_l4_target` = 0.40 x `cs_l4_target` at final L4 (Sandie et al. 2023); `planned_cs_preterm_target` = 0.265 x 1232/4477 = 0.0729 | Closed form, 4 equations in 4 unknowns |
+| 4 Planned CS | `p_elec_CS|highrisk` (county); `p_elec_CS|preterm` (shared) | `elective_cs_l4_target` = 0.40 x `cs_l4_target` at final L4 (Sandie et al. 2023); `planned_cs_preterm_target` = 0.265 x 1232/4477 = 0.0729 (Ghosh et al. 2022; Adeniran et al. 2024) | Closed form, 4 equations in 4 unknowns |
 | 5 Complications and CS capacity | `p_aph`, `p_ruptured_uterus`, `p_eclampsia`, `p_OL_scale`, `pph_incidence_multiplier`, `sepsis_incidence_multiplier`, `p_cs_capacity` [L2/3, L4] | Six internal-L4 complication targets = county `p_mcr_l4` (KHIS x 4.48) x pooled three-county cause share; `cs_l4_target`, `p_cs_l23` (raw KHIS) | `x <- x x target / modeled` in the loop |
 | 6 Mortality | `p_mat_death_facility_baseline`, `RR_MM_l23_vs_l4` (one value shared by the three counties) | KHIS deaths pooled over the three counties, times 0.618 (direct, non-abortion deaths; Say et al. 2014, as for Kakamega): L4 84 / 168,887 -> 30.8 and L2/3 7 / 60,657 -> 7.1 per 100,000 (January 2022-June 2025); each county checked against its exact Poisson 95% interval | `A = T_L4 / M_L4`; `p_mat_death_facility_baseline <- x A`; `RR_MM_l23_vs_l4 <- x (T_L23 / M_L23) / A`, run once after the loop |
 
@@ -162,9 +162,13 @@ Findings from reviewing the earlier calibration:
   dashboard results shift once they are merged, although its values are
   unchanged. County-specific switches are needed if its published results
   must not move.
-- **Makueni L5.** The modeled internal L5 MMR (177 per 100,000) already exceeds
-  the observed 61 (38-93), so no external-referral assumption fits; the
-  Makueni L5 extract also covers 79 months rather than January 2022-June 2025.
+- **Makueni L5.** The modeled internal L5 MMR (177 per 100,000) exceeds the
+  observed 75 (41-126), so in-referral cannot match it. One undocumented
+  hypothesis is out-referral of complicated cases (for example to Machakos
+  Level 5 or Kenyatta National Hospital); the sensitivity treats Makueni that
+  way (the riskiest 1-2% of modeled L5 deliveries, or 10-15% at average proxy
+  risk, match). Makueni's modeled L4 MMR is below KHIS (34 vs 45), so there is
+  no sign that out-referral lowers the L4 records used in Stage 6.
 - **Sepsis.** `sepsis_incidence_multiplier` is 0.03-0.04, so sepsis may be
   under-recorded by more than the common factor of 4.48.
 
@@ -195,8 +199,9 @@ Intervention effects are compared with `run_tau_intervention_sensitivity.py`
 External referrals are not included in county calibration or intervention
 simulations because their volume, origin, severity, and intervention exposure
 are not observed. The sensitivity is illustrative and reporting only: for a
-grid of assumed external shares of L5 deliveries and late-referral odds ratios,
-it computes the L5 MMR the facility would report, without adding women or
+grid of assumed external shares of L5 deliveries and late-referral odds ratios
+(in-referral; for Makueni, shares of modeled L5 deliveries referred out of the
+county), it computes the L5 MMR the facility would report, without adding women or
 changing any modeled pathway. Two unknowns cannot be identified from one
 observed MMR, so no combination is selected; the observed L5 MMR (KHIS x 0.618,
 with its exact 95% interval) marks the part of the grid consistent with the

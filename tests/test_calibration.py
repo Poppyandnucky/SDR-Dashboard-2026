@@ -6,7 +6,9 @@ import numpy as np
 import pandas as pd
 
 from Calibration.calibration_common import summarize
-from Calibration.run_external_l5_sensitivity import apply_odds_ratio, l5_mortality_reporting_adjustment
+from Calibration.run_external_l5_sensitivity import (
+    apply_odds_ratio, l5_mortality_reporting_adjustment, l5_out_referral_adjustment,
+)
 from Calibration.stages import stage1_preterm as preterm, stage2_routing as routing
 from Calibration.stages import stage4_planned_cs as planned_cs, stage5_complications as complications
 from Calibration.stages import stage6_mortality as mortality
@@ -222,3 +224,15 @@ def test_reporting_adjustment_does_not_modify_population():
     assert np.isclose(result["proxy_external_mmr"], 1e5 * np.mean(apply_odds_ratio(np.array([0.10, 0.01]), 2.0)))
     expected = 0.75 * result["internal_l5_mmr"] + 0.25 * result["proxy_external_mmr"]
     assert np.isclose(result["reported_l5_mmr"], expected)
+
+
+def test_out_referral_removes_modeled_deaths():
+    # Four L5 women (risks 0.10, 0.01, 0.001, 0.05); the proxy group is the first two and the last.
+    source = pd.concat([source_population(), source_population().iloc[[0]].assign(p_mat_death=0.05)],
+                       ignore_index=True)
+    source.loc[3, "i_loc_new_v2"] = 2
+    source.loc[4, "i_loc_new_v2"] = 3
+    result = l5_out_referral_adjustment(source, 0.25)  # one of four women leaves
+    assert np.isclose(result["highest risk first"], 1e5 * (0.10 + 0.01 + 0.001 + 0.05 - 0.10) / 3)
+    assert np.isclose(result["proxy average"], 1e5 * (0.161 - (0.10 + 0.01 + 0.05) / 3) / 3)
+    assert np.isnan(l5_out_referral_adjustment(source, 0.9)["proxy average"])

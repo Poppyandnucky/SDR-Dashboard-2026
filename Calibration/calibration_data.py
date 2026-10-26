@@ -70,13 +70,12 @@ KHIS = {
     },
 }
 
-# KHIS deliveries and maternal deaths (all causes) at L5, used only by the
-# illustrative external-referral sensitivity (L5 is not a calibration target).
-# Kisii and Mombasa cover January 2022-June 2025 (42 months); the Makueni extract
-# covers 79 months.
+# MOMISH KHIS deliveries and maternal deaths (all causes) at L5, January
+# 2022-June 2025, used only by the illustrative cross-county referral sensitivity
+# (L5 is not a calibration target).
 KHIS_L5 = {
     "kisii": {"deliveries": 27764, "deaths": 72},
-    "makueni": {"deliveries": 21374, "deaths": 21},
+    "makueni": {"deliveries": 11551, "deaths": 14},
     "mombasa": {"deliveries": 23980, "deaths": 121},
 }
 
@@ -94,7 +93,9 @@ PRETERM_FAC = 0.134
 # Planned share of caesarean sections in sub-Saharan Africa (Sandie et al. 2023).
 PLANNED_CS_SHARE = 0.40
 # Planned CS among preterm births: CS among preterm births (0.265, Ghosh et al. 2022)
-# x planned share of preterm CS in a Nigerian multicentre study, 1232 / (1232 + 3245).
+# x elective share of preterm births after CS in 54 Nigerian referral hospitals,
+# 1232 / (1232 + 3245): 1,232 preterm of 8,246 elective and 3,245 preterm of 13,478
+# emergency caesarean births (Adeniran et al. 2024, BJOG 131:78-87).
 PRETERM_PLANNED_CS = 0.265 * 1232 / (1232 + 3245)
 # The model produces only direct, non-abortion maternal deaths, so KHIS MMR is
 # scaled to that share (Say et al. 2014: 810,000 of 1,310,000 deaths), as in the
