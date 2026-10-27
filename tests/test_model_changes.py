@@ -10,9 +10,15 @@ from mortality import maternal_facility_weights
 def test_facility_capacity_limit_is_off_by_default():
     track = {"Facility_Capacity_Track": np.array([[1340.0]])}
     flags = reset_flags()
-    assert facility_capacity_limit(track, 0, flags) == NO_CAPACITY_LIMIT
+    recalibrated = {"baseline_l23_preference": 0.4}
+    assert facility_capacity_limit(track, 0, flags, recalibrated) == NO_CAPACITY_LIMIT
     flags["flag_facility_capacity_limit"] = 1
-    assert facility_capacity_limit(track, 0, flags) == 1340.0
+    assert facility_capacity_limit(track, 0, flags, recalibrated) == 1340.0
+
+
+def test_original_model_counties_keep_the_capacity_limit():
+    track = {"Facility_Capacity_Track": np.array([[1340.0]])}
+    assert facility_capacity_limit(track, 0, reset_flags(), {}) == 1340.0
 
 
 def test_preterm_by_anc_responds_smoothly_to_pt_scale():

@@ -40,8 +40,10 @@ def GA_by_ANC(param, OR, P):
     PT_mask = np.array([1] * 10 + [0] * 8, dtype=bool)
     FT_mask = ~PT_mask
     Preterm_rate = np.sum(P["GA"][PT_mask])  # overall preterm rate
-    # Unrounded so that small changes in PT_scale move the preterm rate (Stage 1 calibration).
-    preterm_anc_noanc = odds_prob(OR["ANC"], Preterm_rate, param['p_ANC_base'], decimals=None)
+    # Unrounded so that small changes in PT_scale move the preterm rate (Stage 1 calibration);
+    # original-model counties keep two decimals.
+    decimals = None if recalibrated_structure(param) else 2
+    preterm_anc_noanc = odds_prob(OR["ANC"], Preterm_rate, param['p_ANC_base'], decimals=decimals)
     P["GA_anc"] = P["GA"].copy()
     P_scale_anc = preterm_anc_noanc[0] / Preterm_rate
     P["GA_anc"][PT_mask] *= P_scale_anc
@@ -283,17 +285,24 @@ def P_Prolonged_vectorized(GA_array, param):
 
     return P_PL
 
+def recalibrated_structure(param):
+    """True for counties calibrated with the 2026 routing, transfer, and mortality
+    structure (Kisii, Makueni, Mombasa). Counties without baseline_l23_preference in
+    the workbook (Kakamega) run the original model."""
+    return param.get("baseline_l23_preference") is not None
+
 # Sentinel L4/5 limit when the facility capacity constraint is off.
 NO_CAPACITY_LIMIT = np.float64(np.iinfo(np.int32).max)
 
-def facility_capacity_limit(track, i, flags):
+def facility_capacity_limit(track, i, flags, param):
     """Monthly L4/5 delivery limit used by routing, birth shifting, and transfers.
 
-    Off unless flag_facility_capacity_limit is set: calibration and current
-    scenarios assume L4/5 can absorb all deliveries. Capacity is still tracked
-    in Facility_Capacity_Track for outputs and costs.
+    For recalibrated counties it is off unless flag_facility_capacity_limit is set:
+    their calibration assumes L4/5 can absorb all deliveries. Original-model counties
+    always apply it. Capacity is still tracked in Facility_Capacity_Track for outputs
+    and costs.
     """
-    if flags.get("flag_facility_capacity_limit", 0):
+    if flags.get("flag_facility_capacity_limit", 0) or not recalibrated_structure(param):
         return track['Facility_Capacity_Track'][i, 0]
     return NO_CAPACITY_LIMIT
 

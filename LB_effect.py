@@ -56,7 +56,8 @@ import numpy as np
 import math
 import streamlit as st
 import pandas as pd
-from global_func import risk_stratification, move_function, generate_negative_experience_heard, facility_capacity_limit
+from global_func import risk_stratification, move_function, generate_negative_experience_heard, facility_capacity_limit, \
+    recalibrated_structure
 
 def f_LB_effect_vectorized(param, i, track, flags, int_period, rng):
     LB_base = track['LB_Track'][0]
@@ -100,7 +101,7 @@ def f_LB_effect_vectorized(param, i, track, flags, int_period, rng):
 #Optimzed version
 def f_ANC_LB_effect_vectorized(track, LB_base, param, flags, i, int_period, rng):
     ##-------------------Parameter initialization-------------------##
-    Capacity = facility_capacity_limit(track, i, flags)
+    Capacity = facility_capacity_limit(track, i, flags, param)
     E_Preterm_LMP = np.zeros(3)
     E_Preterm_LMP[0], E_Preterm_LMP[1] = param['E_Preterm_LMP'][0], param['E_Preterm_LMP'][1]
     E_Preterm_LMP[2] = 1 - (E_Preterm_LMP[0] + E_Preterm_LMP[1])
@@ -205,11 +206,25 @@ def f_ANC_LB_effect_vectorized(track, LB_base, param, flags, i, int_period, rng)
 
     P_home_noANC = param["home_noANC"]
     P_home_lowrisk = param["home_lowrisk"]
-    P_L23_base = param["baseline_l23_preference"]  # L2/3 preference among facility births
-    P_L23_highrisk = P_L23_base / (P_L23_base + param["OR_recognized_L45"] * (1 - P_L23_base))  # recognized risk: odds of L4/5 x OR
-    prob_matrix_noANC = np.array([P_home_noANC, (1 - P_home_noANC) * P_L23_base, (1 - P_home_noANC) * (1 - P_L23_base)])
-    prob_matrix_lowrisk = np.array([P_home_lowrisk, (1 - P_home_lowrisk) * P_L23_base, (1 - P_home_lowrisk) * (1 - P_L23_base)])
-    prob_matrix_highrisk = np.array([0, P_L23_highrisk, 1 - P_L23_highrisk])
+    if recalibrated_structure(param):
+        P_L23_base = param["baseline_l23_preference"]  # L2/3 preference among facility births
+        P_L23_highrisk = P_L23_base / (P_L23_base + param["OR_recognized_L45"] * (1 - P_L23_base))  # recognized risk: odds of L4/5 x OR
+        prob_matrix_noANC = np.array([P_home_noANC, (1 - P_home_noANC) * P_L23_base, (1 - P_home_noANC) * (1 - P_L23_base)])
+        prob_matrix_lowrisk = np.array([P_home_lowrisk, (1 - P_home_lowrisk) * P_L23_base, (1 - P_home_lowrisk) * (1 - P_L23_base)])
+        prob_matrix_highrisk = np.array([0, P_L23_highrisk, 1 - P_L23_highrisk])
+    else:
+        # Original routing (Kakamega).
+        P_L45_noANC = (1 - P_home_noANC) * param["l45_fac"]
+        P_L23_noANC = 1 - P_home_noANC - P_L45_noANC
+        P_close_to_L23 = param["close_to_L23"]
+        P_close_to_L45 = 1 - P_close_to_L23
+        P_L23_lowrisk = (1 - P_home_lowrisk) * P_close_to_L23
+        P_L45_lowrisk = (1 - P_home_lowrisk) * P_close_to_L45
+        P_L23_highrisk = param["L23_highrisk"]
+        P_L45_highrisk = 1 - P_L23_highrisk
+        prob_matrix_noANC = np.array([P_home_noANC, P_L23_noANC, P_L45_noANC])
+        prob_matrix_lowrisk = np.array([P_home_lowrisk, P_L23_lowrisk, P_L45_lowrisk])
+        prob_matrix_highrisk = np.array([0, P_L23_highrisk, P_L45_highrisk])
 
     def adjust_probabilities(prob_matrix, RR_l45):
         """Internal function to adjust a probability matrix by Risk Ratio for L4/5"""
@@ -404,9 +419,10 @@ def shifting_live_births_vectorized(individual_outcomes, param, i, track, flags,
         i_free_referral = individual_outcomes['i_free_referral'].values.copy()
         num_mothers = i_loc.shape[0]
         # Workbook baseline (final locations); LB_Track[0] is overwritten with
-        # simulated pre-transfer counts after month 0.
-        LB_base = track["LB"]
-        Facility_Capacity = facility_capacity_limit(track, i, flags)
+        # simulated pre-transfer counts after month 0. Original-model counties keep
+        # LB_Track[0].
+        LB_base = track["LB"] if recalibrated_structure(param) else track["LB_Track"][0]
+        Facility_Capacity = facility_capacity_limit(track, i, flags, param)
         Referral_Capacity = track['Referral_Capacity_Track'][i, 0]
         p_l5_l45 = param['p_l5_l45']
         p_lb_l23to45 = param['p_lb_l23_45']

@@ -8,7 +8,7 @@ from global_func import (P_Prolonged, P_Prolonged_vectorized, P_Sepsis_vectorize
                          P_IVH_vectorized, P_IVH, comps_riskstatus_vs_lowrisk, \
     sensors_accuracy_vectorized, sensors_accuracy, fetal_sensor_calculator, P_intervention, \
                          intrapartum_prediction, comp_OL_type, comp_severe, emergency_transfer_comps, preterm_complication, SI_reduction, \
-                         facility_capacity_limit)
+                         facility_capacity_limit, recalibrated_structure)
 
 
 # Fixed order matching the 'pulse_indicator_targets' list in parameters.py / array_constants sheet.
@@ -136,7 +136,7 @@ def initialize_intra_params(individual_outcomes, track, flags, param, i, rng):
         "spec_comp_trad"]])
 
     # Facility capacity
-    S["Fac_capacity"] = facility_capacity_limit(track, i, flags)
+    S["Fac_capacity"] = facility_capacity_limit(track, i, flags, param)
     CS_Capacity = track['CS_Capacity_Track'][i, 0]
     if flags['flag_capacity']:
         S["CS_capacity"] = np.array([0, 0, CS_Capacity, CS_Capacity])
@@ -363,7 +363,10 @@ def intrapartum_effect_vectorized(track, flags, param, i, individual_outcomes, r
     i_loc_new_v1 = i_loc.copy()
 
     transfer_mask = emergency_mask & (i_mod == "SVD") & (i_loc == 1) # Define Transfer Mask (SVD Mothers with Predicted Complications)
-    p_transfer_capacity = np.clip(param["t_l23_l45_predicted"] / 100, 0.0, 1.0)  # L2/3 transfer probability for predicted complications
+    if recalibrated_structure(param):
+        p_transfer_capacity = np.clip(param["t_l23_l45_predicted"] / 100, 0.0, 1.0)  # L2/3 transfer probability for predicted complications
+    else:
+        p_transfer_capacity = S["CS_capacity"][2] + S["CS_capacity"][3]  # original model (Kakamega)
     with_cs_capacity = (rng.random(num_mothers) < p_transfer_capacity).astype(int)
     transfer_mask_2 = with_cs_capacity & transfer_mask
     n_transfer = np.sum(transfer_mask_2)

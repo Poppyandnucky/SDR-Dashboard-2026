@@ -157,11 +157,13 @@ Findings from reviewing the earlier calibration:
   original calibration.
 - **Makueni DHS ANC split** conflicts with KHIS's facility split; reported as a
   validation gap.
-- **Kakamega.** The model changes (capacity limit off, unrounded preterm by
-  ANC, Rescue transfer destination) apply to every county, so Kakamega's
-  dashboard results shift once they are merged, although its values are
-  unchanged. County-specific switches are needed if its published results
-  must not move.
+- **Kakamega** runs the original model. The model changes apply only to counties
+  with `baseline_l23_preference` in the workbook (`global_func.recalibrated_structure`):
+  new routing, `t_l23_l45_predicted`, capacity limit off, unrounded preterm by
+  ANC, and the live-birth shift baseline. The transfer destination and
+  mortality changes apply only where `p_l5_given_l23_transfer` and
+  `p_mat_death_facility_baseline` are set. `tests/test_kakamega_original.py`
+  checks that Kakamega's outputs match main (commit ba034d1).
 - **Makueni L5.** The modeled internal L5 MMR (177 per 100,000) exceeds the
   observed 75 (41-126), so in-referral cannot match it. One undocumented
   hypothesis is out-referral of complicated cases (for example to Machakos
