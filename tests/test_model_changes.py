@@ -5,7 +5,38 @@ import math
 import numpy as np
 
 from global_func import NO_CAPACITY_LIMIT, facility_capacity_limit, odds_prob, reset_flags
+from intrapartum import apply_fqa_effect
+from LB_effect import odds_update, pulse_effect
 from mortality import maternal_facility_weights
+
+PULSE_PARAM = {
+    "baseline_l23_preference": 0.4,
+    "pulse_implementation_index": 0.5,
+    "pulse_or_prompts_registration": 1.47,
+    "pulse_performance_improve": 0.062,
+    "fqa_implementation_index": 0.5,
+    "fqa_knowledge_improve": 0.043,
+}
+
+
+def flags_with(**on):
+    flags = reset_flags()
+    flags.update(on)
+    return flags
+
+
+def knowledge_gain(flags, param):
+    """Rise in L2/3, L4, and L5 knowledge from apply_fqa_effect, starting at 0.6."""
+    P = apply_fqa_effect({"knowledge": np.array([0.0, 0.6, 0.6, 0.6])}, flags, param)
+    np.testing.assert_allclose(P["knowledge"][1:4] - 0.6, P["knowledge"][1] - 0.6)
+    return float(P["knowledge"][1] - 0.6)
+
+
+def test_fqa_and_pulse_knowledge_gains_skip_home():
+    flags = flags_with(flag_pulse=1, flag_fqa=1)
+    P = apply_fqa_effect({"knowledge": np.array([0.0, 0.6, 0.6, 0.6])}, flags, PULSE_PARAM)
+    np.testing.assert_allclose(P["knowledge"], [0.0, 0.631, 0.631, 0.631])
+
 
 def test_facility_capacity_limit_is_off_by_default():
     track = {"Facility_Capacity_Track": np.array([[1340.0]])}
@@ -42,3 +73,35 @@ def test_l23_relative_risk_modifies_only_l23():
     })
 
     np.testing.assert_allclose(weights, [0.0, 2.0, 2.5, 2.5])
+
+
+def test_pulse_raises_prompts_registration_by_scaled_odds_ratio():
+    # OR_effective = exp(0.5 x ln 1.47); Kisii's current registration 0.151 -> 0.177.
+    pulse = pulse_effect(flags_with(flag_pulse=1), PULSE_PARAM)
+    assert math.isclose(pulse["prompts_registration_or"], math.exp(0.5 * math.log(1.47)))
+    assert math.isclose(pulse["knowledge_gain"], 0.5 * 0.062)
+    assert math.isclose(odds_update(0.151, pulse["prompts_registration_or"]), 0.177, abs_tol=5e-4)
+    assert pulse_effect(flags_with(flag_pulse=0), PULSE_PARAM) is None
+
+
+def test_fqa_and_pulse_knowledge_gains_take_the_larger():
+    pulse_gain = 0.5 * 0.062
+    fqa_gain = 0.5 * 0.043
+    assert math.isclose(knowledge_gain(flags_with(flag_pulse=1, flag_fqa=1), PULSE_PARAM), pulse_gain)
+    assert math.isclose(knowledge_gain(flags_with(flag_pulse=1), PULSE_PARAM), pulse_gain)
+    assert math.isclose(knowledge_gain(flags_with(flag_fqa=1), PULSE_PARAM), fqa_gain)
+
+
+def test_original_model_fqa_still_reaches_home():
+    original = {key: value for key, value in PULSE_PARAM.items() if key != "baseline_l23_preference"}
+    P = apply_fqa_effect({"knowledge": np.array([0.0, 0.6, 0.6, 0.6])}, flags_with(flag_fqa=1), original)
+    np.testing.assert_allclose(P["knowledge"], [0.0215, 0.6215, 0.6215, 0.6215])
+
+
+def test_pulse_applies_in_original_model_counties_too():
+    original = {key: value for key, value in PULSE_PARAM.items() if key != "baseline_l23_preference"}
+    flags = flags_with(flag_pulse=1, flag_fqa=1)
+    assert pulse_effect(flags, original) == pulse_effect(flags, PULSE_PARAM)
+    # PULSE's gain (0.031) beats FQA's (0.0215) at facilities; FQA's still reaches home.
+    P = apply_fqa_effect({"knowledge": np.array([0.0, 0.6, 0.6, 0.6])}, flags, original)
+    np.testing.assert_allclose(P["knowledge"], [0.0215, 0.631, 0.631, 0.631])

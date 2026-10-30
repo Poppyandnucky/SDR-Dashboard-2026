@@ -1,9 +1,10 @@
 """Kakamega runs the original model: its women-level outputs must match main.
 
-The reference (data/kakamega_original_reference.json) is the column sums of one
-3-month Kakamega baseline run (parameter seed 42, monthly seeds from 20261201) with
-main's code and workbook (commit ba034d1). Columns added since (p_mat_death,
-i_transfer_group) are not compared.
+Each reference (data/kakamega_original*_reference.json) is the column sums of one
+3-month Kakamega run (parameter seed 42, monthly seeds from 20261201) with main's
+code and workbook (commit ba034d1): the baseline, and a run with PROMPTS and FQA on.
+PULSE was replaced for every county in 2026, so Kakamega's PULSE runs differ from
+main by design. Columns added since (p_mat_death, i_transfer_group) are not compared.
 """
 
 import json
@@ -13,13 +14,12 @@ from pathlib import Path
 import numpy as np
 
 from Calibration.calibration_common import simulate
+from global_func import reset_flags
 
-REFERENCE = Path(__file__).parent / "data" / "kakamega_original_reference.json"
+DATA = Path(__file__).parent / "data"
 
 
-def test_kakamega_matches_main():
-    reference = json.loads(REFERENCE.read_text())
-    people = simulate("kakamega", {}, reference["runs"], reference["months"], 20261201)[0]
+def assert_matches(reference, people):
     assert len(people) == reference["women"]
     differing = {
         column: (expected, float(np.asarray(people[column], dtype=float).sum()))
@@ -27,3 +27,18 @@ def test_kakamega_matches_main():
         if not math.isclose(float(np.asarray(people[column], dtype=float).sum()), expected, rel_tol=1e-9, abs_tol=1e-9)
     }
     assert not differing, f"Kakamega differs from main (expected, got): {differing}"
+
+
+def test_kakamega_matches_main():
+    reference = json.loads((DATA / "kakamega_original_reference.json").read_text())
+    people = simulate("kakamega", {}, reference["runs"], reference["months"], 20261201)[0]
+    assert_matches(reference, people)
+
+
+def test_kakamega_keeps_original_prompts_and_fqa():
+    reference = json.loads((DATA / "kakamega_original_interventions_reference.json").read_text())
+    flags = reset_flags()
+    flags.update({flag: 1 for flag in reference["flags"]})
+    values = {(name, None): value for name, value in reference["values"].items()}
+    people = simulate("kakamega", values, reference["runs"], reference["months"], 20261201, flags)[0]
+    assert_matches(reference, people)
