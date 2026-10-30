@@ -12,44 +12,19 @@ def odds_update(p, OR):
     odds_new = odds * OR
     return clip01(odds_new / (1.0 + odds_new))
 
-def pulse_effect(
-    indicator_of_interest,
-    targeted_indicator,
-    current_value,
-    target_value,
-    flags,
-    param,
-    clip_min=None,
-    clip_max=None,
-):
-    if targeted_indicator != indicator_of_interest or not flags.get("flag_pulse", 0):
-        return current_value
-
-    pulse_influence_strength = float(param["pulse_influence_strength"])
-    fqa_pulse_modifier = float(param["fqa_pulse_modifier"])
-    # pulse_coverage = float(param.get("HSS", {}).get("pulse_coverage", 1.0))
+def pulse_effect(flags, param):
+    """PULSE: data review leads to more PROMPTS registration and better health-worker
+    performance (Ivers et al. 2026 audit and feedback). Returns prompts_registration_or =
+    exp(pulse_implementation_index x ln(pulse_or_prompts_registration)), applied to the
+    odds of PROMPTS registration, and knowledge_gain = pulse_implementation_index x
+    pulse_performance_improve, added to facility knowledge. None when PULSE is off."""
+    if not flags.get("flag_pulse", 0):
+        return None
     pulse_implementation_index = float(param["pulse_implementation_index"])
-    # flag_fqa = float(flags.get("flag_fqa", 0))
-    # Pre-boost snapshot (sync_param_momish_from_hss), not the live
-    # fqa_implementation_index -- otherwise PULSE's own strength would be
-    # inflated by its own boost to FQA's implementation index, a circular
-    # amplification the fqa_pulse_modifier term was never calibrated for.
-    fqa_implementation_index = float(param.get("fqa_pulse_amplifier_index", param["fqa_implementation_index"]))
-    pulse_influence_strength_effective = np.clip(
-        pulse_implementation_index * pulse_influence_strength * (1 + fqa_implementation_index * fqa_pulse_modifier),
-        0,
-        1,
-    )
-
-    indicator_gap = max(current_value - target_value, 0)
-    new_value = current_value - pulse_influence_strength_effective * indicator_gap
-
-    if clip_min is not None or clip_max is not None:
-        low = -np.inf if clip_min is None else clip_min
-        high = np.inf if clip_max is None else clip_max
-        new_value = np.clip(new_value, low, high)
-
-    return new_value
+    return {
+        "prompts_registration_or": float(np.exp(pulse_implementation_index * np.log(float(param["pulse_or_prompts_registration"])))),
+        "knowledge_gain": pulse_implementation_index * float(param["pulse_performance_improve"]),
+    }
 
 import random
 import numpy as np
@@ -114,6 +89,7 @@ def f_ANC_LB_effect_vectorized(track, LB_base, param, flags, i, int_period, rng)
     flag_ANC = flags["flag_ANC"]
     flag_POCUS = flags["flag_us"]
     flag_PROMPTS = flags["flag_PROMPTS"]
+    pulse = pulse_effect(flags, param)
 
     # ANC intervention
     P_ANC_base = param['p_ANC_base']
@@ -129,6 +105,8 @@ def f_ANC_LB_effect_vectorized(track, LB_base, param, flags, i, int_period, rng)
         # That share gets the full scenario RR on 4+ ANC; the rest keep their baseline
         # probability -- the index is a coverage weight, not a scaling factor on the RR.
         prompts_implementation_index = clip01(param.get("prompts_implementation_index", 0.0))
+        if pulse:
+            prompts_implementation_index = odds_update(prompts_implementation_index, pulse["prompts_registration_or"])
         prompts_rr_anc4p = float(param.get("prompts_rr_anc4p", 1.0))
 
         P_ANC_treated = clip01(P_ANC * prompts_rr_anc4p)
@@ -361,6 +339,9 @@ def f_ANC_LB_effect_vectorized(track, LB_base, param, flags, i, int_period, rng)
             0.0,
             1.0,
         )
+    # PULSE: health-worker performance gain after MENTORS.
+    if pulse:
+        P_knowledge[1:4] = np.clip(P_knowledge[1:4] + pulse["knowledge_gain"], 0.0, 1.0)
     P_close_to_L23 = param["close_to_L23"]
     P_close_to_L45 = 1 - P_close_to_L23
     P_iv_iron = param["S"]["iv_iron"] * (P_knowledge[1] * P_close_to_L23 + P_knowledge[3] * P_close_to_L45)
@@ -488,15 +469,7 @@ def shifting_live_births_vectorized(individual_outcomes, param, i, track, flags,
             sorted_movers_indices = movers_intended_indices[np.argsort(move_random_draw_intended)]
 
             num_intended = len(movers_intended_indices)
-            effective_capacity = -pulse_effect(
-                "Facility_Capacity",
-                "Facility_Capacity",
-                -Facility_Capacity,
-                -num_l45_exp,
-                flags,
-                param,
-            )
-            num_l45_max = int(np.floor(effective_capacity - num_l45_bf_shift))
+            num_l45_max = int(np.floor(Facility_Capacity - num_l45_bf_shift))
             num_l45_max = max(num_l45_max, 0)
             num_select_final = min(num_l45_max, num_intended)
 

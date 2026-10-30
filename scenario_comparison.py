@@ -108,28 +108,19 @@ SCENARIOS = [
     {"scenario": "pulse_moderate", "intervention": "PULSE", "level": "moderate", "description": "50% implementation index"},
     {"scenario": "pulse_high", "intervention": "PULSE", "level": "high", "description": "95% implementation index"},
     {"scenario": "fqa_base", "intervention": "FQA", "level": "base", "description": "PULSE current; FQA off; all single interventions on"},
-    {"scenario": "fqa_current", "intervention": "FQA", "level": "current", "description": "County-specific current FQA index; PULSE current; all single interventions on; 10% amplification"},
-    {"scenario": "fqa_moderate", "intervention": "FQA", "level": "moderate", "description": "50% FQA implementation index; PULSE current; all single interventions on; 10% amplification"},
-    {"scenario": "fqa_high", "intervention": "FQA", "level": "high", "description": "95% FQA implementation index; PULSE current; all single interventions on; 30% amplification"},
+    {"scenario": "fqa_current", "intervention": "FQA", "level": "current", "description": "County-specific current FQA index; PULSE current; all single interventions on"},
+    {"scenario": "fqa_moderate", "intervention": "FQA", "level": "moderate", "description": "50% FQA implementation index; PULSE current; all single interventions on"},
+    {"scenario": "fqa_high", "intervention": "FQA", "level": "high", "description": "95% FQA implementation index; PULSE current; all single interventions on"},
     {"scenario": "combined_base", "intervention": "All", "level": "base", "description": "No HSS; all MOMISH interventions off, all single interventions off"},
-    {"scenario": "combined_current", "intervention": "All", "level": "current", "description": "County-specific current implementation index for all interventions; all single interventions on; Blood tracking 15% adoption; Transfer & EMT 1 hour delay shift; PROMPTS 1.02 RR effectiveness; FQA 10% amplification; pulse_implementation_boost=0.25"},
-    {"scenario": "combined_moderate", "intervention": "All", "level": "moderate", "description": "50% implementation index for all interventions; all single interventions on; Blood tracking 30% adoption; Transfer & EMT 1 hour delay shift; PROMPTS 1.18 RR effectiveness; FQA 10% amplification; pulse_implementation_boost=0.5"},
-    {"scenario": "combined_high", "intervention": "All", "level": "high", "description": "95% implementation index for all interventions; all single interventions on; Blood tracking 50% adoption; Transfer & EMT 1 hour delay shift; PROMPTS 1.35 RR effectiveness; FQA 30% amplification; pulse_implementation_boost=0.75"},
+    {"scenario": "combined_current", "intervention": "All", "level": "current", "description": "County-specific current implementation index for all interventions; all single interventions on; Blood tracking 15% adoption; Transfer & EMT 1 hour delay shift; PROMPTS 1.02 RR effectiveness"},
+    {"scenario": "combined_moderate", "intervention": "All", "level": "moderate", "description": "50% implementation index for all interventions; all single interventions on; Blood tracking 30% adoption; Transfer & EMT 1 hour delay shift; PROMPTS 1.18 RR effectiveness"},
+    {"scenario": "combined_high", "intervention": "All", "level": "high", "description": "95% implementation index for all interventions; all single interventions on; Blood tracking 50% adoption; Transfer & EMT 1 hour delay shift; PROMPTS 1.35 RR effectiveness"},
 ]
 
 # Uncomment to restrict this run to a single intervention's scenarios (e.g. to
 # verify blood_current/moderate/high after an adoption-value change) instead
 # of regenerating the full scenario set. Leave commented for normal runs.
 # SCENARIOS = [s for s in SCENARIOS if s["scenario"].startswith("blood_")]
-
-# PULSE implementation-index boost, by combined-scenario level (mirrors the
-# SDR_Dash.py PULSE_IMPLEMENTATION_BOOST_OPTIONS Current/Moderate/High values).
-COMBINED_PULSE_BOOST_BY_LEVEL = {
-    "current": 0.25,
-    "moderate": 0.50,
-    "high": 0.75,
-}
-
 
 def enable_single_interventions(param, flags):
     treatment_flags = {
@@ -150,32 +141,6 @@ def apply_prompts_sensitivity(param, implementation_index):
     effective_sensitivity = baseline + (PROMPTS_HIGH_SENS_TRAD - baseline) * scale
     param["sen_risk_trad"] = clip01(effective_sensitivity)
     param["sen_risk_trad_target"] = param["sen_risk_trad"]
-
-
-def apply_pulse_implementation_boost(param, flags):
-    """Mirror SDR_Dash.py's sync_param_momish_from_hss PULSE boost: lend PULSE's
-    implementation index to PROMPTS, MENTORS, FQA, and REFERRAL (not Blood, not
-    itself). run_model_dash() never calls the dashboard's sync step, so this
-    has to be applied explicitly here for scenarios that set flag_pulse.
-    """
-    if not flags.get("flag_pulse", 0):
-        return
-    pulse_implementation_index = float(param.get("pulse_implementation_index", 0.0))
-    pulse_implementation_boost = float(param.get("pulse_implementation_boost", 0.0))
-    fqa_pulse_modifier = float(param.get("fqa_pulse_modifier", 0.0))
-    flag_fqa = float(flags.get("flag_fqa", 0))
-    param["fqa_pulse_amplifier_index"] = float(param.get("fqa_implementation_index", 0.0))
-
-    pulse_implementation_boost_effective = clip01(
-        pulse_implementation_index * pulse_implementation_boost * (1 + flag_fqa * fqa_pulse_modifier)
-    )
-    for key in (
-        "prompts_implementation_index",
-        "mentors_implementation_index",
-        "fqa_implementation_index",
-        "referral_implementation_index",
-    ):
-        param[key] = clip01(param.get(key, 0.0) + pulse_implementation_boost_effective)
 
 
 def current_implementation(intervention, county):
@@ -283,11 +248,7 @@ def configure_scenario(name, param, flags, slider_params=None):
         if level != "base":
             flags["flag_fqa"] = 1
             fqa_implementation_index = implementation_for_level("fqa", level, county)
-            fqa_pulse_modifier = 0.30 if level == "high" else 0.10
-            hss["fqa_pulse_modifier_level"] = "High" if level == "high" else "Low"
-            hss["fqa_pulse_modifier"] = fqa_pulse_modifier
             hss["fqa_implementation_index"] = fqa_implementation_index
-            param["fqa_pulse_modifier"] = fqa_pulse_modifier
             param["fqa_implementation_index"] = fqa_implementation_index
         else:
             hss["fqa_implementation_index"] = 0.0
@@ -325,24 +286,16 @@ def configure_scenario(name, param, flags, slider_params=None):
         param["referral_implementation_index"] = referral_index
 
         pulse_index = implementation_for_level("pulse", level, county)
-        pulse_boost = COMBINED_PULSE_BOOST_BY_LEVEL[level]
         flags["flag_pulse"] = 1
         hss["pulse_implementation_index"] = pulse_index
-        hss["pulse_implementation_boost"] = pulse_boost
         param["pulse_implementation_index"] = pulse_index
-        param["pulse_implementation_boost"] = pulse_boost
 
         fqa_index = implementation_for_level("fqa", level, county)
-        fqa_pulse_modifier = 0.30 if level == "high" else 0.10
         flags["flag_fqa"] = 1
-        hss["fqa_pulse_modifier_level"] = "High" if level == "high" else "Low"
-        hss["fqa_pulse_modifier"] = fqa_pulse_modifier
         hss["fqa_implementation_index"] = fqa_index
-        param["fqa_pulse_modifier"] = fqa_pulse_modifier
         param["fqa_implementation_index"] = fqa_index
 
         enable_single_interventions(param, flags)
-        apply_pulse_implementation_boost(param, flags)
         return
 
     raise ValueError(f"Unknown scenario: {name}")

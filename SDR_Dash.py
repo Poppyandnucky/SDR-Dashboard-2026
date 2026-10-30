@@ -976,42 +976,6 @@ def sync_param_momish_from_hss(i_param, i_HSS, flags):
     if i_HSS.get("referral_implementation_index") is not None:
         i_param["referral_implementation_index"] = float(i_HSS["referral_implementation_index"])
 
-    # Snapshot FQA's own implementation index *before* PULSE's cross-boost below.
-    # pulse_effect() (LB_effect.py) reads this snapshot for its own strength
-    # formula -- if it read the boosted value instead, PULSE would indirectly
-    # amplify itself through FQA's fqa_pulse_modifier term, which was
-    # calibrated against FQA's un-boosted level, not a PULSE-inflated one.
-    i_param["fqa_pulse_amplifier_index"] = float(i_param.get("fqa_implementation_index", 0.0))
-
-    # PULSE implementation boost: when PULSE is enabled, it lends some of its
-    # own implementation index to PROMPTS, MENTORS, FQA, and REFERRAL (not
-    # Blood, and not itself). Computed once here rather than inside each
-    # intervention's own per-month block, so none of them need to know PULSE
-    # exists.
-    if flags.get("flag_pulse", 0):
-        pulse_implementation_index = float(i_param.get("pulse_implementation_index", 0.0))
-        pulse_implementation_boost = float(i_param.get("pulse_implementation_boost", 0.0))
-        fqa_pulse_modifier = float(i_param.get("fqa_pulse_modifier", 0.0))
-        flag_fqa = float(flags.get("flag_fqa", 0))
-
-        pulse_implementation_boost_effective = float(np.clip(
-            pulse_implementation_index * pulse_implementation_boost * (1 + flag_fqa * fqa_pulse_modifier),
-            0.0,
-            1.0,
-        ))
-
-        for key in (
-            "prompts_implementation_index",
-            "mentors_implementation_index",
-            "fqa_implementation_index",
-            "referral_implementation_index",
-        ):
-            i_param[key] = float(np.clip(
-                i_param.get(key, 0.0) + pulse_implementation_boost_effective,
-                0.0,
-                1.0,
-            ))
-
 
 def apply_momish_facility_delivery(i_flags, i_HSS, slider_params, choice_key, intervention_selection):
     """

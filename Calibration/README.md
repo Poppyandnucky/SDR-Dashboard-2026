@@ -163,7 +163,21 @@ Findings from reviewing the earlier calibration:
   ANC, and the live-birth shift baseline. The transfer destination and
   mortality changes apply only where `p_l5_given_l23_transfer` and
   `p_mat_death_facility_baseline` are set. `tests/test_kakamega_original.py`
-  checks that Kakamega's outputs match main (commit ba034d1).
+  checks that Kakamega's outputs match main (commit ba034d1), at baseline and
+  with PROMPTS and FQA on. PULSE is the exception (below).
+- **PULSE** (all counties, Kakamega included) works through health-worker
+  practice, not complications or capacity (`LB_effect.pulse_effect`). It raises
+  PROMPTS registration by the audit-and-feedback odds ratio
+  `pulse_or_prompts_registration` (1.47, Ivers et al. 2026), scaled as
+  exp(`pulse_implementation_index` x ln 1.47), and raises facility
+  `P["knowledge"]` by `pulse_implementation_index` x `pulse_performance_improve`
+  (0.062). When FQA is also on, the larger of the FQA and PULSE knowledge gains
+  applies, since both rest on the same evidence. The original PULSE (closing
+  complication-rate gaps, extra capacity, and `pulse_implementation_boost`) was
+  removed, so Kakamega's PULSE results differ from main. In the three recalibrated
+  counties FQA no longer raises knowledge at home; Kakamega keeps that, as on main.
+  The dashboard's "PULSE implementation boost" and "FQA amplification of PULSE"
+  controls no longer affect results.
 - **Makueni L5.** The modeled internal L5 MMR (177 per 100,000) exceeds the
   observed 75 (41-126), so in-referral cannot match it. One undocumented
   hypothesis is out-referral of complicated cases (for example to Machakos
