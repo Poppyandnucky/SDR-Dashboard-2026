@@ -24,11 +24,6 @@ FIRST_ANALYSIS_RUN = SKIP_INITIAL_RUNS + 1
 N_RUNS = SKIP_INITIAL_RUNS + ANALYSIS_RUNS
 BASE_SEED = 4200
 ENABLED_SINGLE_INTERVENTION_SUPPLY = 0.95
-PROMPTS_HIGH_SENS_TRAD = 0.95
-
-
-def clip01(value):
-    return float(np.clip(value, 0.0, 1.0))
 
 
 CURRENT_IMPLEMENTATION_INDEX = {
@@ -135,14 +130,6 @@ def enable_single_interventions(param, flags):
         param["S"][supply] = ENABLED_SINGLE_INTERVENTION_SUPPLY
 
 
-def apply_prompts_sensitivity(param, implementation_index):
-    baseline = float(param["sen_risk_trad"])
-    scale = clip01(implementation_index / IMPLEMENTATION_INDEX_BY_LEVEL["high"])
-    effective_sensitivity = baseline + (PROMPTS_HIGH_SENS_TRAD - baseline) * scale
-    param["sen_risk_trad"] = clip01(effective_sensitivity)
-    param["sen_risk_trad_target"] = param["sen_risk_trad"]
-
-
 def current_implementation(intervention, county):
     return CURRENT_IMPLEMENTATION_INDEX[intervention].get(county, 0.0)
 
@@ -205,7 +192,6 @@ def configure_scenario(name, param, flags, slider_params=None):
         })
         param["prompts_implementation_index"] = implementation_index
         param["prompts_rr_anc4p"] = prompts_rr_anc4p
-        apply_prompts_sensitivity(param, implementation_index)
         if name == "prompts_high_shift":
             if slider_params is None:
                 raise ValueError("slider_params is required for prompts_high_shift")
@@ -273,7 +259,6 @@ def configure_scenario(name, param, flags, slider_params=None):
         })
         param["prompts_implementation_index"] = prompts_index
         param["prompts_rr_anc4p"] = prompts_rr_anc4p
-        apply_prompts_sensitivity(param, prompts_index)
 
         adoption = BLOOD_ADOPTION_BY_LEVEL[level]
         flags["flag_blood"] = 1

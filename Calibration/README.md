@@ -164,7 +164,18 @@ Findings from reviewing the earlier calibration:
   mortality changes apply only where `p_l5_given_l23_transfer` and
   `p_mat_death_facility_baseline` are set. `tests/test_kakamega_original.py`
   checks that Kakamega's outputs match main (commit ba034d1), at baseline and
-  with PROMPTS and FQA on. PULSE is the exception (below).
+  with FQA on. PROMPTS and PULSE are the exceptions (below).
+- **PROMPTS** (all counties, Kakamega included) is drawn for each mother
+  (`LB_effect.py`). A share `prompts_implementation_index` (after PULSE) is
+  registered (`i_prompts_registered`); registered mothers' 4+ ANC probability is
+  P_ANC x `prompts_rr_anc4p`, and registered mothers with 4+ ANC
+  (`i_prompts_screened`) are screened with `sen_risk_trad_target` (0.95) and
+  `spec_risk_trad_target` (0.631); everyone else keeps `sen_risk_trad` and
+  `spec_risk_trad`. POCUS takes precedence. Registration reuses the 4+ ANC
+  random draw, so PROMPTS runs keep the baseline's random numbers. This replaces
+  raising everyone's screening sensitivity (`apply_prompts_sensitivity` in
+  `scenario_comparison.py`, removed), so PULSE's extra registrations now also
+  improve screening.
 - **PULSE** (all counties, Kakamega included) works through health-worker
   practice, not complications or capacity (`LB_effect.pulse_effect`). It raises
   PROMPTS registration by the audit-and-feedback odds ratio
@@ -176,8 +187,13 @@ Findings from reviewing the earlier calibration:
   complication-rate gaps, extra capacity, and `pulse_implementation_boost`) was
   removed, so Kakamega's PULSE results differ from main. In the three recalibrated
   counties FQA no longer raises knowledge at home; Kakamega keeps that, as on main.
-  The dashboard's "PULSE implementation boost" and "FQA amplification of PULSE"
-  controls no longer affect results.
+  An optional FQA feedback (`flag_fqa_pulse_feedback`, off by default and in
+  the main analysis; an unsourced assumption for a what-if scenario) multiplies
+  both PULSE effects by 1 + `fqa_implementation_index` x `fqa_pulse_modifier`
+  when FQA is on. The dashboard switches it on whenever FQA and PULSE are both on
+  (as the original PULSE did), with "FQA amplification of PULSE" setting
+  `fqa_pulse_modifier`; the scenario and results scripts leave it off. The
+  dashboard's "PULSE implementation boost" control no longer affects results.
 - **Makueni L5.** The modeled internal L5 MMR (177 per 100,000) exceeds the
   observed 75 (41-126), so in-referral cannot match it. One undocumented
   hypothesis is out-referral of complicated cases (for example to Machakos

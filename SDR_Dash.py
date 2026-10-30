@@ -975,6 +975,8 @@ def sync_param_momish_from_hss(i_param, i_HSS, flags):
         i_param["pulse_implementation_boost"] = float(i_HSS["pulse_implementation_boost"])
     if i_HSS.get("referral_implementation_index") is not None:
         i_param["referral_implementation_index"] = float(i_HSS["referral_implementation_index"])
+    # On the dashboard, FQA strengthens PULSE whenever both are on (scenario scripts leave it off).
+    flags["flag_fqa_pulse_feedback"] = int(bool(flags.get("flag_fqa", 0)) and bool(flags.get("flag_pulse", 0)))
 
 
 def apply_momish_facility_delivery(i_flags, i_HSS, slider_params, choice_key, intervention_selection):

@@ -2,9 +2,9 @@
 
 Each reference (data/kakamega_original*_reference.json) is the column sums of one
 3-month Kakamega run (parameter seed 42, monthly seeds from 20261201) with main's
-code and workbook (commit ba034d1): the baseline, and a run with PROMPTS and FQA on.
-PULSE was replaced for every county in 2026, so Kakamega's PULSE runs differ from
-main by design. Columns added since (p_mat_death, i_transfer_group) are not compared.
+code and workbook (commit ba034d1): the baseline, and a run with FQA on. PULSE and
+PROMPTS (registration drawn for each mother) were replaced for every county in 2026,
+so Kakamega's runs with them differ from main by design. Columns added since (p_mat_death, i_transfer_group) are not compared.
 """
 
 import json
@@ -35,8 +35,8 @@ def test_kakamega_matches_main():
     assert_matches(reference, people)
 
 
-def test_kakamega_keeps_original_prompts_and_fqa():
-    reference = json.loads((DATA / "kakamega_original_interventions_reference.json").read_text())
+def test_kakamega_keeps_original_fqa():
+    reference = json.loads((DATA / "kakamega_original_fqa_reference.json").read_text())
     flags = reset_flags()
     flags.update({flag: 1 for flag in reference["flags"]})
     values = {(name, None): value for name, value in reference["values"].items()}

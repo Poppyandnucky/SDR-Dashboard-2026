@@ -17,13 +17,20 @@ def pulse_effect(flags, param):
     performance (Ivers et al. 2026 audit and feedback). Returns prompts_registration_or =
     exp(pulse_implementation_index x ln(pulse_or_prompts_registration)), applied to the
     odds of PROMPTS registration, and knowledge_gain = pulse_implementation_index x
-    pulse_performance_improve, added to facility knowledge. None when PULSE is off."""
+    pulse_performance_improve, added to facility knowledge. None when PULSE is off.
+
+    Optional FQA feedback (flag_fqa_pulse_feedback, off in the main analysis; an assumption,
+    not sourced): with FQA on, both effects are multiplied by
+    1 + fqa_implementation_index x fqa_pulse_modifier."""
     if not flags.get("flag_pulse", 0):
         return None
     pulse_implementation_index = float(param["pulse_implementation_index"])
+    fqa_feedback = 1.0
+    if flags.get("flag_fqa_pulse_feedback", 0) and flags.get("flag_fqa", 0):
+        fqa_feedback = 1.0 + float(param.get("fqa_implementation_index", 0.0)) * float(param.get("fqa_pulse_modifier", 0.0))
     return {
-        "prompts_registration_or": float(np.exp(pulse_implementation_index * np.log(float(param["pulse_or_prompts_registration"])))),
-        "knowledge_gain": pulse_implementation_index * float(param["pulse_performance_improve"]),
+        "prompts_registration_or": float(np.exp(fqa_feedback * pulse_implementation_index * np.log(float(param["pulse_or_prompts_registration"])))),
+        "knowledge_gain": fqa_feedback * pulse_implementation_index * float(param["pulse_performance_improve"]),
     }
 
 import random
@@ -99,22 +106,15 @@ def f_ANC_LB_effect_vectorized(track, LB_base, param, flags, i, int_period, rng)
     else:
         P_ANC = P_ANC_base
 
-    # ------------------- PROMPTS BLOCK A: Increase 4+ANC via RR on the covered share ------------------- #
+    # ------------------- PROMPTS: registration, 4+ ANC, and screening for each mother ------------------- #
+    # prompts_implementation_index = share of mothers registered with PROMPTS (raised by PULSE).
+    # Registered mothers have 4+ ANC probability P_ANC x prompts_rr_anc4p; the rest keep P_ANC.
     if flag_PROMPTS:
-        # implementation_index = share of mothers reached by PROMPTS (population coverage).
-        # That share gets the full scenario RR on 4+ ANC; the rest keep their baseline
-        # probability -- the index is a coverage weight, not a scaling factor on the RR.
         prompts_implementation_index = clip01(param.get("prompts_implementation_index", 0.0))
         if pulse:
             prompts_implementation_index = odds_update(prompts_implementation_index, pulse["prompts_registration_or"])
-        prompts_rr_anc4p = float(param.get("prompts_rr_anc4p", 1.0))
-
-        P_ANC_treated = clip01(P_ANC * prompts_rr_anc4p)
-        P_ANC = clip01((1 - prompts_implementation_index) * P_ANC + prompts_implementation_index * P_ANC_treated)
-
-        engagement_level = prompts_implementation_index
-    else:
-        engagement_level = 0.0
+        P_ANC_registered = clip01(P_ANC * float(param.get("prompts_rr_anc4p", 1.0)))
+        P_ANC = clip01((1 - prompts_implementation_index) * P_ANC + prompts_implementation_index * P_ANC_registered)
 
     # POCUS intervention
     i_pocus = np.zeros(num_mothers, dtype=int)
@@ -124,11 +124,6 @@ def f_ANC_LB_effect_vectorized(track, LB_base, param, flags, i, int_period, rng)
     else:
         sen_risk = param["sen_risk_trad"]
         spec_risk = param["spec_risk_trad"]
-        if flags.get("flag_PROMPTS", 0):
-            sen_target = param.get("sen_risk_trad_target", sen_risk)
-            spec_target = param.get("spec_risk_trad_target", spec_risk)
-            sen_risk = clip01(sen_risk + (sen_target - sen_risk) * engagement_level)
-            spec_risk = clip01(spec_risk + (spec_target - spec_risk) * engagement_level)
 
     if not flag_POCUS:
         p_elec_CS_highrisk = param["p_elec_CS|highrisk"]                  # probability of elective CS given high risk
@@ -138,7 +133,27 @@ def f_ANC_LB_effect_vectorized(track, LB_base, param, flags, i, int_period, rng)
     ##-------------------Mothers' Initial Conditions----------------------##
     i_class = (rng.random(num_mothers) < param["class"]).astype(int)       # 1 = high SES, 0 = low SES
     i_risk = (rng.random(num_mothers) < param["p_highrisk"]).astype(int)            # 1 = high risk, 0 = low risk
-    i_ANC = (rng.random(num_mothers) < P_ANC).astype(int)                  # 1 = received ANC, 0 = no ANC
+    u_ANC = rng.random(num_mothers)
+    i_ANC = (u_ANC < P_ANC).astype(int)                                    # 1 = 4+ ANC visits, 0 = fewer than 4
+
+    # PROMPTS registration reuses the 4+ ANC draw, so PROMPTS runs use the same random numbers
+    # as runs without it. u_ANC's range is split into four slices of the right size: registered
+    # with 4+ ANC [0, a), unregistered with 4+ ANC [a, P_ANC), registered without [P_ANC, P_ANC + b),
+    # unregistered without [P_ANC + b, 1), where a = index x P_ANC_registered, b = index x (1 - P_ANC_registered).
+    i_prompts_registered = np.zeros(num_mothers, dtype=int)
+    if flag_PROMPTS:
+        registered_with_anc = prompts_implementation_index * P_ANC_registered
+        registered_without_anc = prompts_implementation_index * (1 - P_ANC_registered)
+        i_prompts_registered = ((u_ANC < registered_with_anc) |
+                                ((u_ANC >= P_ANC) & (u_ANC < P_ANC + registered_without_anc))).astype(int)
+
+    # Registered mothers with 4+ ANC are screened with PROMPTS danger-sign education
+    # (sen_risk_trad_target, spec_risk_trad_target); ultrasound (POCUS) takes precedence.
+    i_prompts_screened = np.zeros(num_mothers, dtype=int)
+    if flag_PROMPTS and not flag_POCUS:
+        i_prompts_screened = i_prompts_registered * i_ANC
+        sen_risk = np.where(i_prompts_screened == 1, param.get("sen_risk_trad_target", sen_risk), sen_risk)
+        spec_risk = np.where(i_prompts_screened == 1, param.get("spec_risk_trad_target", spec_risk), spec_risk)
 
     ##-------------------Gestational Age Assignment - based on ANC status----------------------###
     GA_anc_cumsum = np.cumsum(param["GA_anc"])
@@ -360,6 +375,8 @@ def f_ANC_LB_effect_vectorized(track, LB_base, param, flags, i, int_period, rng)
     individual_outcomes = pd.DataFrame({
         'i_loc': i_loc.astype(int),
         'i_ANC': i_ANC.astype(int),
+        'i_prompts_registered': i_prompts_registered.astype(int),
+        'i_prompts_screened': i_prompts_screened.astype(int),
         'i_class': i_class.astype(int),
         'i_risk': i_risk.astype(int),
         'i_GA': i_GA.astype(int),

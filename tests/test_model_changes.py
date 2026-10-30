@@ -1,8 +1,12 @@
-"""Tests of the model changes the calibration depends on (global_func.py, mortality.py)."""
+"""Tests of the model changes the calibration depends on (global_func.py, mortality.py)
+and of the PULSE and PROMPTS interventions."""
 
 import math
 
 import numpy as np
+import pandas as pd
+
+from Calibration.calibration_common import simulate
 
 from global_func import NO_CAPACITY_LIMIT, facility_capacity_limit, odds_prob, reset_flags
 from intrapartum import apply_fqa_effect
@@ -105,3 +109,40 @@ def test_pulse_applies_in_original_model_counties_too():
     # PULSE's gain (0.031) beats FQA's (0.0215) at facilities; FQA's still reaches home.
     P = apply_fqa_effect({"knowledge": np.array([0.0, 0.6, 0.6, 0.6])}, flags, original)
     np.testing.assert_allclose(P["knowledge"], [0.0215, 0.631, 0.631, 0.631])
+
+
+def kakamega_prompts_run(prompts_values, **flags_on):
+    values = {(name, None): value for name, value in prompts_values.items()}
+    return simulate("kakamega", values, 1, 2, 20261201, flags_with(**flags_on))[0]
+
+
+def test_prompts_registration_and_screening_for_each_mother():
+    # Half the mothers registered; registered mothers' 4+ ANC probability x 1.18.
+    people = kakamega_prompts_run({"prompts_implementation_index": 0.5, "prompts_rr_anc4p": 1.18}, flag_PROMPTS=1)
+    registered = people["i_prompts_registered"] == 1
+    assert abs(registered.mean() - 0.5) < 0.02
+    anc_ratio = people.loc[registered, "i_ANC"].mean() / people.loc[~registered, "i_ANC"].mean()
+    assert abs(anc_ratio - 1.18) < 0.06
+    np.testing.assert_array_equal(people["i_prompts_screened"], people["i_prompts_registered"] * people["i_ANC"])
+
+
+def test_prompts_without_effects_uses_the_same_random_numbers():
+    # With RR 1 and screening held at baseline, PROMPTS changes nobody's outcome.
+    baseline = kakamega_prompts_run({})
+    no_effect = {"prompts_implementation_index": 0.5, "prompts_rr_anc4p": 1.0,
+                 "sen_risk_trad_target": 0.7641, "spec_risk_trad_target": 0.6306}
+    prompts = kakamega_prompts_run(no_effect, flag_PROMPTS=1)
+    assert baseline["i_prompts_registered"].sum() == 0
+    pd.testing.assert_frame_equal(baseline.drop(columns=["i_prompts_registered", "i_prompts_screened"]),
+                                  prompts.drop(columns=["i_prompts_registered", "i_prompts_screened"]))
+
+
+def test_fqa_pulse_feedback_is_off_unless_switched_on():
+    param = {**PULSE_PARAM, "fqa_pulse_modifier": 0.2}
+    without = pulse_effect(flags_with(flag_pulse=1, flag_fqa=1), param)
+    assert without == pulse_effect(flags_with(flag_pulse=1), param)
+    # Switched on, FQA (index 0.5, modifier 0.2) multiplies both PULSE effects by 1.1.
+    feedback = pulse_effect(flags_with(flag_pulse=1, flag_fqa=1, flag_fqa_pulse_feedback=1), param)
+    assert math.isclose(feedback["prompts_registration_or"], math.exp(1.1 * 0.5 * math.log(1.47)))
+    assert math.isclose(feedback["knowledge_gain"], 1.1 * 0.5 * 0.062)
+    assert pulse_effect(flags_with(flag_pulse=1, flag_fqa_pulse_feedback=1), param) == without

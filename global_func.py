@@ -720,6 +720,7 @@ def reset_flags():
         'flag_PROMPTS': 0,
         'flag_pulse': 0,
         'flag_fqa': 0,
+        'flag_fqa_pulse_feedback': 0,  # FQA strengthens PULSE (assumption; off in the main analysis)
         #SDR Demand
         'flag_CHV': 0,
         'flag_pushback': 0,

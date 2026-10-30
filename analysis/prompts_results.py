@@ -9,7 +9,8 @@ i.e. over parameter draws and simulation noise).
 Scenarios:
     base, current, moderate, high   as defined in scenario_comparison.py
                                     (implementation index; RR on 4+ ANC 1.02 / 1.18 / 1.35;
-                                    risk-screening sensitivity raised towards 0.95)
+                                    registered mothers with 4+ ANC screened with
+                                    sensitivity sen_risk_trad_target, 0.95)
     high_anc_only                   high, without the screening effect
     high_screening_only             high, without the ANC effect (RR 1)
     dose_<index>                    other implementation indices for the dose-response
@@ -44,7 +45,7 @@ from model_run import run_model_dash
 from parameter_loader import calculate_derived_parameters, get_parameters, get_slider_params
 from scenario_comparison import (
     BASE_SEED, CURRENT_IMPLEMENTATION_INDEX, FIRST_ANALYSIS_RUN, IMPLEMENTATION_INDEX_BY_LEVEL, N_MONTHS,
-    PROMPTS_RR_BY_LEVEL, apply_prompts_sensitivity, configure_scenario,
+    PROMPTS_RR_BY_LEVEL, configure_scenario,
 )
 
 # Scenarios defined in scenario_comparison.py, and those added here:
@@ -107,11 +108,9 @@ def configure(name, param, flags, sliders, county):
     param["HSS"].update({"prompts_implementation_index": index, "prompts_rr_anc4p": rr})
     param["prompts_implementation_index"] = index
     param["prompts_rr_anc4p"] = rr
-    if screening_effect:
-        apply_prompts_sensitivity(param, index)
-    else:
-        # The workbook sets sen_risk_trad_target (0.95), which LB_effect moves towards
-        # whenever PROMPTS is on; hold screening at its baseline instead.
+    if not screening_effect:
+        # Registered mothers with 4+ ANC are screened at the workbook targets
+        # (sen_risk_trad_target 0.95); hold screening at its baseline instead.
         param["sen_risk_trad_target"] = param["sen_risk_trad"]
         param["spec_risk_trad_target"] = param["spec_risk_trad"]
 
