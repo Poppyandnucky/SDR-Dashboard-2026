@@ -41,9 +41,9 @@ CURRENT_IMPLEMENTATION_INDEX = {
     },
     "mentors": {
         "kakamega": 0.0,
-        "kisii": 0.0713,
-        "mombasa": 0.0583,
-        "makueni": 0.1099,
+        "kisii": 0.481,
+        "mombasa": 0.678,
+        "makueni": 0.611,
     },
     "referral": {
         "kakamega": 0.0,
@@ -59,9 +59,9 @@ CURRENT_IMPLEMENTATION_INDEX = {
     },
     "fqa": {
         "kakamega": 0.0,
-        "kisii": 0.0165,
-        "mombasa": 0.0067,
-        "makueni": 0.0296,
+        "kisii": 0.492,
+        "mombasa": 0.594,
+        "makueni": 0.727,
     },
 }
 
@@ -91,10 +91,10 @@ BLOOD_ADOPTION_BY_LEVEL = {
 
 
 SCENARIOS = [
-    {"scenario": "mentors_base", "intervention": "MENTORS", "level": "base", "description": "No HSS; MENTORS off"},
-    {"scenario": "mentors_current", "intervention": "MENTORS", "level": "current", "description": "County-specific current implementation index; all single interventions on"},
-    {"scenario": "mentors_moderate", "intervention": "MENTORS", "level": "moderate", "description": "50% implementation index; all single interventions on"},
-    {"scenario": "mentors_high", "intervention": "MENTORS", "level": "high", "description": "95% implementation index; all single interventions on"},
+    {"scenario": "mentors_base", "intervention": "MENTORS", "level": "base", "description": "All off"},
+    {"scenario": "mentors_current", "intervention": "MENTORS", "level": "current", "description": "County-specific current implementation index; supplies as in the base"},
+    {"scenario": "mentors_moderate", "intervention": "MENTORS", "level": "moderate", "description": "50% implementation index; supplies as in the base"},
+    {"scenario": "mentors_high", "intervention": "MENTORS", "level": "high", "description": "95% implementation index; supplies as in the base"},
     {"scenario": "prompts_base", "intervention": "PROMPTS", "level": "base", "description": "All off"},
     {"scenario": "prompts_current", "intervention": "PROMPTS", "level": "current", "description": "County-specific current implementation index; OR_anc4p on 4+ ANC"},
     {"scenario": "prompts_moderate", "intervention": "PROMPTS", "level": "moderate", "description": "50% implementation index; OR_anc4p on 4+ ANC"},
@@ -112,10 +112,10 @@ SCENARIOS = [
     {"scenario": "pulse_current", "intervention": "PULSE", "level": "current", "description": "County-specific current implementation index"},
     {"scenario": "pulse_moderate", "intervention": "PULSE", "level": "moderate", "description": "50% implementation index"},
     {"scenario": "pulse_high", "intervention": "PULSE", "level": "high", "description": "95% implementation index"},
-    {"scenario": "fqa_base", "intervention": "FQA", "level": "base", "description": "PULSE current; FQA off; all single interventions on"},
-    {"scenario": "fqa_current", "intervention": "FQA", "level": "current", "description": "County-specific current FQA index; PULSE current; all single interventions on"},
-    {"scenario": "fqa_moderate", "intervention": "FQA", "level": "moderate", "description": "50% FQA implementation index; PULSE current; all single interventions on"},
-    {"scenario": "fqa_high", "intervention": "FQA", "level": "high", "description": "95% FQA implementation index; PULSE current; all single interventions on"},
+    {"scenario": "fqa_base", "intervention": "FQA", "level": "base", "description": "All off"},
+    {"scenario": "fqa_current", "intervention": "FQA", "level": "current", "description": "County-specific current FQA index; supplies as in the base"},
+    {"scenario": "fqa_moderate", "intervention": "FQA", "level": "moderate", "description": "50% FQA implementation index; supplies as in the base"},
+    {"scenario": "fqa_high", "intervention": "FQA", "level": "high", "description": "95% FQA implementation index; supplies as in the base"},
     {"scenario": "combined_base", "intervention": "All", "level": "base", "description": "No HSS; all MOMISH interventions off, all single interventions off"},
     {"scenario": "combined_current", "intervention": "All", "level": "current", "description": "County-specific current implementation index for all interventions; all single interventions on; Blood tracking 15% adoption; Transfer & EMT 1 hour delay shift"},
     {"scenario": "combined_moderate", "intervention": "All", "level": "moderate", "description": "50% implementation index for all interventions; all single interventions on; Blood tracking 30% adoption; Transfer & EMT 1 hour delay shift"},
@@ -169,15 +169,7 @@ def configure_scenario(name, param, flags, slider_params=None):
     hss = param["HSS"]
     county = param.get("county", "kakamega")
 
-    if name.endswith("_base") and not name.startswith("fqa_"):
-        if name == "fqa_base":
-            flags["flag_pulse"] = 1
-            pulse_index = current_implementation("pulse", county)
-            hss["pulse_implementation_index"] = pulse_index
-            hss["fqa_implementation_index"] = 0.0
-            param["pulse_implementation_index"] = pulse_index
-            param["fqa_implementation_index"] = 0.0
-            enable_single_interventions(param, flags)
+    if name.endswith("_base"):
         return
 
     if name.startswith("mentors_"):
@@ -188,7 +180,6 @@ def configure_scenario(name, param, flags, slider_params=None):
             "mentor_implementation_index": implementation_index,
         })
         param["mentors_implementation_index"] = implementation_index
-        enable_single_interventions(param, flags)
         return
 
     if name.startswith("prompts_"):
@@ -231,19 +222,10 @@ def configure_scenario(name, param, flags, slider_params=None):
 
     if name.startswith("fqa_"):
         level = name.removeprefix("fqa_")
-        pulse_implementation_index = current_implementation("pulse", county)
-        flags["flag_pulse"] = 1
-        hss["pulse_implementation_index"] = pulse_implementation_index
-        param["pulse_implementation_index"] = pulse_implementation_index
-        enable_single_interventions(param, flags)
-        if level != "base":
-            flags["flag_fqa"] = 1
-            fqa_implementation_index = implementation_for_level("fqa", level, county)
-            hss["fqa_implementation_index"] = fqa_implementation_index
-            param["fqa_implementation_index"] = fqa_implementation_index
-        else:
-            hss["fqa_implementation_index"] = 0.0
-            param["fqa_implementation_index"] = 0.0
+        flags["flag_fqa"] = 1
+        fqa_implementation_index = implementation_for_level("fqa", level, county)
+        hss["fqa_implementation_index"] = fqa_implementation_index
+        param["fqa_implementation_index"] = fqa_implementation_index
         return
 
     if name.startswith("combined_"):
@@ -449,10 +431,7 @@ def run_scenarios(county):
         overall_baseline_location_summary = None
         for scenario_def in scenarios_to_run:
             scenario = scenario_def["scenario"]
-            is_standard_base = (
-                scenario_def["level"] == "base"
-                and scenario_def["intervention"] != "FQA"
-            )
+            is_standard_base = scenario_def["level"] == "base"
             if is_standard_base and overall_baseline_summary is not None:
                 scenario_summary = overall_baseline_summary.copy()
                 location_summary = [

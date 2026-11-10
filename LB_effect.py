@@ -352,16 +352,27 @@ def f_ANC_LB_effect_vectorized(track, LB_base, param, flags, i, int_period, rng)
     # MENTORS: use the parameter-level implementation index from SDR Parameters.
     if flags.get("flag_MENTOR"):
         mentors_coverage = clip01(float(param.get("mentors_implementation_index", 0.0)))
-        mentors_knowledge_target = float(param.get("mentors_knowledge_target", 1.0))
-        P_knowledge[1:4] = np.clip(
-            P_knowledge[1:4]
-            + mentors_coverage * (mentors_knowledge_target - P_knowledge[1:4]),
-            0.0,
-            1.0,
-        )
-    # PULSE: health-worker performance gain after MENTORS.
-    if pulse:
-        P_knowledge[1:4] = np.clip(P_knowledge[1:4] + pulse["knowledge_gain"], 0.0, 1.0)
+        if recalibrated_structure(param):
+            # Kisii, Makueni, Mombasa: knowledge gain from in-service training (Rowe et al. 2018).
+            mentors_knowledge_improve = float(param.get("mentors_knowledge_improve", 0.103))
+            P_knowledge[1:4] = np.clip(P_knowledge[1:4] + mentors_coverage * mentors_knowledge_improve, 0.0, 1.0)
+        else:
+            mentors_knowledge_target = float(param.get("mentors_knowledge_target", 1.0))
+            P_knowledge[1:4] = np.clip(
+                P_knowledge[1:4]
+                + mentors_coverage * (mentors_knowledge_target - P_knowledge[1:4]),
+                0.0,
+                1.0,
+            )
+    # FQA (Kisii, Makueni, Mombasa) and PULSE: health-worker performance gain after MENTORS.
+    # Both rest on the same audit-and-feedback evidence, so when both are on the larger applies.
+    fqa_gain = 0.0
+    if flags.get("flag_fqa", 0) and recalibrated_structure(param):
+        fqa_performance_improve = float(param.get("fqa_performance_improve", 0.062))
+        fqa_gain = float(param.get("fqa_implementation_index", 0.0)) * fqa_performance_improve
+    pulse_gain = pulse["knowledge_gain"] if pulse else 0.0
+    if fqa_gain or pulse_gain:
+        P_knowledge[1:4] = np.clip(P_knowledge[1:4] + max(fqa_gain, pulse_gain), 0.0, 1.0)
     P_close_to_L23 = param["close_to_L23"]
     P_close_to_L45 = 1 - P_close_to_L23
     P_iv_iron = param["S"]["iv_iron"] * (P_knowledge[1] * P_close_to_L23 + P_knowledge[3] * P_close_to_L45)

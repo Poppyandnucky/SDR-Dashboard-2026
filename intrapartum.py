@@ -21,7 +21,11 @@ def apply_fqa_effect(P, flags, param):
 
     fqa_gain = 0.0
     if flags.get("flag_fqa", 0):
-        fqa_knowledge_improve = float(param.get("fqa_knowledge_improve", 0.043))
+        if recalibrated_structure(param):
+            # Kisii, Makueni, Mombasa: Ivers et al. 2026 audit and feedback (mean 6.2 points).
+            fqa_knowledge_improve = float(param.get("fqa_performance_improve", 0.062))
+        else:
+            fqa_knowledge_improve = float(param.get("fqa_knowledge_improve", 0.043))
         fqa_implementation_index = float(param.get("fqa_implementation_index", 0.0))
         fqa_gain = fqa_implementation_index * fqa_knowledge_improve
     pulse_gain = pulse["knowledge_gain"] if pulse else 0.0
@@ -178,14 +182,19 @@ def initialize_intra_params(individual_outcomes, track, flags, param, i, rng):
     if flags.get("flag_MENTOR"):
 
         mentors_coverage = param["mentors_implementation_index"]
-        mentors_knowledge_target = float(param.get("mentors_knowledge_target", 1.0))
+        if recalibrated_structure(param):
+            # Kisii, Makueni, Mombasa: knowledge gain from in-service training (Rowe et al. 2018).
+            mentors_knowledge_improve = float(param.get("mentors_knowledge_improve", 0.103))
+            P["knowledge"][1:4] = np.clip(P["knowledge"][1:4] + mentors_coverage * mentors_knowledge_improve, 0, 1)
+        else:
+            mentors_knowledge_target = float(param.get("mentors_knowledge_target", 1.0))
 
-        P["knowledge"][1:4] = np.clip(
-            P["knowledge"][1:4]
-            + mentors_coverage * (mentors_knowledge_target - P["knowledge"][1:4]),
-            0,
-            1,
-        )
+            P["knowledge"][1:4] = np.clip(
+                P["knowledge"][1:4]
+                + mentors_coverage * (mentors_knowledge_target - P["knowledge"][1:4]),
+                0,
+                1,
+            )
 
     P = apply_fqa_effect(P, flags, param)
 
