@@ -167,15 +167,18 @@ Findings from reviewing the earlier calibration:
   with FQA on. PROMPTS and PULSE are the exceptions (below).
 - **PROMPTS** (all counties, Kakamega included) is drawn for each mother
   (`LB_effect.py`). A share `prompts_implementation_index` (after PULSE) is
-  registered (`i_prompts_registered`); registered mothers' 4+ ANC probability is
-  P_ANC x `prompts_rr_anc4p`, and registered mothers with 4+ ANC
-  (`i_prompts_screened`) are screened with `sen_risk_trad_target` (0.95) and
+  registered (`i_prompts_registered`); registered mothers' odds of 4+ ANC are
+  multiplied by `OR_anc4p` (from the Vatsa et al. 2025 trial, the same at every
+  implementation level), and registered mothers with 4+ ANC
+  (`i_prompts_screened`) are screened with `sen_risk_trad_target` and
   `spec_risk_trad_target` (0.631); everyone else keeps `sen_risk_trad` and
   `spec_risk_trad`. POCUS takes precedence. Registration reuses the 4+ ANC
   random draw, so PROMPTS runs keep the baseline's random numbers. This replaces
   raising everyone's screening sensitivity (`apply_prompts_sensitivity` in
   `scenario_comparison.py`, removed), so PULSE's extra registrations now also
-  improve screening.
+  improve screening. The optimistic sensitivity analysis
+  (`analysis/scripts/prompts_pulse_results.py`, `optimistic_<level>`) uses P_ANC x
+  `prompts_rr_anc4p` (1.02 / 1.18 / 1.35 by level) and screening sensitivity 0.95.
 - **PULSE** (all counties, Kakamega included) works through health-worker
   practice, not complications or capacity (`LB_effect.pulse_effect`). It raises
   PROMPTS registration by the audit-and-feedback odds ratio

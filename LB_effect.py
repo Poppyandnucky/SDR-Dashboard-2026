@@ -108,12 +108,17 @@ def f_ANC_LB_effect_vectorized(track, LB_base, param, flags, i, int_period, rng)
 
     # ------------------- PROMPTS: registration, 4+ ANC, and screening for each mother ------------------- #
     # prompts_implementation_index = share of mothers registered with PROMPTS (raised by PULSE).
-    # Registered mothers have 4+ ANC probability P_ANC x prompts_rr_anc4p; the rest keep P_ANC.
+    # Registered mothers' odds of 4+ ANC are multiplied by OR_anc4p (Vatsa et al. 2025 trial);
+    # the rest keep P_ANC. If prompts_rr_anc4p is set (optimistic sensitivity analysis,
+    # dashboard fidelity presets), registered mothers have P_ANC x prompts_rr_anc4p instead.
     if flag_PROMPTS:
         prompts_implementation_index = clip01(param.get("prompts_implementation_index", 0.0))
         if pulse:
             prompts_implementation_index = odds_update(prompts_implementation_index, pulse["prompts_registration_or"])
-        P_ANC_registered = clip01(P_ANC * float(param.get("prompts_rr_anc4p", 1.0)))
+        if param.get("prompts_rr_anc4p") is not None:
+            P_ANC_registered = clip01(P_ANC * float(param["prompts_rr_anc4p"]))
+        else:
+            P_ANC_registered = odds_update(P_ANC, param.get("OR_anc4p", 1.0))
         P_ANC = clip01((1 - prompts_implementation_index) * P_ANC + prompts_implementation_index * P_ANC_registered)
 
     # POCUS intervention

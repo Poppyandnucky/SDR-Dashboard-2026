@@ -193,7 +193,18 @@ NO_FALLBACK_INTERV_PARAMS = {
 }
 
 
-def _intervention_params(wb: ParameterWorkbook, rng: np.random.Generator, county: str) -> dict[str, Any]:
+# Drawn from their own random stream (own_rng in _build_params), so giving them a
+# ci_lower/ci_upper does not change the draws of any other parameter (Kakamega
+# keeps matching main).
+OWN_STREAM_INTERV_PARAMS = {
+    "OR_anc4p",
+    "sen_risk_trad_target",
+}
+
+
+def _intervention_params(
+    wb: ParameterWorkbook, rng: np.random.Generator, county: str, own_rng: np.random.Generator | None = None,
+) -> dict[str, Any]:
     """Load intervention-level parameters, preferring the row for this county.
 
     Some parameters (e.g. mentors_implementation_index) have one row per county
@@ -221,7 +232,8 @@ def _intervention_params(wb: ParameterWorkbook, rng: np.random.Generator, county
                 params[str(name)] = 0.0
                 continue
             row = group.iloc[-1]
-        params[str(name)] = _sample_or_value(row, rng)
+        own_stream = own_rng is not None and str(name) in OWN_STREAM_INTERV_PARAMS
+        params[str(name)] = _sample_or_value(row, own_rng if own_stream else rng)
     return params
 
 
@@ -453,12 +465,15 @@ def _build_params(
     if strict_county and county_clean not in available:
         raise ValueError(f"Unknown county {county!r}. Available counties: {sorted(available)}")
 
+    # A second stream, jumped far ahead of rng without advancing it (OWN_STREAM_INTERV_PARAMS).
+    own_rng = np.random.Generator(rng.bit_generator.jumped())
+
     param: dict[str, Any] = {}
     # Shared/default inputs.
     param.update(_constants(wb))
     param.update(_array_constants(wb))
     param.update(_sampled_params(wb, rng))
-    param.update(_intervention_params(wb, rng, county))
+    param.update(_intervention_params(wb, rng, county, own_rng))
     param["cost_dict"] = _cost_dict(wb)
     param["DW"] = _disability_weights(wb, rng)
 
@@ -702,7 +717,11 @@ def calculate_derived_parameters(param: dict[str, Any]) -> dict[str, Any]:
     param["RDS_T"] = P_RDS(param)
 
     if "S_oxytocin_l45" in param:
-        param["S_oxytocin"] = np.array([0, 0 * 0.3157 + 0.33 * (1 - 0.3157), param["S_oxytocin_l45"], param["S_oxytocin_l45"]])
+        # L2/3 from the workbook (county_supply S_oxytocin, L2/3 row); without it, the
+        # original value (L2 0 and L3 0.33, weighted by the share of L2/3 births at L2).
+        workbook_s_oxytocin = np.atleast_1d(param.get("S_oxytocin", []))
+        s_oxytocin_l23 = float(workbook_s_oxytocin[1]) if workbook_s_oxytocin.size > 1 else 0 * 0.3157 + 0.33 * (1 - 0.3157)
+        param["S_oxytocin"] = np.array([0, s_oxytocin_l23, param["S_oxytocin_l45"], param["S_oxytocin_l45"]])
     if "S_preterm_treat_l45" in param:
         param["S_preterm_treat"] = np.array([0, 0, param["S_preterm_treat_l45"], param["S_preterm_treat_l45"]])
     return param

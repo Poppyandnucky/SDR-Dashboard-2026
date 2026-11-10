@@ -268,7 +268,7 @@
 #         # PROMPTS mechanism parameters (NOT user inputs)
 #         'phone_ownership': 0.89,
 #         'intervention_fidelity': 0.87,
-#         'OR_anc4p': 1.38,  # default; dashboard PROMPTS slider overrides when PROMPTS is enabled
+#         'OR_anc4p': 1.29,  # now in the workbook (interv_params, 1.29 [1.03-1.66]); dashboard PROMPTS slider overrides when PROMPTS is enabled
 #         'fqa_knowledge_improve': 0.043,  # direct FQA increase in healthcare worker knowledge
 #         'pulse_influence_strength': 0.17,  # fraction of selected PULSE indicator gap closed each model step
 #         # FQA-PULSE interaction:

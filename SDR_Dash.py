@@ -141,7 +141,6 @@ PROMPTS_IMPLEMENTATION_OVERRIDE = {"Moderate": 0.5, "High": 0.95}
 # get_prompts_implementation_index / render_prompts). Fixed at all three
 # levels, including "Current" -- only the implementation index (population
 # coverage) varies with the workbook there.
-PROMPTS_RR_OVERRIDE = {"Current": 1.02, "Moderate": 1.18, "High": 1.35}
 BLOOD_TRACKING_FIDELITY_OVERRIDE = {"Current": 0.15, "Moderate": 0.30, "High": 0.50}
 PULSE_FIDELITY_OVERRIDE = {"Moderate": 0.5, "High": 0.95}
 FQA_FIDELITY_OVERRIDE = {"Moderate": 0.5, "High": 0.95}
@@ -424,11 +423,9 @@ def render_prompts_preset():
         fid_key = "Moderate" if prompts_fidelity.startswith("Moderate") else "High"
         prompts_index = get_prompts_implementation_index(fid_key)
         i_HSS["prompts_implementation_index"] = prompts_index
-        i_HSS["prompts_rr_anc4p"] = PROMPTS_RR_OVERRIDE[fid_key]
         st.session_state["prompts_implementation_index"] = prompts_index
     else:
         i_HSS["prompts_implementation_index"] = 0.0
-        i_HSS["prompts_rr_anc4p"] = 1.0
         st.session_state["prompts_implementation_index"] = 0.0
 
     st.markdown("**MENTORS**")
@@ -959,8 +956,6 @@ def sync_param_momish_from_hss(i_param, i_HSS, flags):
     """Align top-level param keys with dashboard i_HSS (LB_effect + intrapartum may read either)."""
     if i_HSS.get("prompts_implementation_index") is not None:
         i_param["prompts_implementation_index"] = float(i_HSS["prompts_implementation_index"])
-    if i_HSS.get("prompts_rr_anc4p") is not None:
-        i_param["prompts_rr_anc4p"] = float(i_HSS["prompts_rr_anc4p"])
     if i_HSS.get("fqa_pulse_modifier") is not None:
         i_param["fqa_pulse_modifier_level"] = i_HSS.get("fqa_pulse_modifier_level", "Medium")
         i_param["fqa_pulse_modifier"] = float(i_HSS["fqa_pulse_modifier"])
@@ -1122,17 +1117,16 @@ def render_prompts():
             index=prompts_fidelity_options.index(prompts_fidelity_choice_default),
             key="prompts_implementation_level_select",
             help="Choose the PROMPTS implementation level. The selected value is passed to the model "
-                 "as an implementation index (share of mothers reached) plus a matching RR on 4+ ANC.",
+                 "as an implementation index (share of mothers reached); registered mothers' odds of 4+ ANC "
+                 "are multiplied by OR_anc4p (Vatsa et al. 2025 trial) at every level.",
         )
         st.session_state["prompts_implementation_level"] = prompts_fidelity_choice
 
         prompts_index = get_prompts_implementation_index(prompts_fidelity_choice)
         i_HSS["prompts_implementation_index"] = prompts_index
-        i_HSS["prompts_rr_anc4p"] = PROMPTS_RR_OVERRIDE[prompts_fidelity_choice]
         st.session_state["prompts_implementation_index"] = prompts_index
     else:
         i_HSS["prompts_implementation_index"] = 0.0
-        i_HSS["prompts_rr_anc4p"] = 1.0
         st.session_state["prompts_implementation_index"] = 0.0
 
     # ==========================================================

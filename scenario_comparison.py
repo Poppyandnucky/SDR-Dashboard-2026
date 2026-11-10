@@ -26,12 +26,18 @@ BASE_SEED = 4200
 ENABLED_SINGLE_INTERVENTION_SUPPLY = 0.95
 
 
+# Current implementation index = adoption x fidelity x penetration, where adoption is the
+# share of the county's women (new ANC clients for PROMPTS, facility deliveries otherwise;
+# KHIS FY2024/25) at the facilities on each intervention's list. PROMPTS fidelity is
+# enrolments per year since launch / new ANC clients at PROMPTS facilities. MENTORS uses the
+# full facility list (in person and DELTA) and nurse/CO/MO attendance for penetration. FQA and
+# PULSE penetration is 1 (no within-facility measure). Referral is unchanged.
 CURRENT_IMPLEMENTATION_INDEX = {
     "prompts": {
         "kakamega": 0.0,
-        "kisii": 0.151,
-        "mombasa": 0.187,
-        "makueni": 0.116,
+        "kisii": 0.215,
+        "mombasa": 0.369,
+        "makueni": 0.121,
     },
     "mentors": {
         "kakamega": 0.0,
@@ -47,9 +53,9 @@ CURRENT_IMPLEMENTATION_INDEX = {
     },
     "pulse": {
         "kakamega": 0.0,
-        "kisii": 0.0455,
-        "mombasa": 0.0126,
-        "makueni": 0.003,
+        "kisii": 0.617,
+        "mombasa": 0.468,
+        "makueni": 0.769,
     },
     "fqa": {
         "kakamega": 0.0,
@@ -66,6 +72,10 @@ IMPLEMENTATION_INDEX_BY_LEVEL = {
 }
 
 
+# PROMPTS's effect on 4+ ANC is OR_anc4p (workbook, from the Vatsa et al. 2025 trial) at
+# every level. These RRs and PROMPTS_OPTIMISTIC_SEN_RISK are the optimistic sensitivity
+# analysis only (analysis/scripts/prompts_pulse_results.py).
+PROMPTS_OPTIMISTIC_SEN_RISK = 0.95
 PROMPTS_RR_BY_LEVEL = {
     "current": 1.02,
     "moderate": 1.18,
@@ -86,9 +96,9 @@ SCENARIOS = [
     {"scenario": "mentors_moderate", "intervention": "MENTORS", "level": "moderate", "description": "50% implementation index; all single interventions on"},
     {"scenario": "mentors_high", "intervention": "MENTORS", "level": "high", "description": "95% implementation index; all single interventions on"},
     {"scenario": "prompts_base", "intervention": "PROMPTS", "level": "base", "description": "All off"},
-    {"scenario": "prompts_current", "intervention": "PROMPTS", "level": "current", "description": "County-specific current implementation index; 1.02 RR effectiveness"},
-    {"scenario": "prompts_moderate", "intervention": "PROMPTS", "level": "moderate", "description": "50% implementation index; 1.18 RR effectiveness"},
-    {"scenario": "prompts_high", "intervention": "PROMPTS", "level": "high", "description": "95% implementation index; 1.35 RR effectiveness"},
+    {"scenario": "prompts_current", "intervention": "PROMPTS", "level": "current", "description": "County-specific current implementation index; OR_anc4p on 4+ ANC"},
+    {"scenario": "prompts_moderate", "intervention": "PROMPTS", "level": "moderate", "description": "50% implementation index; OR_anc4p on 4+ ANC"},
+    {"scenario": "prompts_high", "intervention": "PROMPTS", "level": "high", "description": "95% implementation index; OR_anc4p on 4+ ANC"},
     {"scenario": "prompts_high_shift", "intervention": "PROMPTS", "level": "high_shift", "description": "PROMPTS high plus conservative delivery shift and matched facility expansion"},
     {"scenario": "blood_base", "intervention": "Blood tracking", "level": "base", "description": "All off"},
     {"scenario": "blood_current", "intervention": "Blood tracking", "level": "current", "description": "Blood tracking on; 15% adoption"},
@@ -107,9 +117,9 @@ SCENARIOS = [
     {"scenario": "fqa_moderate", "intervention": "FQA", "level": "moderate", "description": "50% FQA implementation index; PULSE current; all single interventions on"},
     {"scenario": "fqa_high", "intervention": "FQA", "level": "high", "description": "95% FQA implementation index; PULSE current; all single interventions on"},
     {"scenario": "combined_base", "intervention": "All", "level": "base", "description": "No HSS; all MOMISH interventions off, all single interventions off"},
-    {"scenario": "combined_current", "intervention": "All", "level": "current", "description": "County-specific current implementation index for all interventions; all single interventions on; Blood tracking 15% adoption; Transfer & EMT 1 hour delay shift; PROMPTS 1.02 RR effectiveness"},
-    {"scenario": "combined_moderate", "intervention": "All", "level": "moderate", "description": "50% implementation index for all interventions; all single interventions on; Blood tracking 30% adoption; Transfer & EMT 1 hour delay shift; PROMPTS 1.18 RR effectiveness"},
-    {"scenario": "combined_high", "intervention": "All", "level": "high", "description": "95% implementation index for all interventions; all single interventions on; Blood tracking 50% adoption; Transfer & EMT 1 hour delay shift; PROMPTS 1.35 RR effectiveness"},
+    {"scenario": "combined_current", "intervention": "All", "level": "current", "description": "County-specific current implementation index for all interventions; all single interventions on; Blood tracking 15% adoption; Transfer & EMT 1 hour delay shift"},
+    {"scenario": "combined_moderate", "intervention": "All", "level": "moderate", "description": "50% implementation index for all interventions; all single interventions on; Blood tracking 30% adoption; Transfer & EMT 1 hour delay shift"},
+    {"scenario": "combined_high", "intervention": "All", "level": "high", "description": "95% implementation index for all interventions; all single interventions on; Blood tracking 50% adoption; Transfer & EMT 1 hour delay shift"},
 ]
 
 # Uncomment to restrict this run to a single intervention's scenarios (e.g. to
@@ -184,14 +194,9 @@ def configure_scenario(name, param, flags, slider_params=None):
     if name.startswith("prompts_"):
         level = "high" if name == "prompts_high_shift" else name.removeprefix("prompts_")
         implementation_index = implementation_for_level("prompts", level, county)
-        prompts_rr_anc4p = PROMPTS_RR_BY_LEVEL[level]
         flags["flag_PROMPTS"] = 1
-        hss.update({
-            "prompts_implementation_index": implementation_index,
-            "prompts_rr_anc4p": prompts_rr_anc4p,
-        })
+        hss["prompts_implementation_index"] = implementation_index
         param["prompts_implementation_index"] = implementation_index
-        param["prompts_rr_anc4p"] = prompts_rr_anc4p
         if name == "prompts_high_shift":
             if slider_params is None:
                 raise ValueError("slider_params is required for prompts_high_shift")
@@ -251,14 +256,9 @@ def configure_scenario(name, param, flags, slider_params=None):
         param["mentors_implementation_index"] = mentors_index
 
         prompts_index = implementation_for_level("prompts", level, county)
-        prompts_rr_anc4p = PROMPTS_RR_BY_LEVEL[level]
         flags["flag_PROMPTS"] = 1
-        hss.update({
-            "prompts_implementation_index": prompts_index,
-            "prompts_rr_anc4p": prompts_rr_anc4p,
-        })
+        hss["prompts_implementation_index"] = prompts_index
         param["prompts_implementation_index"] = prompts_index
-        param["prompts_rr_anc4p"] = prompts_rr_anc4p
 
         adoption = BLOOD_ADOPTION_BY_LEVEL[level]
         flags["flag_blood"] = 1
